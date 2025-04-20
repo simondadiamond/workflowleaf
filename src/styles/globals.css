@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary-main: 176 100% 33%;
+    --primary-hover: 176 100% 23%;
+    --primary-light: 176 50% 80%;
+    --primary-dark: 176 100% 21%;
+    
+    --secondary-main: 170 46% 17%;
+    --secondary-hover: 170 46% 11%;
+    --secondary-light: 170 23% 71%;
+    --secondary-dark: 170 46% 10%;
+    
+    --accent-main: 84 67% 76%;
+    --accent-hover: 84 53% 68%;
+    --accent-light: 84 53% 87%;
+    --accent-dark: 84 33% 60%;
+    
+    --background: 180 15% 97%;
+    --foreground: 210 3% 18%;
+    
+    --card: 180 5% 93%;
+    --card-foreground: 210 3% 18%;
+    
+    --popover: 180 15% 97%;
+    --popover-foreground: 210 3% 18%;
+    
+    --muted: 210 5% 93%;
+    --muted-foreground: 210 3% 46%;
+    
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --primary-main: 176 81% 43%;
+    --primary-hover: 176 81% 33%;
+    --primary-light: 176 81% 70%;
+    --primary-dark: 176 81% 25%;
+    
+    --secondary-main: 170 50% 29%;
+    --secondary-hover: 170 50% 19%;
+    --secondary-light: 170 25% 40%;
+    --secondary-dark: 170 50% 15%;
+    
+    --accent-main: 84 70% 73%;
+    --accent-hover: 84 60% 63%;
+    --accent-light: 84 60% 83%;
+    --accent-dark: 84 40% 55%;
+    
+    --background: 210 10% 11%;
+    --foreground: 210 10% 85%;
+    
+    --card: 210 10% 17%;
+    --card-foreground: 210 10% 85%;
+    
+    --popover: 210 10% 11%;
+    --popover-foreground: 210 10% 85%;
+    
+    --muted: 210 10% 22%;
+    --muted-foreground: 210 10% 64%;
+    
+    --border: 210 15% 30%;
+    --input: 210 15% 30%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'Roboto Mono', monospace;
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent-main ring-offset-2;
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse {
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  .animate-scroll {
+    animation: scroll 20s linear infinite;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  @keyframes scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+}

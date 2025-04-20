@@ -1,0 +1,109 @@
+---
+import { ViewTransitions } from 'astro:transitions';
+import '../styles/globals.css';
+
+interface Props {
+	title: string;
+	description?: string;
+	lang?: 'en' | 'fr';
+	currentPath?: string;
+}
+
+const { 
+	title, 
+	description = "WorkflowLeaf: Automate your property-management admin with custom AI workflows.", 
+	lang = 'en',
+	currentPath = '' 
+} = Astro.props;
+
+// Determine alternate URL for language switching
+const baseUrl = 'https://workflowleaf.com';
+const alternateUrl = lang === 'en' 
+	? `${baseUrl}/fr${currentPath}` 
+	: `${baseUrl}${currentPath.replace('/fr', '')}`;
+const alternateHreflang = lang === 'en' ? 'fr-ca' : 'en';
+
+// Script for handling dark mode
+const darkModeScript = `
+  function updateTheme() {
+    if (!window.matchMedia) return;
+    
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const storedTheme = localStorage.getItem('theme');
+    
+    if (storedTheme === 'dark' || (!storedTheme && isDark)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }
+
+  // Initial theme check
+  updateTheme();
+
+  // Listen for system theme changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
+
+  // Listen for manual theme changes
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'theme') updateTheme();
+  });
+`;
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="generator" content={Astro.generator} />
+		
+		<!-- Primary Meta Tags -->
+		<title>{title}</title>
+		<meta name="title" content={title} />
+		<meta name="description" content={description} />
+
+		<!-- Open Graph / Facebook -->
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content={`${baseUrl}${currentPath}`} />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:image" content={`${baseUrl}/og-image.jpg`} />
+
+		<!-- Twitter -->
+		<meta property="twitter:card" content="summary_large_image" />
+		<meta property="twitter:url" content={`${baseUrl}${currentPath}`} />
+		<meta property="twitter:title" content={title} />
+		<meta property="twitter:description" content={description} />
+		<meta property="twitter:image" content={`${baseUrl}/og-image.jpg`} />
+
+		<!-- Alternate Language URLs for SEO -->
+		<link rel="alternate" hreflang={alternateHreflang} href={alternateUrl} />
+		<link rel="alternate" hreflang="x-default" href={baseUrl} />
+
+		<!-- Fonts -->
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+		<!-- Dark mode script -->
+		<script set:html={darkModeScript} />
+
+		<!-- Analytics placeholder -->
+		<!-- 
+		<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+		<script>
+			window.dataLayer = window.dataLayer || [];
+			function gtag(){dataLayer.push(arguments);}
+			gtag('js', new Date());
+			gtag('config', 'G-XXXXXXXXXX');
+		</script>
+		-->
+
+		<ViewTransitions />
+	</head>
+	<body class="bg-background text-foreground min-h-screen flex flex-col">
+		<slot />
+	</body>
+</html>
