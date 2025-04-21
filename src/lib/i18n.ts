@@ -12,13 +12,22 @@ type TranslationKey =
   | 'language.toggle'
   | 'cta.title'
   | 'cta.button'
-  | 'pain.title'
-  | 'pain.card1.title'
-  | 'pain.card1.description'
-  | 'pain.card2.title'
-  | 'pain.card2.description'
-  | 'pain.card3.title'
-  | 'pain.card3.description'
+  // Old pain keys (commented out or remove if sure)
+  // | 'pain.title'
+  // | 'pain.card1.title'
+  // | 'pain.card1.description'
+  // | 'pain.card2.title'
+  // | 'pain.card2.description'
+  // | 'pain.card3.title'
+  // | 'pain.card3.description'
+  // New challenges keys
+  | 'challenges.title'
+  | 'challenges.rent.title'
+  | 'challenges.rent.description'
+  | 'challenges.maintenance.title'
+  | 'challenges.maintenance.description'
+  | 'challenges.onboarding.title'
+  | 'challenges.onboarding.description'
   | 'how.title'
   | 'how.step1.title'
   | 'how.step1.description'
@@ -67,13 +76,14 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'language.toggle': 'Fr',
     'cta.title': 'Ready to transform your property management workflow?',
     'cta.button': 'Schedule Your Free Consultation',
-    'pain.title': 'The Challenges We Solve',
-    'pain.card1.title': 'Rent Collection & Cash-Flow',
-    'pain.card1.description': 'Automated SMS & PAD cuts late payments by 30%.',
-    'pain.card2.title': 'Maintenance Coordination',
-    'pain.card2.description': 'Voice-bot triages requests in 60 seconds, speeds repairs.',
-    'pain.card3.title': 'Manual Workflows',
-    'pain.card3.description': 'Sync data & tasks—reclaim ~15 hrs/month.',
+    // Updated Challenges Section
+    'challenges.title': 'The Challenges We Solve',
+    'challenges.rent.title': 'Never Chase Late Rent Again',
+    'challenges.rent.description': 'Automated SMS & PAD reminders boost on‑time payments by 30% and reclaim 4 hrs of your month.',
+    'challenges.maintenance.title': 'Maintenance Tickets Solved in 60 Seconds',
+    'challenges.maintenance.description': 'Form‑ or email‑triggered workflow parses issues instantly, creates help‑desk tickets, and notifies vendors—no bots needed.',
+    'challenges.onboarding.title': 'Onboard Quality Tenants in Minutes',
+    'challenges.onboarding.description': 'Intake form → background & credit‑check API → summary email + DocuSign link—move‑ins happen in under 10 minutes.',
     'how.title': 'How It Works',
     'how.step1.title': 'Discovery',
     'how.step1.description': 'We map your current workflows and identify automation opportunities.',
@@ -121,13 +131,14 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'language.toggle': 'En',
     'cta.title': 'Prêt à transformer votre processus de gestion immobilière?',
     'cta.button': 'Planifiez Votre Consultation Gratuite',
-    'pain.title': 'Les Défis Que Nous Résolvons',
-    'pain.card1.title': 'Collection de Loyer et Flux de Trésorerie',
-    'pain.card1.description': 'SMS et DPA automatisés réduisent les retards de 30%.',
-    'pain.card2.title': 'Coordination de Maintenance',
-    'pain.card2.description': 'Robot vocal trie les demandes en 60 secondes, accélère les réparations.',
-    'pain.card3.title': 'Processus Manuels',
-    'pain.card3.description': 'Synchronisez données et tâches—récupérez ~15h/mois.',
+    // Updated Challenges Section - French
+    'challenges.title': 'Les Défis Que Nous Relevons',
+    'challenges.rent.title': 'Ne Courez Plus Jamais Après les Loyers en Retard',
+    'challenges.rent.description': 'Les rappels automatisés par SMS et DPA augmentent les paiements à temps de 30 % et vous redonnent 4 heures par mois.',
+    'challenges.maintenance.title': 'Billets de Maintenance Résolus en 60 Secondes',
+    'challenges.maintenance.description': 'Un flux déclenché par formulaire ou e-mail analyse instantanément les problèmes, crée des billets d\'assistance et avertit les fournisseurs—aucun bot requis.',
+    'challenges.onboarding.title': 'Intégrez des Locataires de Qualité en Quelques Minutes',
+    'challenges.onboarding.description': 'Formulaire d\'admission → API de vérification des antécédents et du crédit → e-mail récapitulatif + lien DocuSign—les emménagements se font en moins de 10 minutes.',
     'how.title': 'Comment Ça Marche',
     'how.step1.title': 'Découverte',
     'how.step1.description': 'Nous cartographions vos flux de travail actuels et identifions les opportunités d\'automatisation.',
@@ -183,12 +194,19 @@ export function useTranslation() {
         ? `/fr${currentPath}` 
         : currentPath.replace(/^\/fr/, '');
       
-      window.location.href = newPath || '/';
+      // Use Astro's view transitions API if available, otherwise fallback to full reload
+      if ((window as any).astro && (window as any).astro.navigate) {
+        (window as any).astro.navigate(newPath || '/');
+      } else {
+        window.location.href = newPath || '/';
+      }
     }
   };
 
   const t = (key: TranslationKey): string => {
-    return translations[locale][key] || key;
+    // Fallback logic: if a key doesn't exist in the current locale, try English
+    const translation = translations[locale]?.[key] ?? translations['en']?.[key] ?? key;
+    return translation;
   };
 
   return { t, locale, toggleLocale };
