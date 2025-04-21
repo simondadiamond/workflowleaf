@@ -3,6 +3,7 @@ import { useTranslation } from '@/lib/i18n';
 import { Card } from '@/components/ui/card';
 // Updated icon imports
 import { Search, Settings, Rocket } from 'lucide-react';
+import { cn } from '@/lib/utils'; // Import cn utility
 
 interface StepCardProps {
   title: string;
@@ -20,7 +21,11 @@ function StepCard({ title, description, icon, step }: StepCardProps) {
           {icon}
         </div>
         {/* Updated badge background to accent-light */}
-        <div className="absolute -top-2 -right-2 w-8 h-8 bg-accent-light rounded-full flex items-center justify-center text-foreground font-semibold">
+        {/* Added dark:text-black class for dark mode */}
+        <div className={cn(
+          "absolute -top-2 -right-2 w-8 h-8 bg-accent-light rounded-full flex items-center justify-center text-foreground font-semibold",
+          "dark:text-black" // Ensure text is black in dark mode
+        )}>
           {step}
         </div>
       </div>
@@ -55,7 +60,7 @@ export function HowItWorks() {
   ];
 
   return (
-    <section className="py-20 bg-secondary-main/5">
+    <section id="how-it-works" className="py-20 bg-secondary-main/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">{t('how.title')}</h2>

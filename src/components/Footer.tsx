@@ -1,97 +1,54 @@
 import React from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { LanguageToggle } from '@/components/LanguageToggle';
-import { Mail, Phone } from 'lucide-react'; // Removed Leaf import
 
 export function Footer() {
   const { t, locale } = useTranslation();
+  const getAnchorPath = (path: string) =>
+    locale === 'fr' ? `/fr${path}` : path;
 
-  // Helper to get the right path based on locale
-  const getPath = (path: string) => {
-    return locale === 'fr' ? `/fr${path}` : path;
-  };
+  const navLinks = [
+    { label: t('nav.home'), path: getAnchorPath('/') },
+    { label: 'Solutions',       path: getAnchorPath('#challenges') },
+    { label: t('how.title'),    path: getAnchorPath('#how-it-works') },
+    { label: t('nav.pricing'),  path: getAnchorPath('#pricing') },
+  ];
 
   return (
     <footer className="bg-secondary-main text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {/* Logo and company info */}
-          <div className="col-span-1 md:col-span-1">
-            <div className="flex items-center">
-              {/* Replaced Leaf icon with img tag and added footer-logo class */}
-              <img src="/logo.svg" alt="WorkflowLeaf Logo" className="h-8 w-8 text-primary-main footer-logo" />
-              <span className="ml-2 text-xl font-semibold">WorkflowLeaf</span>
-            </div>
-            <p className="mt-4 text-sm text-neutral-textLight">
-              {t('footer.copyright')}
-            </p>
-            <div className="mt-4">
-              <LanguageToggle className="p-0 text-white hover:text-accent-main" />
-            </div>
-          </div>
+      <div className="max-w-3xl mx-auto py-4 px-4 text-center">
+        {/* Logo + Brand */}
+        <div className="inline-flex items-center space-x-2 mb-2">
+          <img
+            src="/logo.svg"
+            alt="WorkflowLeaf Logo"
+            className="h-6 w-6"
+          />
+          <span className="text-base font-medium">WorkflowLeaf</span>
+        </div>
 
-          {/* Quick links */}
-          <div className="col-span-1">
-            <h3 className="text-lg font-semibold mb-4">{t('footer.links')}</h3>
-            <ul className="space-y-2">
-              <li>
-                <a href={getPath('/')} className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('nav.home')}
-                </a>
-              </li>
-              <li>
-                <a href={getPath('/services')} className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('nav.services')}
-                </a>
-              </li>
-              <li>
-                <a href={getPath('/pricing')} className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('nav.pricing')}
-                </a>
-              </li>
-              <li>
-                <a href={getPath('/contact')} className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('nav.contact')}
-                </a>
-              </li>
-            </ul>
-          </div>
+        {/* Nav Links */}
+        <nav className="flex flex-wrap justify-center gap-4 text-neutral-textLight text-sm mb-2">
+          {navLinks.map(link => (
+            <a
+              key={link.path}
+              href={link.path}
+              className="hover:text-white transition-colors"
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
 
-          {/* Legal */}
-          <div className="col-span-1">
-            <h3 className="text-lg font-semibold mb-4">Legal</h3>
-            <ul className="space-y-2">
-              <li>
-                <a href={getPath('/privacy')} className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('footer.privacy')}
-                </a>
-              </li>
-              <li>
-                <a href={getPath('/terms')} className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('footer.terms')}
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Contact */}
-          <div className="col-span-1">
-            <h3 className="text-lg font-semibold mb-4">{t('footer.contact')}</h3>
-            <ul className="space-y-3">
-              <li className="flex items-center">
-                <Mail className="h-5 w-5 mr-2" />
-                <a href="mailto:hello@workflowleaf.com" className="text-neutral-textLight hover:text-white transition-colors">
-                  {t('footer.email')}
-                </a>
-              </li>
-              <li className="flex items-center">
-                <Phone className="h-5 w-5 mr-2" />
-                <a href="tel:+14185551234" className="text-neutral-textLight hover:text-white transition-colors">
-                  +1 418-555-1234
-                </a>
-              </li>
-            </ul>
-          </div>
+        {/* Legal + Copyright */}
+        <div className="text-xs text-neutral-textLight">
+          <a
+            href={getAnchorPath('/legal')}
+            className="hover:text-white transition-colors"
+          >
+            {t('footer.legal')}
+          </a>
+          <span className="mx-1">•</span>
+          © {new Date().getFullYear()} WorkflowLeaf
         </div>
       </div>
     </footer>

@@ -26,7 +26,6 @@ type TranslationKey =
   | 'how.step2.description'
   | 'how.step3.title'
   | 'how.step3.description'
-  // Updated KPI Keys
   | 'kpi.sectionTitle'
   | 'kpi.introText'
   | 'kpi.time_saved.title'
@@ -39,27 +38,45 @@ type TranslationKey =
   | 'kpi.roi.value'
   | 'kpi.roi.label'
   | 'kpi.footnote'
-  // Old KPI Keys (commented out for reference, can be removed)
-  // | 'kpi.title'
-  // | 'kpi.hours'
-  // | 'kpi.errors'
-  // | 'kpi.breakeven'
-  // | 'kpi.disclaimer'
   | 'pilot.title'
   | 'pilot.description'
   | 'partners.title'
   | 'pricing.title'
   | 'pricing.pilot.title'
   | 'pricing.pilot.price'
-  | 'pricing.pilot.description'
-  | 'pricing.pilot.features'
+  | 'pricing.pilot.description' // Updated key
+  | 'pricing.pilot.features' // Keep this for the pilot card
   | 'pricing.pilot.button'
   | 'pricing.pilot.upgrade'
   | 'pricing.managed.title'
   | 'pricing.managed.description'
-  | 'pricing.managed.features.essentials'
-  | 'pricing.managed.features.growth'
-  | 'pricing.managed.features.premium'
+  // New Managed Care Feature Keys (Essentials)
+  | 'pricing.managed.essentials.feature1'
+  | 'pricing.managed.essentials.feature2'
+  | 'pricing.managed.essentials.feature3'
+  | 'pricing.managed.essentials.feature4'
+  | 'pricing.managed.essentials.feature5'
+  | 'pricing.managed.essentials.feature6'
+  | 'pricing.managed.essentials.feature7'
+  | 'pricing.managed.essentials.feature8'
+  // New Managed Care Feature Keys (Growth)
+  | 'pricing.managed.growth.feature1'
+  | 'pricing.managed.growth.feature2'
+  | 'pricing.managed.growth.feature3'
+  | 'pricing.managed.growth.feature4'
+  | 'pricing.managed.growth.feature5'
+  | 'pricing.managed.growth.feature6'
+  | 'pricing.managed.growth.feature7'
+  | 'pricing.managed.growth.feature8'
+  // New Managed Care Feature Keys (Premium)
+  | 'pricing.managed.premium.feature1'
+  | 'pricing.managed.premium.feature2'
+  | 'pricing.managed.premium.feature3'
+  | 'pricing.managed.premium.feature4'
+  | 'pricing.managed.premium.feature5'
+  | 'pricing.managed.premium.feature6'
+  | 'pricing.managed.premium.feature7'
+  | 'pricing.managed.premium.feature8'
   | 'pricing.addons'
   | 'footer.copyright'
   | 'footer.links'
@@ -67,6 +84,34 @@ type TranslationKey =
   | 'footer.terms'
   | 'footer.contact'
   | 'footer.email';
+
+// Helper type for feature keys
+type FeatureKey =
+  | 'pricing.managed.essentials.feature1'
+  | 'pricing.managed.essentials.feature2'
+  | 'pricing.managed.essentials.feature3'
+  | 'pricing.managed.essentials.feature4'
+  | 'pricing.managed.essentials.feature5'
+  | 'pricing.managed.essentials.feature6'
+  | 'pricing.managed.essentials.feature7'
+  | 'pricing.managed.essentials.feature8'
+  | 'pricing.managed.growth.feature1'
+  | 'pricing.managed.growth.feature2'
+  | 'pricing.managed.growth.feature3'
+  | 'pricing.managed.growth.feature4'
+  | 'pricing.managed.growth.feature5'
+  | 'pricing.managed.growth.feature6'
+  | 'pricing.managed.growth.feature7'
+  | 'pricing.managed.growth.feature8'
+  | 'pricing.managed.premium.feature1'
+  | 'pricing.managed.premium.feature2'
+  | 'pricing.managed.premium.feature3'
+  | 'pricing.managed.premium.feature4'
+  | 'pricing.managed.premium.feature5'
+  | 'pricing.managed.premium.feature6'
+  | 'pricing.managed.premium.feature7'
+  | 'pricing.managed.premium.feature8';
+
 
 const translations: Record<string, Record<TranslationKey, string>> = {
   en: {
@@ -95,7 +140,6 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'how.step2.description': 'Our team designs and builds the custom automated workflows tailored to streamline your specific property management tasks.',
     'how.step3.title': '3. Launch & Optimize',
     'how.step3.description': 'We launch your automations and continuously monitor performance, making adjustments to ensure peak efficiency and adapt to your evolving needs.',
-    // Updated KPI Section
     'kpi.sectionTitle': 'Expected Outcomes',
     'kpi.introText': 'Based on typical results for property managers like you:',
     'kpi.time_saved.title': 'Save Valuable Time',
@@ -108,27 +152,46 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'kpi.roi.value': '~ 2 Months',
     'kpi.roi.label': 'typical time to break-even on investment',
     'kpi.footnote': '*Estimates based on typical client scenarios. Real metrics from pilot partners coming soon.',
-    // Old KPI keys (can be removed later)
-    // 'kpi.title': 'Expected Outcomes',
-    // 'kpi.hours': 'hrs admin saved/month',
-    // 'kpi.errors': 'manual errors',
-    // 'kpi.breakeven': 'months to break-even',
-    // 'kpi.disclaimer': 'Real metrics from Pilot Partners coming soon.',
     'pilot.title': 'Become a Pilot Partner',
     'pilot.description': 'Get 30% off our CA $950 Diagnostic in exchange for an honest testimonial.',
     'partners.title': 'Trusted & Supported By',
     'pricing.title': 'Transparent Pricing',
     'pricing.pilot.title': 'Pilot Diagnostic',
     'pricing.pilot.price': 'CA $950',
-    'pricing.pilot.description': 'One-time assessment and first workflow (≤8 nodes, 1 integration)',
+    // Updated English description
+    'pricing.pilot.description': 'Process deep‑dive and setup of your first automated process.',
     'pricing.pilot.features': ['90-minute deep-dive + ROI worksheet', 'Process map & recommendations', 'Build 1 foundational n8n workflow', '14-day email support', 'Bilingual service (EN/FR)'],
     'pricing.pilot.button': 'Book Discovery',
     'pricing.pilot.upgrade': 'Need more? Full Automation Setup starts at CA $2,400 for up to 2 workflows.',
     'pricing.managed.title': 'Managed Care',
     'pricing.managed.description': 'Monitoring, optimisation and incremental improvements',
-    'pricing.managed.features.essentials': ['24/7 health checks for all workflows', 'Monthly performance reviews', '2 support hours/month included', 'Quarterly ROI report', 'Bilingual service (EN/FR)'],
-    'pricing.managed.features.growth': ['24/7 health checks for all workflows', 'Monthly performance reviews', '5 support hours/month', 'One new simple workflow every 2 months', 'Quarterly ROI report', 'Bilingual service (EN/FR)'],
-    'pricing.managed.features.premium': ['24/7 health checks for all workflows', '10+ dedicated hours/month', 'Priority support (<4h response)', 'AI chat agent fine-tuning', 'Voice-bot monitoring', 'Monthly strategic roadmap call', 'Bilingual service (EN/FR)'],
+    // Essentials Features EN
+    'pricing.managed.essentials.feature1': '24/7 Workflow Health Checks',
+    'pricing.managed.essentials.feature2': 'Monthly Performance Summary',
+    'pricing.managed.essentials.feature3': 'Quarterly ROI Report',
+    'pricing.managed.essentials.feature4': 'Bilingual Service (EN/FR)',
+    'pricing.managed.essentials.feature5': '**2 Included Support Hours / Month**',
+    'pricing.managed.essentials.feature6': '*(New Workflows: Ad-hoc Projects Available)*',
+    'pricing.managed.essentials.feature7': '–',
+    'pricing.managed.essentials.feature8': '–',
+    // Growth Features EN
+    'pricing.managed.growth.feature1': '24/7 Workflow Health Checks',
+    'pricing.managed.growth.feature2': 'Monthly Performance Summary',
+    'pricing.managed.growth.feature3': 'Quarterly ROI Report',
+    'pricing.managed.growth.feature4': 'Bilingual Service (EN/FR)',
+    'pricing.managed.growth.feature5': '**5 Included Support Hours / Month**',
+    'pricing.managed.growth.feature6': '**New Workflow Build (~Bi-Monthly Estimate)**',
+    'pricing.managed.growth.feature7': 'Regular Performance Check-ins',
+    'pricing.managed.growth.feature8': '–',
+    // Premium Features EN
+    'pricing.managed.premium.feature1': '24/7 Workflow Health Checks',
+    'pricing.managed.premium.feature2': 'Monthly Performance Summary',
+    'pricing.managed.premium.feature3': 'Quarterly ROI Report',
+    'pricing.managed.premium.feature4': 'Bilingual Service (EN/FR)',
+    'pricing.managed.premium.feature5': '**10+ Priority Hours / Month (<4hr Resp.)**',
+    'pricing.managed.premium.feature6': '**Custom Complex Workflow & AI Development**',
+    'pricing.managed.premium.feature7': '**Monthly Strategic Roadmap Call**',
+    'pricing.managed.premium.feature8': '**AI Agent & VoiceBot Support**',
     'pricing.addons': 'Need Chat or Voice Bot creation? Premium Add-On Projects start at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
@@ -160,10 +223,10 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'how.step1.title': '1. Découverte',
     'how.step1.description': 'Nous analysons vos processus actuels pour cibler précisément où l\'automatisation peut vous faire économiser le plus de temps et d\'argent.',
     'how.step2.title': '2. Créer votre solution',
-    'how.step2.description': 'Notre équipe conçoit et met en place les flux de travail automatisés sur mesure pour simplifier vos tâches spécifiques de gestion immobilière.',
+
+    'how.step2.description': 'Notre équipe conçoit et met en place les processus de travail automatisés sur mesure pour simplifier vos tâches spécifiques de gestion immobilière.',
     'how.step3.title': '3. Lancement et Optimisation',
     'how.step3.description': 'Nous lançons vos automatisations et surveillons continuellement la performance, en apportant des ajustements pour assurer une efficacité maximale et nous adapter à vos besoins changeants.',
-    // Updated KPI Section - French
     'kpi.sectionTitle': 'Résultats Attendus',
     'kpi.introText': 'Basé sur les résultats typiques pour des gestionnaires immobiliers comme vous :',
     'kpi.time_saved.title': 'Économisez un temps précieux',
@@ -176,27 +239,49 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'kpi.roi.value': '~ 2 Mois',
     'kpi.roi.label': 'délai typique pour atteindre le seuil de rentabilité',
     'kpi.footnote': '*Estimations basées sur des scénarios clients typiques. Métriques réelles de nos partenaires pilotes à venir.',
-    // Old KPI keys (can be removed later)
-    // 'kpi.title': 'Résultats Attendus',
-    // 'kpi.hours': 'h admin économisées/mois',
-    // 'kpi.errors': 'erreurs manuelles',
-    // 'kpi.breakeven': 'mois pour rentabiliser',
-    // 'kpi.disclaimer': 'Métriques réelles des Partenaires Pilotes à venir.',
     'pilot.title': 'Devenez Partenaire Pilote',
     'pilot.description': 'Obtenez 30% de réduction sur notre Diagnostic de 950$ CA en échange d\'un témoignage honnête.',
     'partners.title': 'Soutenu par',
     'pricing.title': 'Tarification Transparente',
     'pricing.pilot.title': 'Diagnostic Pilote',
     'pricing.pilot.price': '950$ CA',
-    'pricing.pilot.description': 'Évaluation unique et premier flux de travail (≤8 nœuds, 1 intégration)',
-    'pricing.pilot.features': ['Session approfondie de 90 min + feuille ROI', 'Cartographie des processus & recommandations', 'Construction d\'un flux n8n fondamental', 'Support email 14 jours', 'Service bilingue (EN/FR)'],
+    // Updated French description
+    'pricing.pilot.description': 'Analyse approfondie et déploiement de votre premier processus automatisé.',
+    'pricing.pilot.features': ['Session approfondie de 90 min + feuille ROI', 'Cartographie des processus & recommandations', 'Construction d\'un processus n8n fondamental', 'Support email 14 jours', 'Service bilingue (EN/FR)'],
     'pricing.pilot.button': 'Réserver une Découverte',
-    'pricing.pilot.upgrade': 'Besoin de plus? La Configuration Complète commence à 2 400$ CA pour 2 flux de travail.',
+    'pricing.pilot.upgrade': 'Besoin de plus? La Configuration Complète commence à 2 400$ CA pour 2 processus de travail.',
     'pricing.managed.title': 'Service Géré',
     'pricing.managed.description': 'Surveillance, optimisation et améliorations progressives',
-    'pricing.managed.features.essentials': ['Surveillance 24/7 de tous les flux', 'Revues mensuelles de performance', '2 heures de support/mois incluses', 'Rapport ROI trimestriel', 'Service bilingue (EN/FR)'],
-    'pricing.managed.features.growth': ['24/7 health checks for all workflows', 'Monthly performance reviews', '5 support hours/month', 'One new simple workflow every 2 months', 'Quarterly ROI report', 'Bilingual service (EN/FR)'],
-    'pricing.managed.features.premium': ['Surveillance 24/7 de tous les flux', '10+ dedicated hours/month', 'Priority support (<4h response)', 'AI chat agent fine-tuning', 'Voice-bot monitoring', 'Monthly strategic roadmap call', 'Bilingual service (EN/FR)'],
+    // Essentials Features FR
+
+    'pricing.managed.essentials.feature1': 'Surveillance Santé des Processus 24/7',
+    'pricing.managed.essentials.feature2': 'Sommaire de Performance Mensuel',
+    'pricing.managed.essentials.feature3': 'Rapport ROI Trimestriel',
+    'pricing.managed.essentials.feature4': 'Service Bilingue (FR/EN)',
+    'pricing.managed.essentials.feature5': '**2 Heures de Support Incluses / Mois**',
+    'pricing.managed.essentials.feature6': '*(Nouveaux Processus : Projets Ad-hoc Disponibles)*',
+    'pricing.managed.essentials.feature7': '–',
+    'pricing.managed.essentials.feature8': '–',
+    // Growth Features FR
+
+    'pricing.managed.growth.feature1': 'Surveillance Santé des Processus 24/7',
+    'pricing.managed.growth.feature2': 'Sommaire de Performance Mensuel',
+    'pricing.managed.growth.feature3': 'Rapport ROI Trimestriel',
+    'pricing.managed.growth.feature4': 'Service Bilingue (FR/EN)',
+    'pricing.managed.growth.feature5': '**5 Heures de Support Incluses / Mois**',
+    'pricing.managed.growth.feature6': '**Création Nouveau Processus (~Bi-Mensuel Estimé)**',
+    'pricing.managed.growth.feature7': 'Bilans de Performance Réguliers',
+    'pricing.managed.growth.feature8': '–',
+    // Premium Features FR
+
+    'pricing.managed.premium.feature1': 'Surveillance Santé des Processus 24/7',
+    'pricing.managed.premium.feature2': 'Sommaire de Performance Mensuel',
+    'pricing.managed.premium.feature3': 'Rapport ROI Trimestriel',
+    'pricing.managed.premium.feature4': 'Service Bilingue (FR/EN)',
+    'pricing.managed.premium.feature5': '**10+ Heures Prioritaires / Mois (<4h Réponse)**',
+    'pricing.managed.premium.feature6': '**Développement Processus Complexes & IA Sur Mesure**',
+    'pricing.managed.premium.feature7': '**Appel Stratégique Mensuel (Feuille de Route)**',
+    'pricing.managed.premium.feature8': '**Support Agent IA & VoiceBot**',
     'pricing.addons': 'Need Chat or Voice Bot creation? Premium Add-On Projects start at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
@@ -234,7 +319,8 @@ export function useTranslation() {
     }
   };
 
-  const t = (key: TranslationKey): string => {
+  // Updated t function to handle potential FeatureKey type
+  const t = (key: TranslationKey | FeatureKey): string => {
     // Fallback logic: if a key doesn't exist in the current locale, try English
     const translation = translations[locale]?.[key] ?? translations['en']?.[key] ?? key;
     // If still no translation found, return the key itself for debugging

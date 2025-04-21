@@ -2,21 +2,56 @@ import React, { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Check } from 'lucide-react';
+import { Check, Minus } from 'lucide-react'; // Import Minus icon
 import { cn } from '@/lib/utils';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge'; // Import Badge
+
+// Define FeatureKey type locally or import if defined elsewhere
+type FeatureKey =
+  | 'pricing.managed.essentials.feature1'
+  | 'pricing.managed.essentials.feature2'
+  | 'pricing.managed.essentials.feature3'
+  | 'pricing.managed.essentials.feature4'
+  | 'pricing.managed.essentials.feature5'
+  | 'pricing.managed.essentials.feature6'
+  | 'pricing.managed.essentials.feature7'
+  | 'pricing.managed.essentials.feature8'
+  | 'pricing.managed.growth.feature1'
+  | 'pricing.managed.growth.feature2'
+  | 'pricing.managed.growth.feature3'
+  | 'pricing.managed.growth.feature4'
+  | 'pricing.managed.growth.feature5'
+  | 'pricing.managed.growth.feature6'
+  | 'pricing.managed.growth.feature7'
+  | 'pricing.managed.growth.feature8'
+  | 'pricing.managed.premium.feature1'
+  | 'pricing.managed.premium.feature2'
+  | 'pricing.managed.premium.feature3'
+  | 'pricing.managed.premium.feature4'
+  | 'pricing.managed.premium.feature5'
+  | 'pricing.managed.premium.feature6'
+  | 'pricing.managed.premium.feature7'
+  | 'pricing.managed.premium.feature8';
+
 
 interface PricingCardProps {
   title: string;
   price: string;
   period?: string;
   description: string;
-  features: string[];
+  features: string[] | FeatureKey[]; // Accept both string[] (for pilot) and FeatureKey[] (for managed)
   isPrimary?: boolean;
   buttonText: string;
-  buttonVariant?: 'default' | 'outline' | 'secondary'; // Added secondary variant
+  buttonVariant?: 'default' | 'outline' | 'secondary';
   additionalInfo?: React.ReactNode;
+  // New prop to pass the tabs component specifically for Managed Care
+  managedTabs?: React.ReactNode;
+  // Pass selected plan to identify specific features like the one to bold
+  selectedPlan?: PlanType;
 }
+
+type PlanType = 'essentials' | 'growth' | 'premium';
 
 function PricingCard({
   title,
@@ -28,7 +63,16 @@ function PricingCard({
   buttonText,
   buttonVariant = 'default',
   additionalInfo,
+  managedTabs, // Destructure the new prop
+  selectedPlan, // Destructure selectedPlan
 }: PricingCardProps) {
+  const { t } = useTranslation();
+
+  // Helper to check if a feature is a FeatureKey
+  const isFeatureKey = (feature: string | FeatureKey): feature is FeatureKey => {
+    return feature.startsWith('pricing.managed.');
+  };
+
   return (
     <Card className={cn(
       "p-8 h-full flex flex-col border-2 transition-all duration-300 hover:shadow-md",
@@ -45,16 +89,57 @@ function PricingCard({
         <p className="mt-4 text-muted-foreground">{description}</p>
       </div>
 
-      <ul className="mt-8 space-y-4 flex-grow">
-        {features.map((feature, index) => (
-          <li key={index} className="flex items-start">
-            {/* Changed checkmark color to accent-dark */}
-            <Check className="h-5 w-5 text-accent-dark flex-shrink-0 mr-2 mt-0.5" />
-            <span>{feature}</span>
-          </li>
-        ))}
+      {/* Render managedTabs (the Tabs component) here if it exists */}
+      {managedTabs && (
+        // Reduced padding-bottom
+        <div className="mt-6 pb-4 border-b border-border">
+          {managedTabs}
+        </div>
+      )}
+
+      {/* Reduced top margin (mt-6 instead of mt-8) */}
+      <ul className="mt-6 space-y-4 flex-grow min-h-[16rem]"> {/* Adjust min-h value as needed */}
+        {features.map((featureOrKey, index) => {
+          let featureText: string;
+          if (isFeatureKey(featureOrKey)) {
+            featureText = t(featureOrKey);
+          } else {
+            // Assume it's a direct string (for pilot features)
+            featureText = featureOrKey;
+          }
+
+          const isPlaceholder = featureText.startsWith('–');
+          const isItalic = featureText.startsWith('*(');
+          // Check if the feature text itself contains '**' OR if it's the specific Growth feature
+          const isBold = featureText.includes('**') ||
+                         (selectedPlan === 'growth' && featureOrKey === 'pricing.managed.growth.feature7');
+
+          // Clean text: remove markers and trim whitespace
+          const cleanText = featureText.replace(/\*\*|\*\(|\)\*|–/g, '').trim();
+
+          return (
+            // Use 'invisible' class to hide the content but keep the space
+            <li key={index} className={cn("flex items-start", isPlaceholder && "invisible")}>
+              {isPlaceholder ? (
+                // Use Minus icon for placeholder for better alignment
+                <Minus className="h-5 w-5 text-muted-foreground flex-shrink-0 mr-2 mt-0.5" />
+              ) : (
+                <Check className="h-5 w-5 text-accent-dark flex-shrink-0 mr-2 mt-0.5" />
+              )}
+              <span className={cn(
+                isBold ? 'font-bold' : '', // Apply bold if isBold is true
+                isItalic ? 'italic text-muted-foreground' : '',
+                isPlaceholder ? 'text-muted-foreground' : '' // Ensure placeholder dash is muted
+              )}>
+                {/* Render empty string for placeholders, otherwise clean text */}
+                {isPlaceholder ? '' : cleanText}
+              </span>
+            </li>
+          );
+        })}
       </ul>
 
+      {/* additionalInfo is now only for the Pilot card */}
       {additionalInfo && (
         <div className="mt-6 pt-6 border-t border-border">
           {additionalInfo}
@@ -77,55 +162,58 @@ function PricingCard({
   );
 }
 
-type PlanType = 'essentials' | 'growth' | 'premium';
+// type PlanType moved outside PricingCard as it's used in Pricing component state
 
 export function Pricing() {
   const { t } = useTranslation();
+  // Default view is 'essentials'
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('essentials');
 
-  const pilotFeatures = [
-    '90-minute deep-dive + ROI worksheet',
-    'Process map & recommendations',
-    'Build 1 foundational n8n workflow',
-    '14-day email support',
-    'Bilingual service (EN/FR)',
-  ];
+  // Pilot features remain as strings from i18n
+  const pilotFeatures = t('pricing.pilot.features') as unknown as string[]; // Assuming t returns string[]
 
-  const managedFeatures = {
+  // Updated managedFeatures to use translation keys
+  const managedFeatures: Record<PlanType, FeatureKey[]> = {
     essentials: [
-      '24/7 health checks for all workflows',
-      'Monthly performance reviews',
-      '2 support hours/month included',
-      'Quarterly ROI report',
-      'Bilingual service (EN/FR)',
+      'pricing.managed.essentials.feature1',
+      'pricing.managed.essentials.feature2',
+      'pricing.managed.essentials.feature3',
+      'pricing.managed.essentials.feature4',
+      'pricing.managed.essentials.feature5',
+      // Removed 'pricing.managed.essentials.feature6'
+      'pricing.managed.essentials.feature7',
+      'pricing.managed.essentials.feature8',
     ],
     growth: [
-      '24/7 health checks for all workflows',
-      'Monthly performance reviews',
-      '5 support hours/month',
-      'One new simple workflow every 2 months',
-      'Quarterly ROI report',
-      'Bilingual service (EN/FR)',
+      'pricing.managed.growth.feature1',
+      'pricing.managed.growth.feature2',
+      'pricing.managed.growth.feature3',
+      'pricing.managed.growth.feature4',
+      'pricing.managed.growth.feature5',
+      'pricing.managed.growth.feature6',
+      'pricing.managed.growth.feature7', // This should be bolded
+      'pricing.managed.growth.feature8',
     ],
     premium: [
-      '24/7 health checks for all workflows',
-      '10+ dedicated hours/month',
-      'Priority support (<4h response)',
-      'AI chat agent fine-tuning',
-      'Voice-bot monitoring',
-      'Monthly strategic roadmap call',
-      'Bilingual service (EN/FR)',
+      'pricing.managed.premium.feature1',
+      'pricing.managed.premium.feature2',
+      'pricing.managed.premium.feature3',
+      'pricing.managed.premium.feature4',
+      'pricing.managed.premium.feature5',
+      'pricing.managed.premium.feature6',
+      'pricing.managed.premium.feature7',
+      'pricing.managed.premium.feature8',
     ],
   };
 
   const getPlanPrice = (plan: PlanType) => {
     switch (plan) {
       case 'essentials':
-        return 'CA $650';
+        return 'CA $679'; // Example price
       case 'growth':
-        return 'CA $1,250';
+        return 'CA $1,259'; // Example price
       case 'premium':
-        return 'CA $2,250+';
+        return 'CA $2,319+'; // Example price
     }
   };
 
@@ -135,7 +223,7 @@ export function Pricing() {
         return 'Start Essentials';
       case 'growth':
         return 'Start Growth';
-      case 'premium':
+        case 'premium':
         return 'Request Premium Quote';
     }
   };
@@ -144,20 +232,21 @@ export function Pricing() {
     <section className="py-20 bg-background" id="pricing">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold mb-4">Transparent Pricing</h2>
+          <h2 className="text-3xl font-bold mb-4">{t('pricing.title')}</h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
           <PricingCard
-            title="Pilot Diagnostic"
-            price="CA $950"
-            description="One-time assessment and first workflow (≤8 nodes, 1 integration)"
+            title={t('pricing.pilot.title')}
+            price={t('pricing.pilot.price')}
+            description={t('pricing.pilot.description')}
+            // Pilot features are still direct strings from i18n
             features={pilotFeatures}
-            buttonText="Book Discovery"
-            buttonVariant="secondary" // Changed variant to secondary
+            buttonText={t('pricing.pilot.button')}
+            buttonVariant="secondary"
             additionalInfo={
               <div className="text-sm text-muted-foreground">
-                <p>Need more? Full Automation Setup starts at CA $2,400 for up to 2 workflows.</p>
+                <p>{t('pricing.pilot.upgrade')}</p>
                 <Button variant="link" className="mt-2 p-0 h-auto" asChild>
                   <a href="#learn-more">Learn more</a>
                 </Button>
@@ -166,14 +255,16 @@ export function Pricing() {
           />
 
           <PricingCard
-            title="Managed Care"
+            title={t('pricing.managed.title')}
             price={getPlanPrice(selectedPlan)}
             period="/month"
-            description="Monitoring, optimisation and incremental improvements"
-            features={managedFeatures[selectedPlan]}
+            description={t('pricing.managed.description')}
+            features={managedFeatures[selectedPlan]} // Pass the array of FeatureKeys
             isPrimary={true}
             buttonText={getPlanButton(selectedPlan)}
-            additionalInfo={
+            selectedPlan={selectedPlan} // Pass selectedPlan down
+            // Pass the Tabs component to the new managedTabs prop
+            managedTabs={
               <div className="space-y-4">
                 <Tabs
                   value={selectedPlan}
@@ -182,7 +273,14 @@ export function Pricing() {
                 >
                   <TabsList className="grid grid-cols-3 w-full">
                     <TabsTrigger value="essentials">Essentials</TabsTrigger>
-                    <TabsTrigger value="growth">Growth</TabsTrigger>
+                    {/* Add Badge to Growth tab */}
+                    <TabsTrigger value="growth" className="relative">
+                      Growth
+                      {/* Apply the custom badge-popular class */}
+                      <Badge className="badge-popular">
+                        Most Popular
+                      </Badge>
+                    </TabsTrigger>
                     <TabsTrigger value="premium">Premium</TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -192,12 +290,9 @@ export function Pricing() {
         </div>
 
         <div className="text-center mt-12 text-sm text-muted-foreground">
+          {/* Render the addons text directly for simplicity */}
           <p>
-            Need Chat or Voice Bot creation?{' '}
-            <a href="#addons" className="text-primary-main hover:underline">
-              Premium Add-On Projects
-            </a>
-            {' '}start at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.
+            {t('pricing.addons')}
           </p>
         </div>
       </div>

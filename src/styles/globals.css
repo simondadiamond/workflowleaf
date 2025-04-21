@@ -196,4 +196,18 @@
     color: hsl(var(--primary-main)); /* Ensure icon color changes */
   }
   /* --- End Custom Header Button Hovers --- */
+
+  /* Custom class for the 'Most Popular' badge */
+  .badge-popular {
+    position: absolute;
+    top: -0.5rem;            /* nudge it up */
+    right: 1.5rem;           /* align to the right edge of the pill */
+    background-color: hsl(var(--primary-main));
+    color: #fff;
+    font-size: 0.625rem;     /* 10px */
+    line-height: 1;
+    padding: 0.125rem 0.5rem;/* 2px top/bottom, 8px left/right */
+    border-radius: var(--radius);
+    white-space: nowrap;
+  }
 }
