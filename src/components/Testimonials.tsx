@@ -16,11 +16,11 @@ interface TestimonialProps {
 
 function Testimonial({ quote, name, company, rating, image, isActive }: TestimonialProps) {
   return (
-    <Card 
+    <Card
       className={cn(
         "p-6 transition-all duration-500 transform",
-        isActive 
-          ? "opacity-100 scale-100" 
+        isActive
+          ? "opacity-100 scale-100"
           : "opacity-0 scale-90 absolute top-0 left-0"
       )}
     >
@@ -98,11 +98,11 @@ export function Testimonials() {
   // Auto slide with pause on hover
   useEffect(() => {
     if (isPaused) return;
-    
+
     const intervalId = setInterval(() => {
       nextTestimonial();
     }, 5000);
-    
+
     return () => clearInterval(intervalId);
   }, [isPaused, testimonials.length]);
 
@@ -112,8 +112,8 @@ export function Testimonials() {
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">{t('testimonials.title')}</h2>
         </div>
-        
-        <div 
+
+        <div
           className="relative"
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
@@ -127,34 +127,34 @@ export function Testimonials() {
               />
             ))}
           </div>
-          
+
           <div className="flex justify-center mt-6 gap-2">
             {testimonials.map((_, index) => (
               <button
                 key={index}
                 onClick={() => setActiveIndex(index)}
                 className={`w-3 h-3 rounded-full transition-colors ${
-                  index === activeIndex ? 'bg-primary-main' : 'bg-gray-300'
+                  index === activeIndex ? 'bg-primary-main' : 'bg-muted' // Use theme color
                 }`}
                 aria-label={`Go to testimonial ${index + 1}`}
               />
             ))}
           </div>
-          
+
           <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 flex justify-between pointer-events-none">
-            <Button 
-              size="icon" 
-              variant="ghost" 
+            <Button
+              size="icon"
+              variant="ghost"
               onClick={prevTestimonial}
               className="pointer-events-auto"
             >
               <ChevronLeft className="h-6 w-6" />
               <span className="sr-only">Previous</span>
             </Button>
-            
-            <Button 
-              size="icon" 
-              variant="ghost" 
+
+            <Button
+              size="icon"
+              variant="ghost"
               onClick={nextTestimonial}
               className="pointer-events-auto"
             >

@@ -32,8 +32,8 @@ function PricingCard({
   return (
     <Card className={cn(
       "p-8 h-full flex flex-col border-2 transition-all duration-300 hover:shadow-md",
-      isPrimary 
-        ? "border-primary-main" 
+      isPrimary
+        ? "border-primary-main"
         : "border-border hover:border-primary-light"
     )}>
       <div>
@@ -44,7 +44,7 @@ function PricingCard({
         </div>
         <p className="mt-4 text-muted-foreground">{description}</p>
       </div>
-      
+
       <ul className="mt-8 space-y-4 flex-grow">
         {features.map((feature, index) => (
           <li key={index} className="flex items-start">
@@ -59,11 +59,14 @@ function PricingCard({
           {additionalInfo}
         </div>
       )}
-      
+
       <div className="mt-8">
-        <Button 
-          className={cn("w-full", isPrimary ? "bg-primary-main hover:bg-primary-hover" : "")} 
-          variant={buttonVariant}
+        <Button
+          className={cn(
+            "w-full",
+            isPrimary ? "bg-primary-main hover:bg-primary-hover text-white" : ""
+          )}
+          variant={buttonVariant} // This button uses the 'outline' variant
           asChild
         >
           <a href="#book">{buttonText}</a>
@@ -142,7 +145,7 @@ export function Pricing() {
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">Transparent Pricing</h2>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
           <PricingCard
             title="Pilot Diagnostic"
@@ -150,7 +153,7 @@ export function Pricing() {
             description="One-time assessment and first workflow (≤8 nodes, 1 integration)"
             features={pilotFeatures}
             buttonText="Book Discovery"
-            buttonVariant="outline"
+            buttonVariant="outline" // This button uses the 'outline' variant
             additionalInfo={
               <div className="text-sm text-muted-foreground">
                 <p>Need more? Full Automation Setup starts at CA $2,400 for up to 2 workflows.</p>
@@ -160,7 +163,7 @@ export function Pricing() {
               </div>
             }
           />
-          
+
           <PricingCard
             title="Managed Care"
             price={getPlanPrice(selectedPlan)}

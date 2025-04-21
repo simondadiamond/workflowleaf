@@ -19,14 +19,15 @@ function PainCard({ title, description, iconSrc, className }: PainCardProps) {
       <div className="flex flex-col items-center text-center">
         <div className="p-3 rounded-full bg-accent-light text-primary-main mb-4">
           {/* Use img tag for SVG */}
-          <img 
-            src={iconSrc} 
+          <img
+            src={iconSrc}
             alt="" // Empty alt as per requirement
-            className="h-8 w-8" 
+            className="h-8 w-8"
             aria-hidden="true" // Hide decorative icon from screen readers
           />
         </div>
         <h3 className="text-xl font-semibold mb-2">{title}</h3>
+
         <p className="text-muted-foreground">{description}</p>
       </div>
     </Card>
@@ -58,8 +59,7 @@ export function PainCards() {
     <section id="challenges" className="py-20 bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          {/* Changed title key */}
-          <h2 className="text-3xl font-bold mb-4">{t('challenges.title')}</h2> 
+          <h2 className="text-3xl font-bold mb-4">{t('challenges.title')}</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {cards.map((card, index) => (

@@ -5,7 +5,7 @@ import { Leaf, Mail, Phone } from 'lucide-react';
 
 export function Footer() {
   const { t, locale } = useTranslation();
-  
+
   // Helper to get the right path based on locale
   const getPath = (path: string) => {
     return locale === 'fr' ? `/fr${path}` : path;
@@ -21,7 +21,7 @@ export function Footer() {
               <Leaf className="h-8 w-8" />
               <span className="ml-2 text-xl font-semibold">WorkflowLeaf</span>
             </div>
-            <p className="mt-4 text-sm text-gray-200">
+            <p className="mt-4 text-sm text-neutral-textLight"> 
               {t('footer.copyright')}
             </p>
             <div className="mt-4">
@@ -34,22 +34,22 @@ export function Footer() {
             <h3 className="text-lg font-semibold mb-4">{t('footer.links')}</h3>
             <ul className="space-y-2">
               <li>
-                <a href={getPath('/')} className="text-gray-200 hover:text-white transition-colors">
+                <a href={getPath('/')} className="text-neutral-textLight hover:text-white transition-colors"> 
                   {t('nav.home')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/services')} className="text-gray-200 hover:text-white transition-colors">
+                <a href={getPath('/services')} className="text-neutral-textLight hover:text-white transition-colors"> 
                   {t('nav.services')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/pricing')} className="text-gray-200 hover:text-white transition-colors">
+                <a href={getPath('/pricing')} className="text-neutral-textLight hover:text-white transition-colors"> 
                   {t('nav.pricing')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/contact')} className="text-gray-200 hover:text-white transition-colors">
+                <a href={getPath('/contact')} className="text-neutral-textLight hover:text-white transition-colors"> 
                   {t('nav.contact')}
                 </a>
               </li>
@@ -61,36 +61,37 @@ export function Footer() {
             <h3 className="text-lg font-semibold mb-4">Legal</h3>
             <ul className="space-y-2">
               <li>
-                <a href={getPath('/privacy')} className="text-gray-200 hover:text-white transition-colors">
+                <a href={getPath('/privacy')} className="text-neutral-textLight hover:text-white transition-colors">
                   {t('footer.privacy')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/terms')} className="text-gray-200 hover:text-white transition-colors">
+                <a href={getPath('/terms')} className="text-neutral-textLight hover:text-white transition-colors"> 
                   {t('footer.terms')}
                 </a>
               </li>
             </ul>
           </div>
 
-          {/* Contact */}
+          {/* Contact 
           <div className="col-span-1">
             <h3 className="text-lg font-semibold mb-4">{t('footer.contact')}</h3>
             <ul className="space-y-3">
               <li className="flex items-center">
                 <Mail className="h-5 w-5 mr-2" />
-                <a href="mailto:hello@workflowleaf.com" className="text-gray-200 hover:text-white transition-colors">
+                <a href="mailto:hello@workflowleaf.com" className="text-neutral-textLight hover:text-white transition-colors">
                   {t('footer.email')}
                 </a>
               </li>
               <li className="flex items-center">
                 <Phone className="h-5 w-5 mr-2" />
-                <a href="tel:+14185551234" className="text-gray-200 hover:text-white transition-colors">
+                <a href="tel:+14185551234" className="text-neutral-textLight hover:text-white transition-colors"> 
                   +1 418-555-1234
                 </a>
               </li>
             </ul>
           </div>
+					*/}
         </div>
       </div>
     </footer>

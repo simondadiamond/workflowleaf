@@ -40,17 +40,17 @@ export function KpiStrip() {
           <h2 className="text-3xl font-bold mb-4">{t('kpi.title')}</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <KpiBlock 
+          <KpiBlock
             icon={<Clock className="h-8 w-8" />}
             value="≈ 15"
             label={t('kpi.hours')}
           />
-          <KpiBlock 
+          <KpiBlock
             icon={<TrendingDown className="h-8 w-8" />}
             value="– 40%"
             label={t('kpi.errors')}
           />
-          <KpiBlock 
+          <KpiBlock
             icon={<CircleDollarSign className="h-8 w-8" />}
             value="2"
             label={t('kpi.breakeven')}

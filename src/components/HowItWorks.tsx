@@ -58,11 +58,10 @@ export function HowItWorks() {
           <h2 className="text-3xl font-bold mb-4">{t('how.title')}</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
-          {/* Connecting line */}
           <div className="absolute top-8 left-1/2 hidden md:block">
             <div className="h-1 bg-accent-main w-[80%] -translate-x-1/2"></div>
           </div>
-          
+
           {steps.map((step, index) => (
             <StepCard
               key={index}
