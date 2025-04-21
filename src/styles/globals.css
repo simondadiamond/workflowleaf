@@ -8,32 +8,34 @@
     --primary-hover: 176 100% 23%;
     --primary-light: 176 50% 80%;
     --primary-dark: 176 100% 21%;
-    
+
     --secondary-main: 170 46% 17%;
     --secondary-hover: 170 46% 11%;
     --secondary-light: 170 23% 71%;
     --secondary-dark: 170 46% 10%;
-    
-    --accent-main: 84 67% 76%;
-    --accent-hover: 84 53% 68%;
-    --accent-light: 84 53% 87%;
-    --accent-dark: 84 33% 60%;
-    
+
+    /* Updated Accent colors (Muted Champagne) */
+    --accent-main: 42 40% 58%;
+    --accent-hover: 42 40% 50%;
+    --accent-light: 42 40% 75%;
+    --accent-dark: 42 40% 45%;
+    --accent-check: 42 40% 58%; /* New token */
+
     --background: 180 15% 97%;
     --foreground: 210 3% 18%;
-    
+
     --card: 180 5% 93%;
     --card-foreground: 210 3% 18%;
-    
+
     --popover: 180 15% 97%;
     --popover-foreground: 210 3% 18%;
-    
+
     --muted: 210 5% 93%;
     --muted-foreground: 210 3% 46%;
-    
+
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    
+
     --radius: 0.5rem;
   }
 
@@ -42,29 +44,31 @@
     --primary-hover: 176 81% 33%;
     --primary-light: 176 81% 70%;
     --primary-dark: 176 81% 25%;
-    
+
     --secondary-main: 170 50% 29%;
     --secondary-hover: 170 50% 19%;
     --secondary-light: 170 25% 40%;
     --secondary-dark: 170 50% 15%;
-    
-    --accent-main: 84 70% 73%;
-    --accent-hover: 84 60% 63%;
-    --accent-light: 84 60% 83%;
-    --accent-dark: 84 40% 55%;
-    
+
+    /* Updated Dark mode accent colors (Proportionally muted) */
+    --accent-main: 42 40% 48%;
+    --accent-hover: 42 40% 40%;
+    --accent-light: 42 40% 65%;
+    --accent-dark: 42 40% 35%;
+    --accent-check: 42 40% 48%; /* New token */
+
     --background: 210 10% 11%;
     --foreground: 210 10% 85%;
-    
+
     --card: 210 10% 17%;
     --card-foreground: 210 10% 85%;
-    
+
     --popover: 210 10% 11%;
     --popover-foreground: 210 10% 85%;
-    
+
     --muted: 210 10% 22%;
     --muted-foreground: 210 10% 64%;
-    
+
     --border: 210 15% 30%;
     --input: 210 15% 30%;
   }
@@ -76,16 +80,37 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Ensure Inter is the base font */
     font-family: 'Inter', system-ui, sans-serif;
   }
 
+  /* Removed .font-mono definition */
+  /*
   .font-mono {
     font-family: 'Roboto Mono', monospace;
   }
+  */
 
   /* Keep the custom focus-visible style but will investigate if it's the cause */
   *:focus-visible {
+    /* Uses ring-accent-main */
     @apply outline-none ring-2 ring-accent-main ring-offset-2;
+  }
+
+  /* Apply filter to logo in dark mode for higher contrast (for header logo) */
+  .dark img[src="/logo.svg"]:not(.footer-logo) {
+    /* Increased brightness to 2.5 */
+    filter: brightness(2.5) contrast(1.1) hue-rotate(10deg); /* Adjust values as needed */
+  }
+
+  /* Apply white filter to the footer logo */
+  .footer-logo {
+    filter: brightness(0) invert(1); /* This filter often turns dark colors white */
+  }
+
+  /* Style list markers with accent color */
+  ul li::marker {
+    color: hsl(var(--accent-check));
   }
 }
 
@@ -100,7 +125,7 @@
 
   /* Increased animation duration to 40s */
   .animate-scroll {
-    animation: scroll 40s linear infinite; 
+    animation: scroll 40s linear infinite;
   }
 
   @keyframes float {
@@ -127,7 +152,48 @@
       transform: translateX(0);
     }
     100% {
-      transform: translateX(-50%); 
+      transform: translateX(-50%);
     }
   }
+
+  /* New utility for text gradient */
+  .text-gradient-forest-teal {
+    background-image: linear-gradient(to right, hsl(var(--secondary-main)), hsl(var(--primary-main)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent; /* Fallback for non-webkit browsers */
+  }
+
+  /* Removed custom utility for CTA button gradient */
+  /*
+  .bg-gradient-forest-teal {
+    background-image: linear-gradient(to right, hsl(var(--secondary-main)), hsl(var(--primary-main)));
+  }
+  */
+
+  /* --- Custom Header Button Hovers --- */
+  /* Target Language Toggle button (size="sm") within the header */
+  header nav button[size="sm"]:hover, /* Desktop */
+  header div > button[size="sm"]:hover /* Mobile */
+  {
+    background-color: transparent; /* Remove background on hover */
+    color: hsl(var(--primary-main)); /* Set text color to teal on hover */
+  }
+
+  /* Target Theme Toggle button (size="icon") within the header */
+  header nav button[size="icon"]:hover, /* Desktop: Icon button in nav */
+  header div > button[size="icon"]:not([aria-label="Toggle Menu"]):hover /* Mobile: Icon button in div, excluding the Menu/X button */
+  {
+    background-color: transparent; /* Remove background on hover */
+    color: hsl(var(--primary-main)); /* Set icon color to teal on hover */
+  }
+
+  /* Ensure specificity for the icons inside the theme toggle button */
+  header nav button[size="icon"]:hover svg,
+  header div > button[size="icon"]:not([aria-label="Toggle Menu"]):hover svg
+  {
+    color: hsl(var(--primary-main)); /* Ensure icon color changes */
+  }
+  /* --- End Custom Header Button Hovers --- */
 }

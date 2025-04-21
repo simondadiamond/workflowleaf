@@ -12,12 +12,16 @@ const buttonVariants = cva(
         default: 'bg-primary text-primary-foreground hover:bg-primary/90',
         destructive:
           'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        // Updated outline variant for distinct and accessible hover state
+        // Outline variant remains as is
         outline:
-          'border border-input bg-background hover:bg-accent hover:text-primary-main', // Changed hover:text-secondary-main to hover:text-primary-main
+          'border border-input bg-background hover:bg-accent-hover hover:text-accent-dark',
+        // Redefined secondary variant:
+        // - Added border and background to make it look like a button
+        // - Kept the desired hover effect (teal text, subtle shadow)
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
+          'border border-input bg-background text-foreground hover:text-primary-main hover:shadow-sm',
+        // Ghost variant remains as is
+        ghost: 'hover:text-primary-main',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

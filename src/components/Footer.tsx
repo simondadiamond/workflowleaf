@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { LanguageToggle } from '@/components/LanguageToggle';
-import { Leaf, Mail, Phone } from 'lucide-react';
+import { Mail, Phone } from 'lucide-react'; // Removed Leaf import
 
 export function Footer() {
   const { t, locale } = useTranslation();
@@ -18,10 +18,11 @@ export function Footer() {
           {/* Logo and company info */}
           <div className="col-span-1 md:col-span-1">
             <div className="flex items-center">
-              <Leaf className="h-8 w-8" />
+              {/* Replaced Leaf icon with img tag and added footer-logo class */}
+              <img src="/logo.svg" alt="WorkflowLeaf Logo" className="h-8 w-8 text-primary-main footer-logo" />
               <span className="ml-2 text-xl font-semibold">WorkflowLeaf</span>
             </div>
-            <p className="mt-4 text-sm text-neutral-textLight"> 
+            <p className="mt-4 text-sm text-neutral-textLight">
               {t('footer.copyright')}
             </p>
             <div className="mt-4">
@@ -34,22 +35,22 @@ export function Footer() {
             <h3 className="text-lg font-semibold mb-4">{t('footer.links')}</h3>
             <ul className="space-y-2">
               <li>
-                <a href={getPath('/')} className="text-neutral-textLight hover:text-white transition-colors"> 
+                <a href={getPath('/')} className="text-neutral-textLight hover:text-white transition-colors">
                   {t('nav.home')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/services')} className="text-neutral-textLight hover:text-white transition-colors"> 
+                <a href={getPath('/services')} className="text-neutral-textLight hover:text-white transition-colors">
                   {t('nav.services')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/pricing')} className="text-neutral-textLight hover:text-white transition-colors"> 
+                <a href={getPath('/pricing')} className="text-neutral-textLight hover:text-white transition-colors">
                   {t('nav.pricing')}
                 </a>
               </li>
               <li>
-                <a href={getPath('/contact')} className="text-neutral-textLight hover:text-white transition-colors"> 
+                <a href={getPath('/contact')} className="text-neutral-textLight hover:text-white transition-colors">
                   {t('nav.contact')}
                 </a>
               </li>
@@ -66,14 +67,14 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href={getPath('/terms')} className="text-neutral-textLight hover:text-white transition-colors"> 
+                <a href={getPath('/terms')} className="text-neutral-textLight hover:text-white transition-colors">
                   {t('footer.terms')}
                 </a>
               </li>
             </ul>
           </div>
 
-          {/* Contact 
+          {/* Contact */}
           <div className="col-span-1">
             <h3 className="text-lg font-semibold mb-4">{t('footer.contact')}</h3>
             <ul className="space-y-3">
@@ -85,13 +86,12 @@ export function Footer() {
               </li>
               <li className="flex items-center">
                 <Phone className="h-5 w-5 mr-2" />
-                <a href="tel:+14185551234" className="text-neutral-textLight hover:text-white transition-colors"> 
+                <a href="tel:+14185551234" className="text-neutral-textLight hover:text-white transition-colors">
                   +1 418-555-1234
                 </a>
               </li>
             </ul>
           </div>
-					*/}
         </div>
       </div>
     </footer>

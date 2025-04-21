@@ -1,6 +1,6 @@
 /**
  * WorkflowLeaf Theme Tokens
- * 
+ *
  * This file contains all the design tokens used throughout the application.
  * It serves as the single source of truth for colors, typography, spacing, etc.
  */
@@ -21,12 +21,13 @@ export const theme = {
       light: '#A7C5C2',
       dark: '#0D2925',
     },
-    // Accent/highlight colors
+    // Accent/highlight colors (Muted Champagne)
     accent: {
-      main: '#CDEB97',
-      hover: '#B9DA7E',
-      light: '#E6F4CB',
-      dark: '#A9C46D',
+      main: '#BFA46A', // HSL: 42 40% 58%
+      hover: '#A68A5C', // HSL: 42 40% 50%
+      light: '#E6D9B8', // HSL: 42 40% 75%
+      dark: '#997D52', // HSL: 42 40% 45%
+      check: '#BFA46A', // HSL: 42 40% 58% (Same as main)
     },
     // Neutral colors
     neutral: {
@@ -43,11 +44,18 @@ export const theme = {
       error: '#EF4444',
       info: '#3B82F6',
     },
-    // Dark mode colors
+    // Dark mode colors (Proportionally muted)
     dark: {
       primary: '#18C3C0',
       secondary: '#217572',
-      accent: '#D0ED9C',
+      // Dark mode accent colors (Lightness reduced by ~10%)
+      accent: {
+        main: '#A68A5C', // HSL: 42 40% 48%
+        hover: '#806A4A', // HSL: 42 40% 40%
+        light: '#D9C9A3', // HSL: 42 40% 65%
+        dark: '#735C40', // HSL: 42 40% 35%
+        check: '#A68A5C', // HSL: 42 40% 48% (Same as main)
+      },
       background: '#1A1D1D',
       card: '#2A2D2D',
       text: '#D9DADA',
@@ -55,7 +63,7 @@ export const theme = {
       border: '#4B5563',
     },
   },
-  
+
   typography: {
     fontFamily: {
       base: "'Inter', system-ui, sans-serif",
@@ -85,7 +93,7 @@ export const theme = {
       loose: '1.75',
     },
   },
-  
+
   spacing: {
     0: '0px',
     1: '0.25rem', // 4px
@@ -101,7 +109,7 @@ export const theme = {
     20: '5rem', // 80px
     24: '6rem', // 96px
   },
-  
+
   borderRadius: {
     none: '0',
     sm: '4px',
@@ -110,19 +118,19 @@ export const theme = {
     lg: '16px',
     full: '9999px',
   },
-  
+
   shadows: {
     sm: '0 2px 8px rgba(0, 0, 0, 0.1)',
     md: '0 4px 12px rgba(0, 0, 0, 0.1)',
     lg: '0 8px 24px rgba(0, 0, 0, 0.1)',
   },
-  
+
   transitions: {
     DEFAULT: '150ms ease',
     slow: '300ms ease',
     fast: '100ms ease',
   },
-  
+
   breakpoints: {
     sm: '640px',
     md: '768px',
@@ -130,7 +138,7 @@ export const theme = {
     xl: '1280px',
     '2xl': '1536px',
   },
-  
+
   zIndex: {
     0: '0',
     10: '10',

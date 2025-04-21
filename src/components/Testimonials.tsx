@@ -30,6 +30,7 @@ function Testimonial({ quote, name, company, rating, image, isActive }: Testimon
             <Star
               key={i}
               className={`w-5 h-5 ${
+                // Uses accent-dark for filled stars
                 i < rating ? 'text-accent-dark fill-accent-dark' : 'text-muted'
               }`}
             />
@@ -99,71 +100,4 @@ export function Testimonials() {
   useEffect(() => {
     if (isPaused) return;
 
-    const intervalId = setInterval(() => {
-      nextTestimonial();
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [isPaused, testimonials.length]);
-
-  return (
-    <section className="py-20 bg-secondary-main/5">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold mb-4">{t('testimonials.title')}</h2>
-        </div>
-
-        <div
-          className="relative"
-          onMouseEnter={() => setIsPaused(true)}
-          onMouseLeave={() => setIsPaused(false)}
-        >
-          <div className="relative h-[300px]">
-            {testimonials.map((testimonial, index) => (
-              <Testimonial
-                key={index}
-                {...testimonial}
-                isActive={index === activeIndex}
-              />
-            ))}
-          </div>
-
-          <div className="flex justify-center mt-6 gap-2">
-            {testimonials.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => setActiveIndex(index)}
-                className={`w-3 h-3 rounded-full transition-colors ${
-                  index === activeIndex ? 'bg-primary-main' : 'bg-muted' // Use theme color
-                }`}
-                aria-label={`Go to testimonial ${index + 1}`}
-              />
-            ))}
-          </div>
-
-          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 flex justify-between pointer-events-none">
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={prevTestimonial}
-              className="pointer-events-auto"
-            >
-              <ChevronLeft className="h-6 w-6" />
-              <span className="sr-only">Previous</span>
-            </Button>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={nextTestimonial}
-              className="pointer-events-auto"
-            >
-              <ChevronRight className="h-6 w-6" />
-              <span className="sr-only">Next</span>
-            </Button>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
+    const intervalId = setInterval(() =>

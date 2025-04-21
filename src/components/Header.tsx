@@ -3,7 +3,7 @@ import { useTranslation } from '@/lib/i18n';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Menu, X, Leaf, Moon, Sun } from 'lucide-react';
+import { Menu, X, Moon, Sun } from 'lucide-react'; // Removed Leaf import
 
 export function Header() {
   const { t, locale } = useTranslation();
@@ -57,7 +57,8 @@ export function Header() {
         <div className="flex justify-between items-center">
           {/* Logo */}
           <a href={getPath('/')} className="flex items-center">
-            <Leaf className="h-8 w-8 text-primary-main" />
+            {/* Replaced Leaf icon with img tag */}
+            <img src="/logo.svg" alt="WorkflowLeaf Logo" className="h-8 w-8 text-primary-main" />
             <span className="ml-2 text-xl font-semibold">WorkflowLeaf</span>
           </a>
 
@@ -73,15 +74,16 @@ export function Header() {
               </a>
             ))}
             <LanguageToggle />
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               onClick={toggleDarkMode}
               className="mr-2"
             >
               {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
-            <Button asChild>
+            {/* Styled the "Book a Call" button the same as the Hero CTA */}
+            <Button asChild className="bg-primary-main hover:bg-primary-hover text-white">
               <a href="#book">{t('nav.book')}</a>
             </Button>
           </nav>
@@ -95,7 +97,11 @@ export function Header() {
               onClick={toggleDarkMode}
               className="mr-2"
             >
-              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              {isDark ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
             </Button>
             <Button
               variant="ghost"
@@ -127,7 +133,8 @@ export function Header() {
                 {item.label}
               </a>
             ))}
-            <Button className="w-full mt-4" asChild>
+            {/* Styled the mobile "Book a Call" button */}
+            <Button className="w-full mt-4 bg-primary-main hover:bg-primary-hover text-white" asChild>
               <a href="#book" onClick={() => setIsMobileMenuOpen(false)}>
                 {t('nav.book')}
               </a>

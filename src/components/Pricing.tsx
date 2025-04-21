@@ -14,7 +14,7 @@ interface PricingCardProps {
   features: string[];
   isPrimary?: boolean;
   buttonText: string;
-  buttonVariant?: 'default' | 'outline';
+  buttonVariant?: 'default' | 'outline' | 'secondary'; // Added secondary variant
   additionalInfo?: React.ReactNode;
 }
 
@@ -48,7 +48,8 @@ function PricingCard({
       <ul className="mt-8 space-y-4 flex-grow">
         {features.map((feature, index) => (
           <li key={index} className="flex items-start">
-            <Check className="h-5 w-5 text-primary-main flex-shrink-0 mr-2 mt-0.5" />
+            {/* Changed checkmark color to accent-dark */}
+            <Check className="h-5 w-5 text-accent-dark flex-shrink-0 mr-2 mt-0.5" />
             <span>{feature}</span>
           </li>
         ))}
@@ -66,7 +67,7 @@ function PricingCard({
             "w-full",
             isPrimary ? "bg-primary-main hover:bg-primary-hover text-white" : ""
           )}
-          variant={buttonVariant} // This button uses the 'outline' variant
+          variant={buttonVariant}
           asChild
         >
           <a href="#book">{buttonText}</a>
@@ -153,7 +154,7 @@ export function Pricing() {
             description="One-time assessment and first workflow (≤8 nodes, 1 integration)"
             features={pilotFeatures}
             buttonText="Book Discovery"
-            buttonVariant="outline" // This button uses the 'outline' variant
+            buttonVariant="secondary" // Changed variant to secondary
             additionalInfo={
               <div className="text-sm text-muted-foreground">
                 <p>Need more? Full Automation Setup starts at CA $2,400 for up to 2 workflows.</p>

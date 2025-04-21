@@ -1,7 +1,8 @@
 import React from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { Card } from '@/components/ui/card';
-import { MapPin, HardDrive, ActivitySquare } from 'lucide-react';
+// Updated icon imports
+import { Search, Settings, Rocket } from 'lucide-react';
 
 interface StepCardProps {
   title: string;
@@ -14,10 +15,12 @@ function StepCard({ title, description, icon, step }: StepCardProps) {
   return (
     <div className="flex flex-col items-center">
       <div className="relative">
-        <div className="flex items-center justify-center w-16 h-16 bg-primary-main rounded-full text-white mb-4">
+        {/* Icon color is white */}
+        <div className="flex items-center justify-center w-16 h-16 bg-primary-dark rounded-full text-white mb-4">
           {icon}
         </div>
-        <div className="absolute -top-2 -right-2 w-8 h-8 bg-accent-main rounded-full flex items-center justify-center text-secondary-main font-semibold">
+        {/* Updated badge background to accent-light */}
+        <div className="absolute -top-2 -right-2 w-8 h-8 bg-accent-light rounded-full flex items-center justify-center text-foreground font-semibold">
           {step}
         </div>
       </div>
@@ -34,19 +37,19 @@ export function HowItWorks() {
     {
       title: t('how.step1.title'),
       description: t('how.step1.description'),
-      icon: <MapPin className="h-8 w-8" />,
+      icon: <Search className="h-8 w-8" />, // Changed icon to Search
       step: 1,
     },
     {
       title: t('how.step2.title'),
       description: t('how.step2.description'),
-      icon: <HardDrive className="h-8 w-8" />,
+      icon: <Settings className="h-8 w-8" />, // Changed icon to Settings
       step: 2,
     },
     {
       title: t('how.step3.title'),
       description: t('how.step3.description'),
-      icon: <ActivitySquare className="h-8 w-8" />,
+      icon: <Rocket className="h-8 w-8" />, // Changed icon to Rocket
       step: 3,
     },
   ];
@@ -58,6 +61,7 @@ export function HowItWorks() {
           <h2 className="text-3xl font-bold mb-4">{t('how.title')}</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
+          {/* Connecting line - Uses theme color bg-accent-main */}
           <div className="absolute top-8 left-1/2 hidden md:block">
             <div className="h-1 bg-accent-main w-[80%] -translate-x-1/2"></div>
           </div>

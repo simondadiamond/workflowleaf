@@ -1,27 +1,36 @@
 import React from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
-import { CircuitBoard, Leaf } from 'lucide-react';
+// Removed unused imports: CircuitBoard, Leaf
 
 export function Hero() {
   const { t } = useTranslation();
+
+  // Split the title into two lines based on the newline character
+  const titleLines = t('hero.title').split('\n');
 
   return (
     <section className="pt-32 pb-20 bg-gradient-to-br from-primary-main/10 via-background to-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row items-center gap-12">
-          <div className="md:w-1/2 space-y-6">
-            <h1 className="text-4xl md:text-5xl font-bold leading-tight">
-              {t('hero.title')}
+          <div className="md:w-full text-center space-y-6"> {/* Changed to full width and centered text */}
+            <h1 className="text-4xl md:text-6xl font-bold leading-tight"> {/* Increased font size */}
+              {/* Render the first line */}
+              {titleLines[0]}
+              <br /> {/* Add a line break */}
+              {/* Render the second line with gradient */}
+              <span className="text-gradient-forest-teal">
+                {titleLines[1]}
+              </span>
             </h1>
-            <p className="text-xl text-muted-foreground">
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto"> {/* Added max-width and auto margin for centering */}
               {t('hero.subtitle')}
             </p>
             <div className="pt-4">
               <Button
                 size="lg"
                 asChild
-                // Added classes to match the primary pricing button style
+                // Styled to match the solid teal button
                 className="text-base bg-primary-main hover:bg-primary-hover text-white"
               >
                 <a href="#book">
@@ -31,39 +40,8 @@ export function Hero() {
             </div>
           </div>
 
-          <div className="md:w-1/2 flex justify-center">
-            <div className="relative w-[300px] h-[300px] md:w-[400px] md:h-[400px]">
-              {/* Leaf outline with circuit board inside */}
-              <div className="absolute inset-0 animate-float">
-                <div className="relative w-full h-full">
+          {/* Removed the image/SVG placeholder div */}
 
-                  <svg
-                    viewBox="0 0 200 200"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="w-full h-full text-primary-main"
-                  >
-                    <path
-                      d="M100 10C120 10 160 30 180 100C160 170 120 190 100 190C80 190 40 170 20 100C40 30 80 10 100 10Z"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      fill="transparent"
-                    />
-                  </svg>
-
-
-                  <div className="absolute inset-[15%] flex items-center justify-center opacity-70">
-                    <CircuitBoard className="w-full h-full text-primary-main" />
-                  </div>
-
-                  {/* Small leaf in the center */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Leaf className="w-16 h-16 text-accent-main animate-pulse" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>

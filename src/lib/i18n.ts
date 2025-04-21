@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 
-type TranslationKey = 
-  | 'hero.title' 
-  | 'hero.subtitle' 
+type TranslationKey =
+  | 'hero.title'
+  | 'hero.subtitle'
   | 'hero.cta'
   | 'nav.home'
   | 'nav.services'
@@ -12,15 +12,6 @@ type TranslationKey =
   | 'language.toggle'
   | 'cta.title'
   | 'cta.button'
-  // Old pain keys (commented out or remove if sure)
-  // | 'pain.title'
-  // | 'pain.card1.title'
-  // | 'pain.card1.description'
-  // | 'pain.card2.title'
-  // | 'pain.card2.description'
-  // | 'pain.card3.title'
-  // | 'pain.card3.description'
-  // New challenges keys
   | 'challenges.title'
   | 'challenges.rent.title'
   | 'challenges.rent.description'
@@ -35,11 +26,25 @@ type TranslationKey =
   | 'how.step2.description'
   | 'how.step3.title'
   | 'how.step3.description'
-  | 'kpi.title'
-  | 'kpi.hours'
-  | 'kpi.errors'
-  | 'kpi.breakeven'
-  | 'kpi.disclaimer'
+  // Updated KPI Keys
+  | 'kpi.sectionTitle'
+  | 'kpi.introText'
+  | 'kpi.time_saved.title'
+  | 'kpi.time_saved.value'
+  | 'kpi.time_saved.label'
+  | 'kpi.errors_reduced.title'
+  | 'kpi.errors_reduced.value'
+  | 'kpi.errors_reduced.label'
+  | 'kpi.roi.title'
+  | 'kpi.roi.value'
+  | 'kpi.roi.label'
+  | 'kpi.footnote'
+  // Old KPI Keys (commented out for reference, can be removed)
+  // | 'kpi.title'
+  // | 'kpi.hours'
+  // | 'kpi.errors'
+  // | 'kpi.breakeven'
+  // | 'kpi.disclaimer'
   | 'pilot.title'
   | 'pilot.description'
   | 'partners.title'
@@ -65,9 +70,9 @@ type TranslationKey =
 
 const translations: Record<string, Record<TranslationKey, string>> = {
   en: {
-    'hero.title': 'Streamline Your Property Management Workflow',
-    'hero.subtitle': 'Custom AI solutions that automate administrative tasks, saving you time and reducing errors.',
-    'hero.cta': 'Book a Free Consultation',
+    'hero.title': 'Reclaim Your Hours.\nGrow Your Portfolio Effortlessly.',
+    'hero.subtitle': 'Smart automation for property managers. Stop wasting time on repetitive tasks, focus on scaling your properties.',
+    'hero.cta': 'Book Free Consult',
     'nav.home': 'Home',
     'nav.services': 'Services',
     'nav.pricing': 'Pricing',
@@ -76,26 +81,39 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'language.toggle': 'Fr',
     'cta.title': 'Ready to transform your property management workflow?',
     'cta.button': 'Schedule Your Free Consultation',
-    // Updated Challenges Section
     'challenges.title': 'The Challenges We Solve',
-    'challenges.rent.title': 'Never Chase Late Rent Again',
-    'challenges.rent.description': 'Automated SMS & PAD reminders boost on‑time payments by 30% and reclaim 4 hrs of your month.',
-    'challenges.maintenance.title': 'Maintenance Tickets Solved in 60 Seconds',
-    'challenges.maintenance.description': 'Form‑ or email‑triggered workflow parses issues instantly, creates help‑desk tickets, and notifies vendors—no bots needed.',
-    'challenges.onboarding.title': 'Onboard Quality Tenants in Minutes',
-    'challenges.onboarding.description': 'Intake form → background & credit‑check API → summary email + DocuSign link—move‑ins happen in under 10 minutes.',
+    'challenges.rent.title': 'Stop Chasing Late Rent.',
+    'challenges.rent.description': 'Get paid faster and save hours every month. Our automated reminders encourage on-time payments (improving consistency by up to 30%!) and free you from chasing tenants, giving you back valuable time.',
+    'challenges.maintenance.title': 'Handle Maintenance Requests Instantly.',
+    'challenges.maintenance.description': 'Stop drowning in emails and calls. Whether requests come via form or email, our system instantly organizes them, notifies the right vendor, and keeps track—getting issues actioned in minutes, not hours.',
+    'challenges.onboarding.title': 'Onboard Great Tenants Faster.',
+    'challenges.onboarding.description': 'Fill your vacancies quicker with a smooth, digital process. Collect applications, automatically run background checks, and send lease documents for e-signature in minutes. Reduce paperwork and delays, getting reliable tenants moved in sooner.',
     'how.title': 'How It Works',
-    'how.step1.title': 'Discovery',
-    'how.step1.description': 'We map your current workflows and identify automation opportunities.',
-    'how.step2.title': 'Implementation',
-    'how.step2.description': 'We build custom integrations and automations for your business.',
-    'how.step3.title': 'Optimization',
-    'how.step3.description': 'We continuously monitor and improve your automated workflows.',
-    'kpi.title': 'Expected Outcomes',
-    'kpi.hours': 'hrs admin saved/month',
-    'kpi.errors': 'manual errors',
-    'kpi.breakeven': 'months to break-even',
-    'kpi.disclaimer': 'Real metrics from Pilot Partners coming soon.',
+    'how.step1.title': '1. Discovery',
+    'how.step1.description': 'We dive into your current processes to pinpoint exactly where automation can save you the most time and money.',
+    'how.step2.title': '2. Build Your Solution',
+    'how.step2.description': 'Our team designs and builds the custom automated workflows tailored to streamline your specific property management tasks.',
+    'how.step3.title': '3. Launch & Optimize',
+    'how.step3.description': 'We launch your automations and continuously monitor performance, making adjustments to ensure peak efficiency and adapt to your evolving needs.',
+    // Updated KPI Section
+    'kpi.sectionTitle': 'Expected Outcomes',
+    'kpi.introText': 'Based on typical results for property managers like you:',
+    'kpi.time_saved.title': 'Save Valuable Time',
+    'kpi.time_saved.value': '~ 15 Hours',
+    'kpi.time_saved.label': 'typical monthly admin time saved',
+    'kpi.errors_reduced.title': 'Reduce Costly Errors',
+    'kpi.errors_reduced.value': 'Up to 40%',
+    'kpi.errors_reduced.label': 'reduction in manual data errors',
+    'kpi.roi.title': 'See Fast ROI',
+    'kpi.roi.value': '~ 2 Months',
+    'kpi.roi.label': 'typical time to break-even on investment',
+    'kpi.footnote': '*Estimates based on typical client scenarios. Real metrics from pilot partners coming soon.',
+    // Old KPI keys (can be removed later)
+    // 'kpi.title': 'Expected Outcomes',
+    // 'kpi.hours': 'hrs admin saved/month',
+    // 'kpi.errors': 'manual errors',
+    // 'kpi.breakeven': 'months to break-even',
+    // 'kpi.disclaimer': 'Real metrics from Pilot Partners coming soon.',
     'pilot.title': 'Become a Pilot Partner',
     'pilot.description': 'Get 30% off our CA $950 Diagnostic in exchange for an honest testimonial.',
     'partners.title': 'Trusted & Supported By',
@@ -120,9 +138,9 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'footer.email': 'hello@workflowleaf.com'
   },
   fr: {
-    'hero.title': 'Optimisez Votre Gestion Immobilière',
-    'hero.subtitle': 'Solutions d\'IA personnalisées qui automatisent les tâches administratives, vous faisant gagner du temps et réduisant les erreurs.',
-    'hero.cta': 'Réserver une Consultation Gratuite',
+    'hero.title': 'Récupérez vos heures.\nDéveloppez votre parc immobilier sans effort.',
+    'hero.subtitle': 'Automatisation intelligente pour gestionnaires immobiliers au Québec. Cessez de perdre du temps en tâches répétitives, concentrez-vous sur la croissance de votre parc.',
+    'hero.cta': 'Consultation Gratuite',
     'nav.home': 'Accueil',
     'nav.services': 'Services',
     'nav.pricing': 'Tarification',
@@ -131,29 +149,42 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'language.toggle': 'En',
     'cta.title': 'Prêt à transformer votre processus de gestion immobilière?',
     'cta.button': 'Planifiez Votre Consultation Gratuite',
-    // Updated Challenges Section - French
-    'challenges.title': 'Les Défis Que Nous Relevons',
-    'challenges.rent.title': 'Ne Courez Plus Jamais Après les Loyers en Retard',
-    'challenges.rent.description': 'Les rappels automatisés par SMS et DPA augmentent les paiements à temps de 30 % et vous redonnent 4 heures par mois.',
-    'challenges.maintenance.title': 'Billets de Maintenance Résolus en 60 Secondes',
-    'challenges.maintenance.description': 'Un flux déclenché par formulaire ou e-mail analyse instantanément les problèmes, crée des billets d\'assistance et avertit les fournisseurs—aucun bot requis.',
-    'challenges.onboarding.title': 'Intégrez des Locataires de Qualité en Quelques Minutes',
-    'challenges.onboarding.description': 'Formulaire d\'admission → API de vérification des antécédents et du crédit → e-mail récapitulatif + lien DocuSign—les emménagements se font en moins de 10 minutes.',
+    'challenges.title': 'Les défis que nous relevons',
+    'challenges.rent.title': 'Ne perdez plus de temps à courir après les loyers.',
+    'challenges.rent.description': 'Soyez payé plus rapidement et économisez des heures chaque mois. Nos rappels automatisés favorisent les paiements ponctuels (améliorant la régularité jusqu\'à 30%!) et vous libèrent de la chasse aux locataires, vous redonnant un temps précieux.',
+    'challenges.maintenance.title': 'Traitez les demandes de maintenance instantanément.',
+    'challenges.maintenance.description': 'Ne vous noyez plus dans les courriels et les appels. Que les demandes arrivent par formulaire ou courriel, notre système les organise instantanément, avise le bon fournisseur et assure le suivi – les problèmes sont pris en charge en quelques minutes, pas en heures.',
+    'challenges.onboarding.title': 'Intégrez de bons locataires plus rapidement.',
+    'challenges.onboarding.description': 'Louez vos logements plus vite avec un processus numérique fluide. Collectez les candidatures, effectuez automatiquement les vérifications d\'antécédents et envoyez les baux pour signature électronique en quelques minutes. Réduisez la paperasse et les délais pour accueillir plus tôt des locataires fiables.',
     'how.title': 'Comment Ça Marche',
-    'how.step1.title': 'Découverte',
-    'how.step1.description': 'Nous cartographions vos flux de travail actuels et identifions les opportunités d\'automatisation.',
-    'how.step2.title': 'Implémentation',
-    'how.step2.description': 'Nous construisons des intégrations et des automatisations personnalisées pour votre entreprise.',
-    'how.step3.title': 'Optimisation',
-    'how.step3.description': 'Nous surveillons et améliorons continuellement vos flux de travail automatisés.',
-    'kpi.title': 'Résultats Attendus',
-    'kpi.hours': 'h admin économisées/mois',
-    'kpi.errors': 'erreurs manuelles',
-    'kpi.breakeven': 'mois pour rentabiliser',
-    'kpi.disclaimer': 'Métriques réelles des Partenaires Pilotes à venir.',
+    'how.step1.title': '1. Découverte',
+    'how.step1.description': 'Nous analysons vos processus actuels pour cibler précisément où l\'automatisation peut vous faire économiser le plus de temps et d\'argent.',
+    'how.step2.title': '2. Créer votre solution',
+    'how.step2.description': 'Notre équipe conçoit et met en place les flux de travail automatisés sur mesure pour simplifier vos tâches spécifiques de gestion immobilière.',
+    'how.step3.title': '3. Lancement et Optimisation',
+    'how.step3.description': 'Nous lançons vos automatisations et surveillons continuellement la performance, en apportant des ajustements pour assurer une efficacité maximale et nous adapter à vos besoins changeants.',
+    // Updated KPI Section - French
+    'kpi.sectionTitle': 'Résultats Attendus',
+    'kpi.introText': 'Basé sur les résultats typiques pour des gestionnaires immobiliers comme vous :',
+    'kpi.time_saved.title': 'Économisez un temps précieux',
+    'kpi.time_saved.value': '~ 15 Heures',
+    'kpi.time_saved.label': 'temps administratif économisé par mois (typique)',
+    'kpi.errors_reduced.title': 'Réduisez les erreurs coûteuses',
+    'kpi.errors_reduced.value': 'Jusqu\'à 40%',
+    'kpi.errors_reduced.label': 'réduction des erreurs de saisie manuelle',
+    'kpi.roi.title': 'Rentabilisez rapidement',
+    'kpi.roi.value': '~ 2 Mois',
+    'kpi.roi.label': 'délai typique pour atteindre le seuil de rentabilité',
+    'kpi.footnote': '*Estimations basées sur des scénarios clients typiques. Métriques réelles de nos partenaires pilotes à venir.',
+    // Old KPI keys (can be removed later)
+    // 'kpi.title': 'Résultats Attendus',
+    // 'kpi.hours': 'h admin économisées/mois',
+    // 'kpi.errors': 'erreurs manuelles',
+    // 'kpi.breakeven': 'mois pour rentabiliser',
+    // 'kpi.disclaimer': 'Métriques réelles des Partenaires Pilotes à venir.',
     'pilot.title': 'Devenez Partenaire Pilote',
     'pilot.description': 'Obtenez 30% de réduction sur notre Diagnostic de 950$ CA en échange d\'un témoignage honnête.',
-    'partners.title': 'Fait Confiance et Soutenu Par',
+    'partners.title': 'Soutenu par',
     'pricing.title': 'Tarification Transparente',
     'pricing.pilot.title': 'Diagnostic Pilote',
     'pricing.pilot.price': '950$ CA',
@@ -164,15 +195,15 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pricing.managed.title': 'Service Géré',
     'pricing.managed.description': 'Surveillance, optimisation et améliorations progressives',
     'pricing.managed.features.essentials': ['Surveillance 24/7 de tous les flux', 'Revues mensuelles de performance', '2 heures de support/mois incluses', 'Rapport ROI trimestriel', 'Service bilingue (EN/FR)'],
-    'pricing.managed.features.growth': ['Surveillance 24/7 de tous les flux', 'Revues mensuelles de performance', '5 heures de support/mois', 'Un nouveau flux simple tous les 2 mois', 'Rapport ROI trimestriel', 'Service bilingue (EN/FR)'],
-    'pricing.managed.features.premium': ['Surveillance 24/7 de tous les flux', '10+ heures dédiées/mois', 'Support prioritaire (<4h réponse)', 'Ajustement agent chat IA', 'Surveillance robot vocal', 'Appel stratégique mensuel', 'Service bilingue (EN/FR)'],
-    'pricing.addons': 'Besoin de Chat ou Robot Vocal? Les Projets Premium Add-On commencent à 4 500$ CA (Chat) et 6 500$ CA (Vocal). Contactez-nous pour plus de détails.',
-    'footer.copyright': '© 2025 WorkflowLeaf. Tous droits réservés.',
-    'footer.links': 'Liens Rapides',
-    'footer.privacy': 'Politique de Confidentialité',
-    'footer.terms': 'Conditions d\'Utilisation',
-    'footer.contact': 'Contactez-Nous',
-    'footer.email': 'bonjour@workflowleaf.com'
+    'pricing.managed.features.growth': ['24/7 health checks for all workflows', 'Monthly performance reviews', '5 support hours/month', 'One new simple workflow every 2 months', 'Quarterly ROI report', 'Bilingual service (EN/FR)'],
+    'pricing.managed.features.premium': ['Surveillance 24/7 de tous les flux', '10+ dedicated hours/month', 'Priority support (<4h response)', 'AI chat agent fine-tuning', 'Voice-bot monitoring', 'Monthly strategic roadmap call', 'Bilingual service (EN/FR)'],
+    'pricing.addons': 'Need Chat or Voice Bot creation? Premium Add-On Projects start at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.',
+    'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
+    'footer.links': 'Quick Links',
+    'footer.privacy': 'Privacy Policy',
+    'footer.terms': 'Terms of Service',
+    'footer.contact': 'Contact Us',
+    'footer.email': 'hello@workflowleaf.com'
   }
 };
 
@@ -187,13 +218,13 @@ export function useTranslation() {
 
   const toggleLocale = () => {
     setLocale(prev => prev === 'en' ? 'fr' : 'en');
-    
+
     if (typeof window !== 'undefined') {
       const currentPath = window.location.pathname;
-      const newPath = locale === 'en' 
-        ? `/fr${currentPath}` 
+      const newPath = locale === 'en'
+        ? `/fr${currentPath}`
         : currentPath.replace(/^\/fr/, '');
-      
+
       // Use Astro's view transitions API if available, otherwise fallback to full reload
       if ((window as any).astro && (window as any).astro.navigate) {
         (window as any).astro.navigate(newPath || '/');
@@ -206,6 +237,10 @@ export function useTranslation() {
   const t = (key: TranslationKey): string => {
     // Fallback logic: if a key doesn't exist in the current locale, try English
     const translation = translations[locale]?.[key] ?? translations['en']?.[key] ?? key;
+    // If still no translation found, return the key itself for debugging
+    if (translation === key && !translations['en']?.[key]) {
+      console.warn(`Translation key "${key}" not found in locale "${locale}" or fallback "en".`);
+    }
     return translation;
   };
 

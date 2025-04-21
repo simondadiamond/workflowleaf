@@ -4,12 +4,17 @@ export default {
   content: ['./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}'],
   theme: {
     extend: {
+      // Add fontFamily to explicitly set Inter as the default sans-serif font
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
       colors: {
         accent: {
-          main: '#CDEB97',
-          hover: '#B9DA7E',
-          light: '#E6F4CB',
-          dark: '#A9C46D',
+          main: '#BFA46A', // Updated hex
+          hover: '#A68A5C', // Updated hex
+          light: '#E6D9B8', // Updated hex
+          dark: '#997D52', // Updated hex
+          check: '#BFA46A', // New color mapping
         },
         primary: {
           main: '#0A9F9D',
@@ -46,7 +51,7 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       ringColor: {
-        'accent-main': '#CDEB97',
+        'accent-main': '#BFA46A', // Updated hex
       },
       keyframes: {
         'accordion-down': {

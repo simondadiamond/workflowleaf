@@ -6,24 +6,30 @@ import { cn } from '@/lib/utils';
 
 interface KpiBlockProps {
   icon: React.ReactNode;
+  title: string; // Added title prop
   value: string;
   label: string;
   className?: string;
 }
 
-function KpiBlock({ icon, value, label, className }: KpiBlockProps) {
+function KpiBlock({ icon, title, value, label, className }: KpiBlockProps) {
   return (
     <Card className={cn(
-      "p-6 h-full",
+      "p-6 h-full bg-card border border-border", // Added bg-card and border
       className
     )}>
       <div className="flex flex-col items-center text-center">
-        <div className="text-primary-main mb-2">
+        {/* Increased icon size */}
+        <div className="text-primary-main mb-4"> {/* Increased margin-bottom */}
           {icon}
         </div>
-        <div className="text-4xl font-mono font-medium tracking-tight">
-          <span className="text-sm text-muted-foreground">est.</span> {value}
+        {/* Added title */}
+        <h3 className="text-xl font-semibold mb-2">{title}</h3>
+        {/* Removed font-mono */}
+        <div className="text-4xl font-medium tracking-tight">
+          {value}
         </div>
+        {/* Kept label */}
         <p className="text-sm text-muted-foreground mt-2">{label}</p>
       </div>
     </Card>
@@ -37,27 +43,37 @@ export function KpiStrip() {
     <section id="expected-outcomes" className="py-16 bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold mb-4">{t('kpi.title')}</h2>
+          {/* Updated section title */}
+          <h2 className="text-3xl font-bold mb-4">{t('kpi.sectionTitle')}</h2>
+          {/* Added intro text */}
+          <p className="text-muted-foreground">{t('kpi.introText')}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <KpiBlock
-            icon={<Clock className="h-8 w-8" />}
-            value="≈ 15"
-            label={t('kpi.hours')}
+            // Increased icon size
+            icon={<Clock className="h-10 w-10" />}
+            title={t('kpi.time_saved.title')}
+            value={t('kpi.time_saved.value')}
+            label={t('kpi.time_saved.label')}
           />
           <KpiBlock
-            icon={<TrendingDown className="h-8 w-8" />}
-            value="– 40%"
-            label={t('kpi.errors')}
+            // Increased icon size
+            icon={<TrendingDown className="h-10 w-10" />}
+            title={t('kpi.errors_reduced.title')}
+            value={t('kpi.errors_reduced.value')}
+            label={t('kpi.errors_reduced.label')}
           />
           <KpiBlock
-            icon={<CircleDollarSign className="h-8 w-8" />}
-            value="2"
-            label={t('kpi.breakeven')}
+            // Increased icon size
+            icon={<CircleDollarSign className="h-10 w-10" />}
+            title={t('kpi.roi.title')}
+            value={t('kpi.roi.value')}
+            label={t('kpi.roi.label')}
           />
         </div>
+        {/* Updated footnote */}
         <p className="text-center text-sm text-muted-foreground mt-8">
-          {t('kpi.disclaimer')}
+          {t('kpi.footnote')}
         </p>
       </div>
     </section>
