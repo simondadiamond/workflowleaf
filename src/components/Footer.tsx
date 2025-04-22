@@ -14,8 +14,9 @@ export function Footer() {
   const getAnchorPath = (path: string) => {
     const base = locale === 'fr' ? '/fr' : '';
     if (isLegalPage) {
+      // Include anchor hashes in links to main page sections
       if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
-        return `${base}/`;
+        return `${base}/${path}`;
       }
       if (path === '/') {
         return `${base}/`;
@@ -38,7 +39,6 @@ export function Footer() {
   return (
     <footer className="bg-secondary-main text-white">
       <div className="max-w-3xl mx-auto py-4 px-4 text-center">
-        {/* Logo + Brand */}
         <div className="inline-flex items-center space-x-2 mb-2">
           <img
             src="/logo.svg"
@@ -48,7 +48,6 @@ export function Footer() {
           <span className="text-base font-medium">WorkflowLeaf</span>
         </div>
 
-        {/* Nav Links */}
         <nav className="flex flex-wrap justify-center gap-4 text-neutral-textLight text-sm mb-2">
           {navLinks.map(link => (
             <a
@@ -61,7 +60,6 @@ export function Footer() {
           ))}
         </nav>
 
-        {/* Legal + Copyright */}
         <div className="text-xs text-neutral-textLight">
           <a
             href={getAnchorPath('/legal')}

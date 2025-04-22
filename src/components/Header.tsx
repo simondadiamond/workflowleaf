@@ -16,7 +16,6 @@ export function Header() {
     setCurrentPath(window.location.pathname);
   }, []);
 
-  // Detect scroll to change header appearance
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
@@ -25,13 +24,11 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Initialize dark mode state
   useEffect(() => {
     const isDarkMode = document.documentElement.classList.contains('dark');
     setIsDark(isDarkMode);
   }, []);
 
-  // Toggle dark mode
   const toggleDarkMode = () => {
     const newMode = !isDark;
     setIsDark(newMode);
@@ -39,23 +36,19 @@ export function Header() {
     localStorage.setItem('theme', newMode ? 'dark' : 'light');
   };
 
-  // Determine if current page is legal page
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
 
-  // Paths for navigation - Using anchor links for sections
   const getAnchorPath = (anchor: string) => {
     const base = locale === 'fr' ? '/fr' : '';
     if (isLegalPage) {
-      // On legal page, link to homepage root for these anchors
       if (anchor === '#challenges' || anchor === '#how-it-works' || anchor === '#pricing') {
-        return `${base}/`;
+        return `${base}/${anchor}`;
       }
       if (anchor === '/') {
         return `${base}/`;
       }
       return `${base}${anchor}`;
     }
-    // Default behavior
     if (anchor === '/') {
       return `${base}/`;
     }
@@ -78,15 +71,12 @@ export function Header() {
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
-          {/* Logo and Left Navigation */}
           <div className="flex items-center">
-            {/* Logo */}
             <a href={getAnchorPath('/')} className="flex items-center">
               <img src="/logo.svg" alt="WorkflowLeaf Logo" className="h-8 w-8 text-primary-main" />
               <span className="ml-2 text-xl font-semibold">WorkflowLeaf</span>
             </a>
 
-            {/* Desktop Left Navigation */}
             <nav className="hidden md:flex items-center ml-8 space-x-6">
               {leftNavItems.map((item) => (
                 <a
@@ -100,7 +90,6 @@ export function Header() {
             </nav>
           </div>
 
-          {/* Right Navigation (Language, Theme, Book a Call) */}
           <div className="flex items-center space-x-4 pr-4 md:pr-0">
             <div className="hidden md:flex items-center space-x-4">
               <LanguageToggle />
@@ -112,7 +101,6 @@ export function Header() {
               </Button>
             </div>
 
-            {/* Mobile Menu Button */}
             <div className="flex items-center md:hidden">
               <LanguageToggle />
               <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="mr-2">
@@ -131,7 +119,6 @@ export function Header() {
         </div>
       </div>
 
-      {/* Mobile Menu */}
       {isMobileMenuOpen && (
         <div className="md:hidden bg-background dark:bg-secondary-main">
           <div className="px-4 pt-2 pb-4 space-y-1">

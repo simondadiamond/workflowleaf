@@ -1,23 +1,26 @@
 ---
+import React, { Suspense } from 'react';
 import Layout from '../layouts/Layout.astro';
 import { Header } from '@/components/Header';
 import { Hero } from '@/components/Hero';
 import { PainCards } from '@/components/PainCards';
 import { HowItWorks } from '@/components/HowItWorks';
 import { KpiStrip } from '@/components/KpiStrip';
-// import { Testimonials } from '@/components/Testimonials'; 
 import { Pricing } from '@/components/Pricing';
 import { CtaBanner } from '@/components/CtaBanner';
 import { Footer } from '@/components/Footer';
 import { PartnerBar } from '@/components/PartnerBar';
+import { AnchorScrollHandler } from '@/components/AnchorScrollHandler';
 
-// Updated SEO meta title and description for English homepage
 const seoTitle = "Custom Property Management Automation | WorkflowLeaf";
 const seoDescription = "WorkflowLeaf creates custom automation for property managers. Streamline tasks like rent collection & maintenance, save hours, reduce errors, and scale smoothly.";
 ---
 
 <Layout title={seoTitle} description={seoDescription} lang="en" currentPath="/">
   <Header client:load />
+  <Suspense fallback={null}>
+    <AnchorScrollHandler client:load />
+  </Suspense>
   <main>
     <Hero client:load />
     <PartnerBar client:load />
