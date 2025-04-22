@@ -38,12 +38,12 @@ const TabsTrigger = React.forwardRef<
       // Light mode: Use background color for stronger contrast, keep shadow
       'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm',
       // Dark mode: Use muted background (slightly darker than main dark bg), keep shadow
-      'dark:data-[state=active]:bg-muted/80 dark:data-[state=active]:text-foreground dark:data-[state=active]:shadow-sm', // Slightly adjust dark active bg if needed
+      'dark:data-[state=active]:bg-border dark:data-[state=active]:text-foreground dark:data-[state=active]:shadow-sm', // Slightly adjust dark active bg if needed
       // Hover state:
       // Light mode: Subtle background change on the darker TabsList bg
       'hover:bg-neutral-300/50', // Adjusted hover for the new bg
       // Dark mode: Subtle background change
-      'dark:hover:bg-muted/60',
+      'dark:hover:bg-border/30',
       className
     )}
     {...props}

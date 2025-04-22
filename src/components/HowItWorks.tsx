@@ -23,8 +23,7 @@ function StepCard({ title, description, icon, step }: StepCardProps) {
         {/* Updated badge background to accent-light */}
         {/* Added dark:text-black class for dark mode */}
         <div className={cn(
-          "absolute -top-2 -right-2 w-8 h-8 bg-accent-light rounded-full flex items-center justify-center text-foreground font-semibold",
-          "dark:text-black" // Ensure text is black in dark mode
+          "absolute -top-2 -right-2 w-8 h-8 bg-accent-main rounded-full flex items-center justify-center text-foreground font-semibold text-white"
         )}>
           {step}
         </div>

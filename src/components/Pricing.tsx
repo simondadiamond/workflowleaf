@@ -191,7 +191,7 @@ export function Pricing() {
       'pricing.managed.growth.feature4',
       'pricing.managed.growth.feature5',
       'pricing.managed.growth.feature6',
-      'pricing.managed.growth.feature7', // This should be bolded
+      'pricing.managed.growth.feature7', 
       'pricing.managed.growth.feature8',
     ],
     premium: [
@@ -209,11 +209,11 @@ export function Pricing() {
   const getPlanPrice = (plan: PlanType) => {
     switch (plan) {
       case 'essentials':
-        return 'CA $679'; // Example price
+        return 'CA $639'; // Example price
       case 'growth':
         return 'CA $1,259'; // Example price
       case 'premium':
-        return 'CA $2,319+'; // Example price
+        return 'CA $2,279+'; // Example price
     }
   };
 
@@ -277,7 +277,7 @@ export function Pricing() {
                     <TabsTrigger value="growth" className="relative">
                       Growth
                       {/* Apply the custom badge-popular class */}
-                      <Badge className="badge-popular">
+                      <Badge className="badge-popular absolute left-1/2 transform -translate-x-1/2 -top-2">
                         Most Popular
                       </Badge>
                     </TabsTrigger>
