@@ -10,7 +10,7 @@ export function Hero() {
   const titleLines = t('hero.title').split('\n');
 
   return (
-    <section className="pt-32 pb-20 bg-gradient-to-br from-primary-main/10 via-background to-background">
+    <section className="pt-32 pb-20 bg-gradient-to-br from-primary-main/20 via-background to-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row items-center gap-12">
           <div className="md:w-full text-center space-y-6"> {/* Changed to full width and centered text */}
