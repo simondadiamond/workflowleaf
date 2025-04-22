@@ -26,7 +26,7 @@ function KpiBlock({ icon, title, value, label, className }: KpiBlockProps) {
         {/* Added title */}
         <h3 className="text-xl font-semibold mb-2">{title}</h3>
         {/* Removed font-mono */}
-        <div className="text-4xl font-medium tracking-tight">
+        <div className="text-3xl font-medium tracking-tight">
           {value}
         </div>
         {/* Kept label */}

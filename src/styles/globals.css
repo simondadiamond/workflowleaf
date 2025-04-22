@@ -84,28 +84,19 @@
     font-family: 'Inter', system-ui, sans-serif;
   }
 
-  /* Removed .font-mono definition */
-  /*
-  .font-mono {
-    font-family: 'Roboto Mono', monospace;
-  }
-  */
-
-  /* Keep the custom focus-visible style but will investigate if it's the cause */
+  /* Keep the custom focus-visible style */
   *:focus-visible {
-    /* Uses ring-accent-main */
     @apply outline-none ring-2 ring-accent-main ring-offset-2;
   }
 
   /* Apply filter to logo in dark mode for higher contrast (for header logo) */
   .dark img[src="/logo.svg"]:not(.footer-logo) {
-    /* Increased brightness to 2.5 */
-    filter: brightness(2.5) contrast(1.1) hue-rotate(10deg); /* Adjust values as needed */
+    filter: brightness(2.5) contrast(1.1) hue-rotate(10deg);
   }
 
-  /* Apply white filter to the footer logo */
+  /* Force teal color on footer logo */
   .footer-logo {
-    filter: brightness(0) invert(1); /* This filter often turns dark colors white */
+    filter: invert(38%) sepia(72%) saturate(749%) hue-rotate(140deg) brightness(90%) contrast(85%);
   }
 
   /* Style list markers with accent color */
@@ -123,7 +114,6 @@
     animation: pulse 3s ease-in-out infinite;
   }
 
-  /* Increased animation duration to 40s */
   .animate-scroll {
     animation: scroll 40s linear infinite;
   }
@@ -146,7 +136,6 @@
     }
   }
 
-  /* Keyframes remain the same, translating by half the total width */
   @keyframes scroll {
     0% {
       transform: translateX(0);
@@ -156,59 +145,42 @@
     }
   }
 
-  /* New utility for text gradient */
   .text-gradient-forest-teal {
     background-image: linear-gradient(to right, hsl(var(--secondary-main)), hsl(var(--primary-main)));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    color: transparent; /* Fallback for non-webkit browsers */
+    color: transparent;
   }
 
-  /* Removed custom utility for CTA button gradient */
-  /*
-  .bg-gradient-forest-teal {
-    background-image: linear-gradient(to right, hsl(var(--secondary-main)), hsl(var(--primary-main)));
-  }
-  */
-
-  /* --- Custom Header Button Hovers --- */
-  /* Target Language Toggle button (size="sm") within the header */
-  header nav button[size="sm"]:hover, /* Desktop */
-  header div > button[size="sm"]:hover /* Mobile */
-  {
-    background-color: transparent; /* Remove background on hover */
-    color: hsl(var(--primary-main)); /* Set text color to teal on hover */
+  header nav button[size="sm"]:hover,
+  header div > button[size="sm"]:hover {
+    background-color: transparent;
+    color: hsl(var(--primary-main));
   }
 
-  /* Target Theme Toggle button (size="icon") within the header */
-  header nav button[size="icon"]:hover, /* Desktop: Icon button in nav */
-  header div > button[size="icon"]:not([aria-label="Toggle Menu"]):hover /* Mobile: Icon button in div, excluding the Menu/X button */
-  {
-    background-color: transparent; /* Remove background on hover */
-    color: hsl(var(--primary-main)); /* Set icon color to teal on hover */
+  header nav button[size="icon"]:hover,
+  header div > button[size="icon"]:not([aria-label="Toggle Menu"]):hover {
+    background-color: transparent;
+    color: hsl(var(--primary-main));
   }
 
-  /* Ensure specificity for the icons inside the theme toggle button */
   header nav button[size="icon"]:hover svg,
-  header div > button[size="icon"]:not([aria-label="Toggle Menu"]):hover svg
-  {
-    color: hsl(var(--primary-main)); /* Ensure icon color changes */
+  header div > button[size="icon"]:not([aria-label="Toggle Menu"]):hover svg {
+    color: hsl(var(--primary-main));
   }
-  /* --- End Custom Header Button Hovers --- */
 
-  /* Custom class for the 'Most Popular' badge */
   .badge-popular {
-  position: absolute;
-  top: -0.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: hsl(var(--accent-dark));
-  color: #fff;
-  font-size: 0.625rem;
-  line-height: 1;
-  padding: 0.125rem 0.5rem;
-  border-radius: var(--radius);
-  white-space: nowrap;
+    position: absolute;
+    top: -0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: hsl(var(--accent-dark));
+    color: #fff;
+    font-size: 0.625rem;
+    line-height: 1;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius);
+    white-space: nowrap;
   }
 }

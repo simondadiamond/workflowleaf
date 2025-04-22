@@ -1,0 +1,108 @@
+---
+// src/pages/legal.astro
+import Layout from '../layouts/Layout.astro';
+import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
+
+const title = "Legal Information | WorkflowLeaf";
+const description = "Legal terms, privacy policy, disclaimers, and contact information for WorkflowLeaf.";
+---
+
+<Layout title={title} description={description} lang="en" currentPath="/legal">
+  <Header client:load />
+  <main class="max-w-4xl mx-auto px-6 py-20 text-foreground bg-background min-h-screen">
+    <h1 class="text-4xl font-bold mb-12 text-center">Legal Information</h1>
+
+    <section class="mb-16">
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Terms of Service</h2>
+      <p class="mb-4 leading-relaxed">
+        Welcome to WorkflowLeaf. By accessing or using this website (workflowleaf.com) and our services, you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of the terms, then you may not access the website or use our services.
+      </p>
+      <p class="mb-4 leading-relaxed">
+        The specifics of our automation consulting and implementation services, including scope, deliverables, timelines, and payment terms, are defined in separate, individual client agreements or proposals which supersede any general information provided here.
+      </p>
+      <h3 class="text-xl font-semibold mt-6 mb-3">Use of Website</h3>
+      <p class="mb-4 leading-relaxed">
+        All information provided on this website is for general informational purposes only and does not constitute professional or legal advice. While we strive to keep the information up-to-date and correct, we make no representations or warranties of any kind, express or implied, about the completeness, accuracy, reliability, suitability, or availability with respect to the website or the information, products, services, or related graphics contained on the website for any purpose. Any reliance you place on such information is therefore strictly at your own risk.
+      </p>
+       <p class="mb-4 leading-relaxed">
+        You agree not to use the website in any way that causes, or may cause, damage to the website or impairment of the availability or accessibility of the website; or in any way which is unlawful, illegal, fraudulent or harmful.
+      </p>
+      <h3 class="text-xl font-semibold mt-6 mb-3">Intellectual Property</h3>
+       <p class="mb-4 leading-relaxed">
+        The content on this website, including text, graphics, logos, and images, is the property of WorkflowLeaf (Simon Paris) and is protected by copyright and other intellectual property laws, unless otherwise noted.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Modification of Terms</h3>
+       <p class="mb-4 leading-relaxed">
+        WorkflowLeaf reserves the right to modify these Terms at any time. We will notify users of significant changes by updating the date at the bottom of this page. Your continued use of the site after such modifications constitutes your acceptance of the new Terms.
+      </p>
+      <h3 class="text-xl font-semibold mt-6 mb-3">Governing Law</h3>
+      <p class="mb-4 leading-relaxed">
+        These Terms shall be governed and construed in accordance with the laws of the Province of Québec and the federal laws of Canada applicable therein, without regard to its conflict of law provisions.
+      </p>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Privacy Policy</h2>
+      <p class="mb-4 leading-relaxed">
+        WorkflowLeaf ("we", "us", "our") is committed to protecting your privacy. This policy outlines how we collect, use, disclose, and safeguard your personal information in compliance with the Personal Information Protection and Electronic Documents Act (PIPEDA) and Québec’s Law 25 (An Act to modernize legislative provisions as regards the protection of personal information).
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Information We Collect</h3>
+      <p class="mb-4 leading-relaxed">
+        We collect personal information you voluntarily provide to us through contact forms, discovery calls, email communications, service agreements, and potentially through the use of cookies or similar technologies on our website (e.g., for analytics). This information may include your name, email address, phone number, company details, and any other information you choose to provide relevant to our services.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">How We Use Your Information</h3>
+       <p class="mb-4 leading-relaxed">
+        Your personal information is used to:
+        <ul class="list-disc list-inside ml-4 mt-2 space-y-1">
+          <li>Communicate with you regarding inquiries and service delivery.</li>
+          <li>Provide, operate, and maintain our automation consulting and implementation services.</li>
+          <li>Process payments and manage client accounts (as defined in service agreements).</li>
+          <li>Improve our website, services, and user experience (e.g., through anonymized analytics).</li>
+          <li>Comply with legal obligations.</li>
+        </ul>
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Data Sharing and Disclosure</h3>
+       <p class="mb-4 leading-relaxed">
+        We do not sell your personal data to third parties. We may share your information with trusted third-party service providers who assist us in operating our website, conducting our business, or servicing you (e.g., cloud hosting providers, CRM platforms, payment processors, email service providers), so long as those parties agree to keep this information confidential and secure. We may also disclose information when required by law. Some of these providers may operate outside of Québec or Canada; we take reasonable steps to ensure your data is protected according to applicable laws.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Your Rights & Consent</h3>
+      <p class="mb-4 leading-relaxed">
+        You have the right to access the personal information we hold about you, request corrections, or withdraw your consent to its use (subject to legal or contractual restrictions) at any time. To exercise these rights, please contact our Privacy Officer. Your use of our website and services signifies your consent to this Privacy Policy.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Data Security & Retention</h3>
+       <p class="mb-4 leading-relaxed">
+        We implement reasonable administrative, technical, and physical security measures to protect your personal information against unauthorized access, disclosure, alteration, or destruction. We retain personal information only for as long as necessary to fulfill the purposes for which it was collected, or as required by law.
+      </p>
+      <h3 class="text-xl font-semibold mt-6 mb-3">Cookies</h3>
+       <p class="mb-4 leading-relaxed">
+        Our website may use cookies to enhance user experience and analyze site traffic. You can manage your cookie preferences through your browser settings. [Optional: Link to a separate Cookie Policy if you have one].
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Privacy Officer</h3>
+      <p class="mb-4 leading-relaxed">
+        The person responsible for the protection of personal information at WorkflowLeaf is Simon Paris. For any privacy inquiries or requests regarding your personal information, please contact us at <a href="mailto:legal@workflowleaf.com" class="text-primary-main underline hover:text-primary-hover">legal@workflowleaf.com</a>.
+      </p>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Disclaimers & Limitation of Liability</h2>
+      <p class="mb-4 leading-relaxed">
+        <strong>Disclaimer of Warranties:</strong> This website and our services are provided "as is" and "as available" without any warranties, express or implied, including but not limited to the implied warranties of merchantability, fitness for a particular purpose, or non-infringement. We do not guarantee specific automation outcomes, cost savings, or return on investment, as results depend heavily on individual client systems, processes, data quality, and implementation context.
+      </p>
+      <p class="mb-4 leading-relaxed">
+        <strong>Limitation of Liability:</strong> To the fullest extent permitted by applicable law, WorkflowLeaf and its founder, Simon Paris, shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses, resulting from (a) your access to or use of or inability to access or use the website or services; (b) any conduct or content of any third party on the services; (c) any content obtained from the services; and (d) unauthorized access, use, or alteration of your transmissions or content. Our total liability for any claims arising out of or relating to these Terms or the services, where applicable by law, is limited to the amount you paid us, if any, for the specific services giving rise to the claim.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Contact Information</h2>
+      <p class="leading-relaxed">
+        For any legal or privacy questions regarding these terms or our practices, please contact WorkflowLeaf via email: <a href="mailto:legal@workflowleaf.com" class="text-primary-main underline hover:text-primary-hover">legal@workflowleaf.com</a>.
+      </p>
+      <p class="text-sm text-muted-foreground mt-8">
+        Last Updated: April 22, 2025
+      </p>
+    </section>
+  </main>
+  <Footer client:load />
+</Layout>

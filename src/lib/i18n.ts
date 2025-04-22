@@ -81,7 +81,7 @@ type TranslationKey =
   | 'footer.copyright'
   | 'footer.links'
   | 'footer.privacy'
-  | 'footer.terms'
+  | 'footer.legal'
   | 'footer.contact'
   | 'footer.email';
 
@@ -196,7 +196,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
     'footer.privacy': 'Privacy Policy',
-    'footer.terms': 'Terms of Service',
+    'footer.legal': 'Legal',
     'footer.contact': 'Contact Us',
     'footer.email': 'hello@workflowleaf.com'
   },
@@ -286,7 +286,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
     'footer.privacy': 'Privacy Policy',
-    'footer.terms': 'Terms of Service',
+    'footer.legal': 'Légal',
     'footer.contact': 'Contact Us',
     'footer.email': 'hello@workflowleaf.com'
   }

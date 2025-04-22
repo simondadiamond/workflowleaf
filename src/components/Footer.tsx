@@ -3,14 +3,36 @@ import { useTranslation } from '@/lib/i18n';
 
 export function Footer() {
   const { t, locale } = useTranslation();
-  const getAnchorPath = (path: string) =>
-    locale === 'fr' ? `/fr${path}` : path;
+  const [currentPath, setCurrentPath] = React.useState('');
+
+  React.useEffect(() => {
+    setCurrentPath(window.location.pathname);
+  }, []);
+
+  const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
+
+  const getAnchorPath = (path: string) => {
+    const base = locale === 'fr' ? '/fr' : '';
+    if (isLegalPage) {
+      if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
+        return `${base}/`;
+      }
+      if (path === '/') {
+        return `${base}/`;
+      }
+      return `${base}${path}`;
+    }
+    if (path === '/') {
+      return `${base}/`;
+    }
+    return `${base}${path}`;
+  };
 
   const navLinks = [
     { label: t('nav.home'), path: getAnchorPath('/') },
-    { label: 'Solutions',       path: getAnchorPath('#challenges') },
-    { label: t('how.title'),    path: getAnchorPath('#how-it-works') },
-    { label: t('nav.pricing'),  path: getAnchorPath('#pricing') },
+    { label: 'Solutions', path: getAnchorPath('#challenges') },
+    { label: t('how.title'), path: getAnchorPath('#how-it-works') },
+    { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
 
   return (
@@ -21,7 +43,7 @@ export function Footer() {
           <img
             src="/logo.svg"
             alt="WorkflowLeaf Logo"
-            className="h-6 w-6"
+            className="h-8 w-8 footer-logo"
           />
           <span className="text-base font-medium">WorkflowLeaf</span>
         </div>

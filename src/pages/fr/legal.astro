@@ -1,0 +1,108 @@
+---
+// src/pages/fr/legal.astro
+import Layout from '../../layouts/Layout.astro';
+import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
+
+const title = "Informations Légales | WorkflowLeaf";
+const description = "Conditions d'utilisation, politique de confidentialité, avertissements et coordonnées pour WorkflowLeaf.";
+---
+
+<Layout title={title} description={description} lang="fr" currentPath="/fr/legal">
+  <Header client:load />
+  <main class="max-w-4xl mx-auto px-6 py-20 text-foreground bg-background min-h-screen">
+    <h1 class="text-4xl font-bold mb-12 text-center">Informations Légales</h1>
+
+    <section class="mb-16">
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Conditions d'utilisation</h2>
+      <p class="mb-4 leading-relaxed">
+        Bienvenue chez WorkflowLeaf. En accédant ou en utilisant ce site web (workflowleaf.com) et nos services, vous acceptez d'être lié par ces Conditions d'utilisation ("Conditions"). Si vous êtes en désaccord avec une partie quelconque des conditions, vous ne pouvez pas accéder au site web ni utiliser nos services.
+      </p>
+      <p class="mb-4 leading-relaxed">
+        Les détails spécifiques de nos services de consultation et de mise en œuvre d'automatisation, y compris la portée, les livrables, les échéanciers et les modalités de paiement, sont définis dans des contrats ou propositions clients individuels distincts qui prévalent sur toute information générale fournie ici.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Utilisation du site web</h3>
+      <p class="mb-4 leading-relaxed">
+        Toutes les informations fournies sur ce site web sont à titre informatif général uniquement et ne constituent pas un conseil professionnel ou juridique. Bien que nous nous efforcions de maintenir les informations à jour et exactes, nous ne faisons aucune déclaration ni garantie d'aucune sorte, expresse ou implicite, quant à l'exhaustivité, l'exactitude, la fiabilité, la pertinence ou la disponibilité concernant le site web ou les informations, produits, services ou graphiques associés contenus sur le site web à quelque fin que ce soit. Toute confiance que vous accordez à ces informations est donc strictement à vos propres risques.
+      </p>
+       <p class="mb-4 leading-relaxed">
+        Vous acceptez de ne pas utiliser le site web d'une manière qui cause, ou pourrait causer, des dommages au site web ou une altération de la disponibilité ou de l'accessibilité du site web ; ou de toute manière qui est illégale, illicite, frauduleuse ou nuisible.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Propriété Intellectuelle</h3>
+       <p class="mb-4 leading-relaxed">
+        Le contenu de ce site web, y compris les textes, graphiques, logos et images, est la propriété de WorkflowLeaf (Simon Paris) et est protégé par le droit d'auteur et d'autres lois sur la propriété intellectuelle, sauf indication contraire.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Modification des Conditions</h3>
+       <p class="mb-4 leading-relaxed">
+        WorkflowLeaf se réserve le droit de modifier ces Conditions à tout moment. Nous informerons les utilisateurs des changements importants en mettant à jour la date au bas de cette page. Votre utilisation continue du site après de telles modifications constitue votre acceptation des nouvelles Conditions.
+      </p>
+      <h3 class="text-xl font-semibold mt-6 mb-3">Droit Applicable</h3>
+      <p class="mb-4 leading-relaxed">
+        Ces Conditions sont régies et interprétées conformément aux lois de la province de Québec et aux lois fédérales du Canada qui s'y appliquent, sans égard à ses dispositions en matière de conflit de lois.
+      </p>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Politique de Confidentialité</h2>
+      <p class="mb-4 leading-relaxed">
+        WorkflowLeaf ("nous", "notre") s'engage à protéger votre vie privée. Cette politique décrit comment nous recueillons, utilisons, divulguons et protégeons vos renseignements personnels conformément à la Loi sur la protection des renseignements personnels et les documents électroniques (LPRPDE) et à la Loi 25 du Québec (Loi modernisant des dispositions législatives en matière de protection des renseignements personnels).
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Renseignements que nous recueillons</h3>
+      <p class="mb-4 leading-relaxed">
+        Nous recueillons les renseignements personnels que vous nous fournissez volontairement via les formulaires de contact, les appels de découverte, les communications par courriel, les contrats de service, et potentiellement par l'utilisation de témoins (cookies) ou technologies similaires sur notre site web (par ex., pour l'analytique). Ces renseignements peuvent inclure votre nom, adresse courriel, numéro de téléphone, détails sur votre entreprise, et toute autre information que vous choisissez de fournir en lien avec nos services.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Comment nous utilisons vos renseignements</h3>
+       <p class="mb-4 leading-relaxed">
+        Vos renseignements personnels sont utilisés pour :
+        <ul class="list-disc list-inside ml-4 mt-2 space-y-1">
+          <li>Communiquer avec vous concernant vos demandes et la prestation de services.</li>
+          <li>Fournir, opérer et maintenir nos services de consultation et de mise en œuvre d'automatisation.</li>
+          <li>Traiter les paiements et gérer les comptes clients (tel que défini dans les contrats de service).</li>
+          <li>Améliorer notre site web, nos services et l'expérience utilisateur (par ex., via des données analytiques anonymisées).</li>
+          <li>Respecter nos obligations légales.</li>
+        </ul>
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Partage et divulgation des données</h3>
+       <p class="mb-4 leading-relaxed">
+        Nous ne vendons pas vos données personnelles à des tiers. Nous pouvons partager vos informations avec des fournisseurs de services tiers de confiance qui nous aident à exploiter notre site web, à mener nos activités ou à vous servir (par ex., hébergeurs cloud, plateformes CRM, processeurs de paiement, fournisseurs de services de courriel), à condition que ces parties acceptent de garder ces informations confidentielles et sécurisées. Nous pouvons également divulguer des informations lorsque la loi l'exige. Certains de ces fournisseurs peuvent opérer à l'extérieur du Québec ou du Canada ; nous prenons des mesures raisonnables pour assurer que vos données sont protégées conformément aux lois applicables.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Vos droits et votre consentement</h3>
+      <p class="mb-4 leading-relaxed">
+        Vous avez le droit d'accéder aux renseignements personnels que nous détenons à votre sujet, de demander des corrections ou de retirer votre consentement à leur utilisation (sous réserve des restrictions légales ou contractuelles) à tout moment. Pour exercer ces droits, veuillez contacter notre Responsable de la protection des renseignements personnels. Votre utilisation de notre site web et de nos services signifie votre consentement à cette Politique de confidentialité.
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Sécurité et conservation des données</h3>
+       <p class="mb-4 leading-relaxed">
+        Nous mettons en œuvre des mesures de sécurité administratives, techniques et physiques raisonnables pour protéger vos renseignements personnels contre l'accès, la divulgation, l'altération ou la destruction non autorisés. Nous ne conservons les renseignements personnels que le temps nécessaire pour atteindre les objectifs pour lesquels ils ont été collectés, ou tel que requis par la loi.
+      </p>
+      <h3 class="text-xl font-semibold mt-6 mb-3">Témoins (Cookies)</h3>
+       <p class="mb-4 leading-relaxed">
+        Notre site web peut utiliser des témoins (cookies) pour améliorer l'expérience utilisateur et analyser le trafic du site. Vous pouvez gérer vos préférences en matière de témoins via les paramètres de votre navigateur. [Optionnel : Lien vers une Politique de cookies distincte si vous en avez une].
+      </p>
+       <h3 class="text-xl font-semibold mt-6 mb-3">Responsable de la protection des renseignements personnels</h3>
+      <p class="mb-4 leading-relaxed">
+        La personne responsable de la protection des renseignements personnels chez WorkflowLeaf est Simon Paris. Pour toute demande relative à la confidentialité ou concernant vos renseignements personnels, veuillez nous contacter à <a href="mailto:legal@workflowleaf.com" class="text-primary-main underline hover:text-primary-hover">legal@workflowleaf.com</a>.
+      </p>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Avertissements et Limitation de Responsabilité</h2>
+      <p class="mb-4 leading-relaxed">
+        <strong>Exclusion de garanties :</strong> Ce site web et nos services sont fournis "tels quels" et "selon la disponibilité" sans aucune garantie, expresse ou implicite, y compris, mais sans s'y limiter, les garanties implicites de qualité marchande, d'adéquation à un usage particulier ou de non-contrefaçon. Nous ne garantissons pas de résultats spécifiques en matière d'automatisation, d'économies de coûts ou de retour sur investissement, car les résultats dépendent fortement des systèmes, processus, qualité des données et contexte de mise en œuvre propres à chaque client.
+      </p>
+      <p class="mb-4 leading-relaxed">
+        <strong>Limitation de responsabilité :</strong> Dans toute la mesure permise par la loi applicable, WorkflowLeaf et son fondateur, Simon Paris, ne seront pas responsables des dommages indirects, accessoires, spéciaux, consécutifs ou punitifs, ni de toute perte de profits ou de revenus, qu'elle soit encourue directement ou indirectement, ni de toute perte de données, d'utilisation, de clientèle ou d'autres pertes intangibles, résultant de (a) votre accès ou utilisation ou incapacité d'accéder ou d'utiliser le site web ou les services ; (b) toute conduite ou contenu de tiers sur les services ; (c) tout contenu obtenu des services ; et (d) l'accès, l'utilisation ou l'altération non autorisés de vos transmissions ou contenus. Notre responsabilité totale pour toute réclamation découlant de ou liée à ces Conditions ou aux services, lorsque la loi l'autorise, est limitée au montant que vous nous avez payé, le cas échéant, pour les services spécifiques donnant lieu à la réclamation.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-3xl font-semibold mb-6 border-b border-border pb-2">Coordonnées</h2>
+      <p class="leading-relaxed">
+        Pour toute question légale ou relative à la confidentialité concernant ces conditions ou nos pratiques, veuillez contacter WorkflowLeaf par courriel : <a href="mailto:legal@workflowleaf.com" class="text-primary-main underline hover:text-primary-hover">legal@workflowleaf.com</a>.
+      </p>
+       <p class="text-sm text-muted-foreground mt-8">
+        Dernière mise à jour : 22 avril 2025
+      </p>
+    </section>
+  </main>
+  <Footer client:load />
+</Layout>

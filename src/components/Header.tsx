@@ -10,6 +10,11 @@ export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
+  const [currentPath, setCurrentPath] = useState('');
+
+  useEffect(() => {
+    setCurrentPath(window.location.pathname);
+  }, []);
 
   // Detect scroll to change header appearance
   useEffect(() => {
@@ -34,26 +39,35 @@ export function Header() {
     localStorage.setItem('theme', newMode ? 'dark' : 'light');
   };
 
+  // Determine if current page is legal page
+  const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
+
   // Paths for navigation - Using anchor links for sections
   const getAnchorPath = (anchor: string) => {
-     // For the home link, use the base path logic
-     if (anchor === '/') {
-        return locale === 'fr' ? '/fr' : '/';
-     }
-     // For other anchors, append the anchor to the current locale path
-     const base = locale === 'fr' ? '/fr' : '';
-     return `${base}${anchor}`;
+    const base = locale === 'fr' ? '/fr' : '';
+    if (isLegalPage) {
+      // On legal page, link to homepage root for these anchors
+      if (anchor === '#challenges' || anchor === '#how-it-works' || anchor === '#pricing') {
+        return `${base}/`;
+      }
+      if (anchor === '/') {
+        return `${base}/`;
+      }
+      return `${base}${anchor}`;
+    }
+    // Default behavior
+    if (anchor === '/') {
+      return `${base}/`;
+    }
+    return `${base}${anchor}`;
   };
-
 
   const leftNavItems = [
     { label: t('nav.home'), path: getAnchorPath('/') },
-    { label: 'Solutions', path: getAnchorPath('#challenges') }, // Anchor to Challenges section
-    { label: t('how.title'), path: getAnchorPath('#how-it-works') }, // Anchor to How It Works section
-    { label: t('nav.pricing'), path: getAnchorPath('#pricing') }, // Anchor to Pricing section
+    { label: 'Solutions', path: getAnchorPath('#challenges') },
+    { label: t('how.title'), path: getAnchorPath('#how-it-works') },
+    { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
-
-  // Note: Language Toggle, Dark Mode Toggle, and Book a Call button are handled separately in JSX
 
   return (
     <header
@@ -73,7 +87,7 @@ export function Header() {
             </a>
 
             {/* Desktop Left Navigation */}
-            <nav className="hidden md:flex items-center ml-8 space-x-6"> {/* Added ml-8 and adjusted space-x */}
+            <nav className="hidden md:flex items-center ml-8 space-x-6">
               {leftNavItems.map((item) => (
                 <a
                   key={item.path}
@@ -86,53 +100,31 @@ export function Header() {
             </nav>
           </div>
 
-
           {/* Right Navigation (Language, Theme, Book a Call) */}
-          {/* Reduced right padding using pr-4 (default is px-4 on parent div) */}
-          <div className="flex items-center space-x-4 pr-4 md:pr-0"> {/* Adjusted space-x and padding */}
-            {/* Desktop Right Navigation */}
-            <div className="hidden md:flex items-center space-x-4"> {/* Adjusted space-x */}
+          <div className="flex items-center space-x-4 pr-4 md:pr-0">
+            <div className="hidden md:flex items-center space-x-4">
               <LanguageToggle />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleDarkMode}
-              >
+              <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
-              {/* Styled the "Book a Call" button the same as the Hero CTA */}
               <Button asChild className="bg-primary-main hover:bg-primary-hover text-white">
                 <a href="#book">{t('nav.book')}</a>
               </Button>
             </div>
 
-            {/* Mobile Menu Button (remains on the right) */}
+            {/* Mobile Menu Button */}
             <div className="flex items-center md:hidden">
-               {/* Language and Theme toggles are already on the right in mobile view */}
-               <LanguageToggle />
-               <Button
-                 variant="ghost"
-                 size="icon"
-                 onClick={toggleDarkMode}
-                 className="mr-2" // Keep margin for separation from menu button
-               >
-                 {isDark ? (
-                   <Sun className="h-5 w-5" />
-                 ) : (
-                   <Moon className="h-5 w-5" />
-                 )}
-               </Button>
+              <LanguageToggle />
+              <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="mr-2">
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Toggle Menu"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               >
-                {isMobileMenuOpen ? (
-                  <X className="h-6 w-6" />
-                ) : (
-                  <Menu className="h-6 w-6" />
-                )}
+                {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
               </Button>
             </div>
           </div>
@@ -141,9 +133,8 @@ export function Header() {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-         <div className="md:hidden bg-background dark:bg-secondary-main">
+        <div className="md:hidden bg-background dark:bg-secondary-main">
           <div className="px-4 pt-2 pb-4 space-y-1">
-            {/* Mobile Left Nav Items */}
             {leftNavItems.map((item) => (
               <a
                 key={item.path}
@@ -154,7 +145,6 @@ export function Header() {
                 {item.label}
               </a>
             ))}
-            {/* Styled the mobile "Book a Call" button */}
             <Button className="w-full mt-4 bg-primary-main hover:bg-primary-hover text-white" asChild>
               <a href="#book" onClick={() => setIsMobileMenuOpen(false)}>
                 {t('nav.book')}
