@@ -1,5 +1,5 @@
 ---
-import Layout from '../../layouts/Layout.astro';
+import Layout from '../layouts/Layout.astro';
 import { Header } from '@/components/Header';
 import { Hero } from '@/components/Hero';
 import { PainCards } from '@/components/PainCards'; // Renamed from PainPoints to Challenges
@@ -12,7 +12,12 @@ import { Footer } from '@/components/Footer';
 import { PartnerBar } from '@/components/PartnerBar';
 ---
 
-<Layout title="WorkflowLeaf | Automatisation de la Gestion Immobilière" lang="fr" currentPath="/fr">
+<Layout
+  title="Automatisation Gestion Immobilière Québec | WorkflowLeaf"
+  description="WorkflowLeaf: Automatisation sur mesure pour gestion immobilière au Québec. Simplifiez loyers, maintenance et plus. Sauvez du temps, réduisez erreurs, croître."
+  lang="fr"
+  currentPath="/fr/"
+>
   <Header client:load />
   <main>
     <Hero client:load />
