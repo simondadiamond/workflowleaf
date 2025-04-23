@@ -103,6 +103,12 @@
   ul li::marker {
     color: hsl(var(--accent-check));
   }
+
+  /* Add scroll-padding-top to offset fixed header height for anchor links */
+  html {
+    scroll-padding-top: 4rem; /* Adjust this value to your header height */
+    scroll-behavior: smooth;
+  }
 }
 
 @layer utilities {

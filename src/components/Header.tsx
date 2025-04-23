@@ -9,7 +9,6 @@ export function Header() {
   const { t, locale } = useTranslation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  // Initialize isDark to false, will be updated in useEffect
   const [isDark, setIsDark] = useState(false);
   const [currentPath, setCurrentPath] = useState('');
 
@@ -17,13 +16,10 @@ export function Header() {
     setCurrentPath(window.location.pathname);
   }, []);
 
-  // Initialize dark mode state *after* mount by checking document class
-  // This runs only once on the client
   useEffect(() => {
     setIsDark(document.documentElement.classList.contains('dark'));
   }, []);
 
-  // Detect scroll to change header appearance
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
@@ -32,7 +28,6 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Toggle dark mode and persist choice
   const toggleDarkMode = () => {
     const newMode = !isDark;
     setIsDark(newMode);
@@ -71,6 +66,13 @@ export function Header() {
     { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
 
+  // Booking URLs with tracking parameters
+  const bookingBaseUrl = locale === 'fr'
+    ? 'https://cal.com/workflowleaf/consultation-gratuite'
+    : 'https://cal.com/workflowleaf/free-consultation';
+
+  const headerBookingUrl = `${bookingBaseUrl}?source=WebsiteNavbar`;
+
   return (
     <header
       className={cn(
@@ -106,7 +108,9 @@ export function Header() {
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
               <Button asChild className="bg-primary-main hover:bg-primary-hover text-white">
-                <a href="#book">{t('nav.book')}</a>
+                <a href={headerBookingUrl} target="_blank" rel="noopener noreferrer">
+                  {t('nav.book')}
+                </a>
               </Button>
             </div>
 
@@ -142,7 +146,7 @@ export function Header() {
               </a>
             ))}
             <Button className="w-full mt-4 bg-primary-main hover:bg-primary-hover text-white" asChild>
-              <a href="#book" onClick={() => setIsMobileMenuOpen(false)}>
+              <a href={headerBookingUrl} target="_blank" rel="noopener noreferrer" onClick={() => setIsMobileMenuOpen(false)}>
                 {t('nav.book')}
               </a>
             </Button>

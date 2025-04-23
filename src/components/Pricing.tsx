@@ -62,10 +62,52 @@ function PricingCard({
   managedTabs,
   selectedPlan,
 }: PricingCardProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const isFeatureKey = (feature: string | FeatureKey): feature is FeatureKey => {
     return feature.startsWith('pricing.managed.');
+  };
+
+  // Base booking URL depending on locale
+  const bookingBaseUrl = locale === 'fr'
+    ? 'https://cal.com/workflowleaf/consultation-gratuite'
+    : 'https://cal.com/workflowleaf/free-consultation';
+
+  // Determine package query param based on title or selectedPlan
+  // We'll map the buttonText to package param for the main managed plans
+  // For pilot plan, no package param needed
+
+  // Helper to get package param for managed plans
+  const getPackageParam = (plan: PlanType | 'quickstart' | 'pilot') => {
+    switch (plan) {
+      case 'quickstart':
+        return 'QuickStart';
+      case 'essentials':
+        return 'Essentials';
+      case 'growth':
+        return 'Growth';
+      case 'premium':
+        return 'Premium';
+      case 'pilot':
+      default:
+        return null;
+    }
+  };
+
+  // Compose href for pricing buttons
+  const getHref = () => {
+    if (title === t('pricing.pilot.title')) {
+      // Pilot plan button
+      return `${bookingBaseUrl}?source=WebsitePricing&package=QuickStart`;
+    }
+    if (selectedPlan) {
+      const pkg = getPackageParam(selectedPlan);
+      if (pkg) {
+        return `${bookingBaseUrl}?source=WebsitePricing&package=${pkg}`;
+      }
+    }
+    // Fallback
+    return `${bookingBaseUrl}?source=WebsitePricing`;
   };
 
   return (
@@ -132,7 +174,9 @@ function PricingCard({
           variant={buttonVariant}
           asChild
         >
-          <a href="#book">{buttonText}</a>
+          <a href={getHref()} target="_blank" rel="noopener noreferrer">
+            {buttonText}
+          </a>
         </Button>
       </div>
     </Card>
@@ -218,9 +262,6 @@ export function Pricing() {
             additionalInfo={
               <div className="text-sm text-muted-foreground">
                 <p>{t('pricing.pilot.upgrade')}</p>
-                {/*<Button variant="link" className="mt-2 p-0 h-auto" asChild>
-                  <a href="#learn-more">Learn more</a>
-                </Button> */}
               </div>
             }
           />

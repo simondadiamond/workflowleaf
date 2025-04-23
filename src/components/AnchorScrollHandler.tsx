@@ -6,13 +6,13 @@ export function AnchorScrollHandler() {
 
     const hash = window.location.hash;
     if (hash) {
-      // Delay to ensure DOM elements are rendered
-      setTimeout(() => {
+      // Use requestAnimationFrame to ensure DOM is ready before scrolling
+      requestAnimationFrame(() => {
         const element = document.getElementById(hash.substring(1));
         if (element) {
           element.scrollIntoView({ behavior: 'smooth' });
         }
-      }, 100);
+      });
     }
   }, []);
 
