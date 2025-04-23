@@ -80,6 +80,13 @@ export function Footer() {
               key={link.path}
               href={link.path}
               className="hover:text-white transition-colors"
+              // Add onClick handler to force full page navigation on legal pages
+              onClick={(e) => {
+                if (isLegalPage) {
+                  e.preventDefault();
+                  window.location.href = link.path;
+                }
+              }}
             >
               {link.label}
             </a>

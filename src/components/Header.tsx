@@ -121,6 +121,13 @@ export function Header() {
                   key={item.path}
                   href={item.path}
                   className="text-foreground hover:text-primary-main transition-colors font-medium"
+                  // Add onClick handler to force full page navigation on legal pages
+                  onClick={(e) => {
+                    if (isLegalPage) {
+                      e.preventDefault();
+                      window.location.href = item.path;
+                    }
+                  }}
                 >
                   {item.label}
                 </a>
@@ -144,7 +151,7 @@ export function Header() {
             <div className="flex items-center md:hidden">
               <LanguageToggle />
               <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="mr-2">
-                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5' /> }
               </Button>
               <Button
                 variant="ghost"
@@ -167,7 +174,13 @@ export function Header() {
                 key={item.path}
                 href={item.path}
                 className="block py-2 text-foreground hover:text-primary-main transition-colors font-medium"
-                onClick={() => setIsMobileMenuOpen(false)}
+                onClick={(e) => {
+                  if (isLegalPage) {
+                    e.preventDefault();
+                    window.location.href = item.path;
+                  }
+                  setIsMobileMenuOpen(false);
+                }}
               >
                 {item.label}
               </a>
