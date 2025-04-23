@@ -10,14 +10,15 @@ export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
-  const [currentPath, setCurrentPath] = useState('');
 
-  useEffect(() => {
-    // Set currentPath, ensuring it includes a leading slash and no trailing slash for consistency
-    const path = window.location.pathname.replace(/\/+$/, '') || '/';
-    setCurrentPath(path);
-    console.log('Header: Initial Path:', path); // Debugging log
-  }, []);
+  // Initialize currentPath state synchronously on the client
+  const [currentPath, setCurrentPath] = useState(() => {
+    if (typeof window !== 'undefined') {
+      // Clean path: ensure leading slash, remove trailing slash
+      return window.location.pathname.replace(/\/+$/, '') || '/';
+    }
+    return ''; // Default for SSR
+  });
 
   useEffect(() => {
     setIsDark(document.documentElement.classList.contains('dark'));
@@ -43,9 +44,8 @@ export function Header() {
     }
   };
 
-  // Refined check for legal page, handling potential trailing slashes
+  // Check for legal page based on the synchronously initialized currentPath
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
-  console.log('Header: isLegalPage:', isLegalPage, 'currentPath:', currentPath); // Debugging log
 
   // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (anchor: string) => {
@@ -69,7 +69,6 @@ export function Header() {
         href = `${base}${anchor}`; // e.g. /#pricing or /fr/#pricing
       }
     }
-    console.log(`Header: getAnchorPath(${anchor}) -> ${href}`); // Debugging log
     return href;
   };
 

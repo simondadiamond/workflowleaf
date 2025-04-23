@@ -3,19 +3,18 @@ import { useTranslation } from '@/lib/i18n';
 
 export function Footer() {
   const { t, locale } = useTranslation();
-  const [currentPath, setCurrentPath] = React.useState('');
 
-  React.useEffect(() => {
-    // Set currentPath, ensuring it includes a leading slash and no trailing slash for consistency
-    const path = window.location.pathname.replace(/\/+$/, '') || '/';
-    setCurrentPath(path);
-    console.log('Footer: Initial Path:', path); // Debugging log
-  }, []);
+  // Initialize currentPath state synchronously on the client
+  const [currentPath, setCurrentPath] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      // Clean path: ensure leading slash, remove trailing slash
+      return window.location.pathname.replace(/\/+$/, '') || '/';
+    }
+    return ''; // Default for SSR
+  });
 
-  // Refined check for legal page, handling potential trailing slashes
+  // Check for legal page based on the synchronously initialized currentPath
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
-  console.log('Footer: isLegalPage:', isLegalPage, 'currentPath:', currentPath); // Debugging log
-
 
   // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (path: string) => {
@@ -39,7 +38,6 @@ export function Footer() {
         href = `${base}${path}`;
       }
     }
-    console.log(`Footer: getAnchorPath(${path}) -> ${href}`); // Debugging log
     return href;
   };
 
