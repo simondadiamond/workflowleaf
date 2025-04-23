@@ -151,7 +151,7 @@ export function Header() {
             <div className="flex items-center md:hidden">
               <LanguageToggle />
               <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="mr-2">
-                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5' /> }
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" /> } {/* Corrected quote here */}
               </Button>
               <Button
                 variant="ghost"
