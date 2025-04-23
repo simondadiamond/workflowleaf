@@ -26,8 +26,10 @@ export function Footer() {
     if (isLegalPage) {
       // When on a legal page, always link to the homepage with the full domain
       if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
+        // Explicitly construct full URL to homepage with anchor
         href = `${baseUrl}${base}/#${path.substring(1)}`; // e.g. https://workflowleaf.com/#pricing or https://workflowleaf.com/fr/#pricing
       } else if (path === '/') {
+        // Link to the root of the site with full domain
         href = `${baseUrl}${base}/`; // e.g. https://workflowleaf.com/ or https://workflowleaf.com/fr/
       } else {
         // For other specific links on legal page if any (e.g. /legal)
@@ -51,6 +53,14 @@ export function Footer() {
     { label: t('how.title'), path: getAnchorPath('#how-it-works') },
     { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
+
+  // Add useEffect to log generated hrefs after mount
+  React.useEffect(() => {
+    navLinks.forEach(link => {
+      console.log(`Footer Link: ${link.label} -> ${link.path}`);
+    });
+  }, [navLinks]);
+
 
   return (
     <footer className="bg-secondary-main text-white">

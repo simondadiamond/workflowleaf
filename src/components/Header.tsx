@@ -57,8 +57,10 @@ export function Header() {
     // When on a legal page, always link to the homepage with the full domain
     if (isLegalPage) {
       if (anchor === '#challenges' || anchor === '#how-it-works' || anchor === '#pricing') {
+        // Explicitly construct full URL to homepage with anchor
         href = `${baseUrl}${base}/#${anchor.substring(1)}`; // e.g. https://workflowleaf.com/#challenges or https://workflowleaf.com/fr/#challenges
       } else if (anchor === '/') {
+        // Link to the root of the site with full domain
         href = `${baseUrl}${base}/`; // e.g. https://workflowleaf.com/ or https://workflowleaf.com/fr/
       } else {
          // For other specific links on legal page if any (e.g. /legal)
@@ -82,6 +84,14 @@ export function Header() {
     { label: t('how.title'), path: getAnchorPath('#how-it-works') },
     { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
+
+  // Add useEffect to log generated hrefs after mount
+  useEffect(() => {
+    leftNavItems.forEach(item => {
+      console.log(`Header Link: ${item.label} -> ${item.path}`);
+    });
+  }, [leftNavItems]);
+
 
   // Booking URLs with tracking parameters
   const bookingBaseUrl = locale === 'fr'
