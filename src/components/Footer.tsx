@@ -19,19 +19,23 @@ export function Footer() {
   // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (path: string) => {
     const base = locale === 'fr' ? '/fr' : '';
+    const baseUrl = 'https://workflowleaf.com'; // Define base URL
+
     let href = '';
 
     if (isLegalPage) {
-      // On legal page, anchors like #pricing do not exist, so link to homepage + anchor
+      // When on a legal page, always link to the homepage with the full domain
       if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
-        href = `${base}/#${path.substring(1)}`; // e.g. /#pricing or /fr/#pricing
+        href = `${baseUrl}${base}/#${path.substring(1)}`; // e.g. https://workflowleaf.com/#pricing or https://workflowleaf.com/fr/#pricing
       } else if (path === '/') {
-        href = `${base}/`; // e.g. / or /fr/
+        href = `${baseUrl}${base}/`; // e.g. https://workflowleaf.com/ or https://workflowleaf.com/fr/
       } else {
-        href = `${base}${path}`; // For other specific links on legal page if any
+        // For other specific links on legal page if any (e.g. /legal)
+        // Ensure these are also absolute if needed, or handle differently
+        href = `${baseUrl}${base}${path}`;
       }
     } else {
-      // If NOT isLegalPage (i.e., on index page)
+      // If NOT isLegalPage (i.e., on index page), use relative or root-relative paths
       if (path === '/') {
         href = `${base}/`;
       } else {
