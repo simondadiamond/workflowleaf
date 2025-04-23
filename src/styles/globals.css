@@ -80,33 +80,28 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Ensure Inter is the base font */
     font-family: 'Inter', system-ui, sans-serif;
   }
 
-  /* Keep the custom focus-visible style */
   *:focus-visible {
     @apply outline-none ring-2 ring-accent-main ring-offset-2;
   }
 
-  /* Apply filter to logo in dark mode for higher contrast (for header logo) */
   .dark img[src="/logo.svg"]:not(.footer-logo) {
     filter: brightness(2.5) contrast(1.1) hue-rotate(10deg);
   }
 
-  /* Force teal color on footer logo */
   .footer-logo {
     filter: invert(38%) sepia(72%) saturate(749%) hue-rotate(140deg) brightness(90%) contrast(85%);
   }
 
-  /* Style list markers with accent color */
   ul li::marker {
     color: hsl(var(--accent-check));
   }
 
-  /* Add scroll-padding-top to offset fixed header height for anchor links */
+  /* Offset anchor scroll for fixed header */
   html {
-    scroll-padding-top: 4rem; /* Adjust this value to your header height */
+    scroll-padding-top: 4rem; /* Adjust to your header height */
     scroll-behavior: smooth;
   }
 }

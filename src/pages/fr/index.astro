@@ -22,18 +22,20 @@ import { AnchorScrollHandler } from '@/components/AnchorScrollHandler';
   currentPath="/fr/"
 >
   <Header client:load />
-  {/* Wrap AnchorScrollHandler in Suspense to prevent hydration errors */}
+  {/* Wrap AnchorScrollHandler in Suspense */}
   <Suspense fallback={null}>
     <AnchorScrollHandler client:load />
   </Suspense>
   <main>
     <Hero client:load />
     <PartnerBar client:load />
-    <PainCards client:load /> {/* Changed component name */}
+    <PainCards client:load />
     <HowItWorks client:load />
     <KpiStrip client:load />
-    {/* <Testimonials client:load /> */} {/* Hidden */}
-    <Pricing client:load />
+    {/* Wrap Pricing in Suspense and client:load to fix Tabs hydration */}
+    <Suspense fallback={null}>
+      <Pricing client:load />
+    </Suspense>
     <CtaBanner client:load />
   </main>
   <Footer client:load />
