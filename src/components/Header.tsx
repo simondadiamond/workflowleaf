@@ -9,6 +9,7 @@ export function Header() {
   const { t, locale } = useTranslation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Initialize isDark to false, will be updated in useEffect
   const [isDark, setIsDark] = useState(false);
   const [currentPath, setCurrentPath] = useState('');
 
@@ -16,6 +17,13 @@ export function Header() {
     setCurrentPath(window.location.pathname);
   }, []);
 
+  // Initialize dark mode state *after* mount by checking document class
+  // This runs only once on the client
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains('dark'));
+  }, []);
+
+  // Detect scroll to change header appearance
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
@@ -24,16 +32,17 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  useEffect(() => {
-    const isDarkMode = document.documentElement.classList.contains('dark');
-    setIsDark(isDarkMode);
-  }, []);
-
+  // Toggle dark mode and persist choice
   const toggleDarkMode = () => {
     const newMode = !isDark;
     setIsDark(newMode);
-    document.documentElement.classList.toggle('dark');
-    localStorage.setItem('theme', newMode ? 'dark' : 'light');
+    if (newMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
   };
 
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';

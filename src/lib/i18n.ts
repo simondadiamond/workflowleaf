@@ -44,13 +44,23 @@ type TranslationKey =
   | 'pricing.title'
   | 'pricing.pilot.title'
   | 'pricing.pilot.price'
-  | 'pricing.pilot.description' // Updated key
-  | 'pricing.pilot.features' // Keep this for the pilot card
+  | 'pricing.pilot.description'
+  | 'pricing.pilot.features'
   | 'pricing.pilot.button'
   | 'pricing.pilot.upgrade'
   | 'pricing.managed.title'
   | 'pricing.managed.description'
-  // New Managed Care Feature Keys (Essentials)
+  | 'pricing.managed.period'
+  | 'pricing.managed.essentials.price'
+  | 'pricing.managed.growth.price'
+  | 'pricing.managed.premium.price'
+  | 'pricing.managed.essentials.button'
+  | 'pricing.managed.growth.button'
+  | 'pricing.managed.premium.button'
+  | 'pricing.managed.essentials.tab'
+  | 'pricing.managed.growth.tab'
+  | 'pricing.managed.growth.popular'
+  | 'pricing.managed.premium.tab'
   | 'pricing.managed.essentials.feature1'
   | 'pricing.managed.essentials.feature2'
   | 'pricing.managed.essentials.feature3'
@@ -59,7 +69,6 @@ type TranslationKey =
   | 'pricing.managed.essentials.feature6'
   | 'pricing.managed.essentials.feature7'
   | 'pricing.managed.essentials.feature8'
-  // New Managed Care Feature Keys (Growth)
   | 'pricing.managed.growth.feature1'
   | 'pricing.managed.growth.feature2'
   | 'pricing.managed.growth.feature3'
@@ -68,7 +77,6 @@ type TranslationKey =
   | 'pricing.managed.growth.feature6'
   | 'pricing.managed.growth.feature7'
   | 'pricing.managed.growth.feature8'
-  // New Managed Care Feature Keys (Premium)
   | 'pricing.managed.premium.feature1'
   | 'pricing.managed.premium.feature2'
   | 'pricing.managed.premium.feature3'
@@ -85,7 +93,6 @@ type TranslationKey =
   | 'footer.contact'
   | 'footer.email';
 
-// Helper type for feature keys
 type FeatureKey =
   | 'pricing.managed.essentials.feature1'
   | 'pricing.managed.essentials.feature2'
@@ -112,8 +119,7 @@ type FeatureKey =
   | 'pricing.managed.premium.feature7'
   | 'pricing.managed.premium.feature8';
 
-
-const translations: Record<string, Record<TranslationKey, string>> = {
+const translations: Record<string, Record<TranslationKey, string | string[]>> = {
   en: {
     'hero.title': 'Reclaim Your Hours.\nGrow Your Portfolio Effortlessly.',
     'hero.subtitle': 'Smart automation for property managers. Stop wasting time on repetitive tasks, focus on scaling your properties.',
@@ -156,16 +162,31 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pilot.description': 'Get 30% off our CA $950 Diagnostic in exchange for an honest testimonial.',
     'partners.title': 'Trusted & Supported By',
     'pricing.title': 'Transparent Pricing',
-    'pricing.pilot.title': 'Pilot Diagnostic',
+    'pricing.pilot.title': 'Quick Start Automation',
     'pricing.pilot.price': 'CA $949',
-    // Updated English description
     'pricing.pilot.description': 'Process deep‑dive and setup of your first automated process.',
-    'pricing.pilot.features': ['90-minute deep-dive + ROI worksheet', 'Process map & recommendations', 'Build 1 foundational n8n workflow', '14-day email support', 'Bilingual service (EN/FR)'],
-    'pricing.pilot.button': 'Book Discovery',
+    'pricing.pilot.features': [
+      '90-minute deep-dive + ROI worksheet',
+      'Process map & recommendations',
+      'Build 1 foundational n8n workflow',
+      '14-day email support',
+      'Bilingual service (EN/FR)',
+    ],
+    'pricing.pilot.button': 'Explore Quick Start',
     'pricing.pilot.upgrade': 'Need more? Full Automation Setup starts at CA $2,400 for up to 2 workflows.',
-    'pricing.managed.title': 'Managed Care',
+    'pricing.managed.title': 'Guided Automation Plans',
     'pricing.managed.description': 'Monitoring, optimisation and incremental improvements',
-    // Essentials Features EN
+    'pricing.managed.period': '/month',
+    'pricing.managed.essentials.price': 'CA $639',
+    'pricing.managed.growth.price': 'CA $1,259',
+    'pricing.managed.premium.price': 'CA $2,279+',
+    'pricing.managed.essentials.button': 'Explore  Essentials',
+    'pricing.managed.growth.button': 'Explore  Growth',
+    'pricing.managed.premium.button': 'Request Premium Quote',
+    'pricing.managed.essentials.tab': 'Essentials',
+    'pricing.managed.growth.tab': 'Growth',
+    'pricing.managed.growth.popular': 'Most Popular',
+    'pricing.managed.premium.tab': 'Premium',
     'pricing.managed.essentials.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.essentials.feature2': 'Monthly Performance Summary',
     'pricing.managed.essentials.feature3': 'Quarterly ROI Report',
@@ -174,7 +195,6 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pricing.managed.essentials.feature6': '*(New Workflows: Ad-hoc Projects Available)*',
     'pricing.managed.essentials.feature7': '–',
     'pricing.managed.essentials.feature8': '–',
-    // Growth Features EN
     'pricing.managed.growth.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.growth.feature2': 'Monthly Performance Summary',
     'pricing.managed.growth.feature3': 'Quarterly ROI Report',
@@ -183,7 +203,6 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pricing.managed.growth.feature6': '**New Workflow Builds (~Bi-Monthly) **',
     'pricing.managed.growth.feature7': 'Regular Performance Check-ins',
     'pricing.managed.growth.feature8': '–',
-    // Premium Features EN
     'pricing.managed.premium.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.premium.feature2': 'Monthly Performance Summary',
     'pricing.managed.premium.feature3': 'Quarterly ROI Report',
@@ -198,7 +217,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'footer.privacy': 'Privacy Policy',
     'footer.legal': 'Legal',
     'footer.contact': 'Contact Us',
-    'footer.email': 'hello@workflowleaf.com'
+    'footer.email': 'hello@workflowleaf.com',
   },
   fr: {
     'hero.title': 'Récupérez vos heures.\nDéveloppez votre parc immobilier sans effort.',
@@ -223,7 +242,6 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'how.step1.title': '1. Découverte',
     'how.step1.description': 'Nous analysons vos processus actuels pour cibler précisément où l\'automatisation peut vous faire économiser le plus de temps et d\'argent.',
     'how.step2.title': '2. Créer votre solution',
-
     'how.step2.description': 'Notre équipe conçoit et met en place les processus de travail automatisés sur mesure pour simplifier vos tâches spécifiques de gestion immobilière.',
     'how.step3.title': '3. Lancement et Optimisation',
     'how.step3.description': 'Nous lançons vos automatisations et surveillons continuellement la performance, en apportant des ajustements pour assurer une efficacité maximale et nous adapter à vos besoins changeants.',
@@ -243,17 +261,31 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pilot.description': 'Obtenez 30% de réduction sur notre Diagnostic de 950$ CA en échange d\'un témoignage honnête.',
     'partners.title': 'Soutenu par',
     'pricing.title': 'Tarification Transparente',
-    'pricing.pilot.title': 'Diagnostic Pilote',
-    'pricing.pilot.price': '950$ CA',
-    // Updated French description
+    'pricing.pilot.title': 'Automatisation Démarrage Rapide',
+    'pricing.pilot.price': 'CA 949$',
     'pricing.pilot.description': 'Analyse approfondie et déploiement de votre premier processus automatisé.',
-    'pricing.pilot.features': ['Session approfondie de 90 min + feuille ROI', 'Cartographie des processus & recommandations', 'Construction d\'un processus n8n fondamental', 'Support email 14 jours', 'Service bilingue (EN/FR)'],
-    'pricing.pilot.button': 'Réserver une Découverte',
+    'pricing.pilot.features': [
+      'Session approfondie de 90 min + feuille ROI',
+      'Cartographie des processus & recommandations',
+      'Construction d\'un processus n8n fondamental',
+      'Support email 14 jours',
+      'Service bilingue (EN/FR)',
+    ],
+    'pricing.pilot.button': 'Explorez Démarrage',
     'pricing.pilot.upgrade': 'Besoin de plus? La Configuration Complète commence à 2 400$ CA pour 2 processus de travail.',
-    'pricing.managed.title': 'Service Géré',
+    'pricing.managed.title': 'Accompagnement Continu',
     'pricing.managed.description': 'Surveillance, optimisation et améliorations progressives',
-    // Essentials Features FR
-
+    'pricing.managed.period': '/mois',
+    'pricing.managed.essentials.price': 'CA $639',
+    'pricing.managed.growth.price': 'CA $1,259',
+    'pricing.managed.premium.price': 'CA $2,279+',
+    'pricing.managed.essentials.button': 'Explorez Essentiel',
+    'pricing.managed.growth.button': 'Explorez Croissance',
+    'pricing.managed.premium.button': 'Demandez une Consultation Premium',
+    'pricing.managed.essentials.tab': 'Essentiel',
+    'pricing.managed.growth.tab': 'Croissance',
+    'pricing.managed.growth.popular': 'Le plus populaire',
+    'pricing.managed.premium.tab': 'Premium',
     'pricing.managed.essentials.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.essentials.feature2': 'Sommaire de Performance Mensuel',
     'pricing.managed.essentials.feature3': 'Rapport ROI Trimestriel',
@@ -262,8 +294,6 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pricing.managed.essentials.feature6': '*(Nouveaux Processus : Projets Ad-hoc Disponibles) *',
     'pricing.managed.essentials.feature7': '–',
     'pricing.managed.essentials.feature8': '–',
-    // Growth Features FR
-
     'pricing.managed.growth.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.growth.feature2': 'Sommaire de Performance Mensuel',
     'pricing.managed.growth.feature3': 'Rapport ROI Trimestriel',
@@ -272,8 +302,6 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pricing.managed.growth.feature6': '**Création Nouveau Processus (~Bi-Mensuel) **',
     'pricing.managed.growth.feature7': 'Bilans de Performance Réguliers',
     'pricing.managed.growth.feature8': '–',
-    // Premium Features FR
-
     'pricing.managed.premium.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.premium.feature2': 'Sommaire de Performance Mensuel',
     'pricing.managed.premium.feature3': 'Rapport ROI Trimestriel',
@@ -282,13 +310,13 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     'pricing.managed.premium.feature6': '**Développement Processus Complexes & IA Sur Mesure**',
     'pricing.managed.premium.feature7': '**Appel Stratégique Mensuel (Feuille de Route) **',
     'pricing.managed.premium.feature8': '**Support Agent IA & VoiceBot**',
-    'pricing.addons': 'Need Chat or Voice Bot creation? Premium Add-On Projects start at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.',
+    'pricing.addons': 'Besoin d\'un Chat ou Voice Bot? Les projets Premium commencent à 4 500$ CA (Chat) et 6 500$ CA (Voice). Contactez-nous pour plus de détails.',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
     'footer.privacy': 'Privacy Policy',
     'footer.legal': 'Légal',
     'footer.contact': 'Contact Us',
-    'footer.email': 'hello@workflowleaf.com'
+    'footer.email': 'hello@workflowleaf.com',
   }
 };
 
@@ -302,15 +330,12 @@ export function useTranslation() {
   });
 
   const toggleLocale = () => {
-    setLocale(prev => prev === 'en' ? 'fr' : 'en');
+    setLocale(prev => (prev === 'en' ? 'fr' : 'en'));
 
     if (typeof window !== 'undefined') {
       const currentPath = window.location.pathname;
-      const newPath = locale === 'en'
-        ? `/fr${currentPath}`
-        : currentPath.replace(/^\/fr/, '');
+      const newPath = locale === 'en' ? `/fr${currentPath}` : currentPath.replace(/^\/fr/, '');
 
-      // Use Astro's view transitions API if available, otherwise fallback to full reload
       if ((window as any).astro && (window as any).astro.navigate) {
         (window as any).astro.navigate(newPath || '/');
       } else {
@@ -319,11 +344,8 @@ export function useTranslation() {
     }
   };
 
-  // Updated t function to handle potential FeatureKey type
-  const t = (key: TranslationKey | FeatureKey): string => {
-    // Fallback logic: if a key doesn't exist in the current locale, try English
+  const t = (key: TranslationKey | FeatureKey): string | string[] => {
     const translation = translations[locale]?.[key] ?? translations['en']?.[key] ?? key;
-    // If still no translation found, return the key itself for debugging
     if (translation === key && !translations['en']?.[key]) {
       console.warn(`Translation key "${key}" not found in locale "${locale}" or fallback "en".`);
     }

@@ -20,7 +20,6 @@ const baseUrl = 'https://workflowleaf.com';
 
 const canonicalUrl = lang === 'fr' ? `${baseUrl}/fr/` : baseUrl;
 
-// Define hreflang links as plain objects (no JSX here)
 const hreflangLinks = [
   { rel: 'alternate', hreflang: 'en', href: 'https://workflowleaf.com' },
   { rel: 'alternate', hreflang: 'fr', href: 'https://workflowleaf.com/fr/' },
@@ -56,7 +55,6 @@ const hreflangLinks = [
     <meta property="twitter:description" content={description} />
     <meta property="twitter:image" content={`${baseUrl}/og-image.jpg`} />
 
-    <!-- Render hreflang links here -->
     {hreflangLinks.map(({ rel, hreflang, href }) => (
       <link rel={rel} hreflang={hreflang} href={href} />
     ))}
@@ -66,21 +64,44 @@ const hreflangLinks = [
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-    <!-- Dark mode script -->
+    <!-- Theme detection and persistence script -->
     <script set:html={`
-      function updateTheme() {
-        if (!window.matchMedia) return;
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const storedTheme = localStorage.getItem('theme');
-        if (storedTheme === 'dark' || (!storedTheme && isDark)) {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
+      (function() {
+        function applyTheme() {
+          try {
+            const storedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+          } catch (err) {
+            console.error('Theme application error:', err);
+          }
         }
-      }
-      updateTheme();
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
-      window.addEventListener('storage', (e) => { if(e.key === 'theme') updateTheme(); });
+
+        // Apply theme on initial load
+        applyTheme();
+
+        // Listen for system theme changes and update if no stored preference
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+          if (!localStorage.getItem('theme')) {
+            applyTheme(); // Re-apply based on system preference if no stored theme
+          }
+        });
+
+        // Listen for localStorage changes (e.g., from other tabs)
+        window.addEventListener('storage', e => {
+          if (e.key === 'theme') {
+            applyTheme(); // Re-apply based on stored theme
+          }
+        });
+
+        // Listen for Astro View Transitions after swap
+        document.addEventListener('astro:after-swap', applyTheme);
+
+      })();
     `} />
 
     <ViewTransitions />

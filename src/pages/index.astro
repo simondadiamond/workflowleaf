@@ -18,6 +18,7 @@ const seoDescription = "WorkflowLeaf creates custom automation for property mana
 
 <Layout title={seoTitle} description={seoDescription} lang="en" currentPath="/">
   <Header client:load />
+  {/* Wrap AnchorScrollHandler in Suspense to prevent hydration errors */}
   <Suspense fallback={null}>
     <AnchorScrollHandler client:load />
   </Suspense>
