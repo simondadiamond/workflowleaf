@@ -42,17 +42,20 @@ export function Header() {
 
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
 
+  // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (anchor: string) => {
     const base = locale === 'fr' ? '/fr' : '';
+    // On legal page, anchors like #pricing do not exist, so link to homepage + anchor
     if (isLegalPage) {
       if (anchor === '#challenges' || anchor === '#how-it-works' || anchor === '#pricing') {
-        return `${base}/${anchor}`;
+        return `${base}/#${anchor.substring(1)}`; // e.g. /fr/#pricing
       }
       if (anchor === '/') {
         return `${base}/`;
       }
       return `${base}${anchor}`;
     }
+    // On other pages, anchors can be relative
     if (anchor === '/') {
       return `${base}/`;
     }

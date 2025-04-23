@@ -11,12 +11,13 @@ export function Footer() {
 
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
 
+  // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (path: string) => {
     const base = locale === 'fr' ? '/fr' : '';
     if (isLegalPage) {
-      // On legal pages, link to main page with anchors included
+      // On legal page, anchors like #pricing do not exist, so link to homepage + anchor
       if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
-        return `${base}/${path}`;
+        return `${base}/#${path.substring(1)}`; // e.g. /fr/#pricing
       }
       if (path === '/') {
         return `${base}/`;
