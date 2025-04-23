@@ -85,14 +85,6 @@ export function Header() {
     { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
 
-  // Add useEffect to log generated hrefs after mount
-  useEffect(() => {
-    leftNavItems.forEach(item => {
-      console.log(`Header Link (Generated): ${item.label} -> ${item.path}`);
-    });
-  }, [leftNavItems]);
-
-
   // Booking URLs with tracking parameters
   const bookingBaseUrl = locale === 'fr'
     ? 'https://cal.com/workflowleaf/consultation-gratuite'
@@ -128,11 +120,8 @@ export function Header() {
                     const isFrenchAnchorToHomepage = item.path.startsWith('https://workflowleaf.com/fr/') && item.path.includes('#');
 
                     if (isLegalPage && (isAnchorToHomepage || isFrenchAnchorToHomepage)) {
-                       console.log(`Header Link (Clicked): Forcing full navigation for ${item.label} to ${item.path}`); // Debug log
                        e.preventDefault();
                        window.location.href = item.path;
-                    } else {
-                       console.log(`Header Link (Clicked): Allowing default navigation for ${item.label} to ${item.path}`); // Debug log
                     }
                   }}
                 >
@@ -158,7 +147,7 @@ export function Header() {
             <div className="flex items-center md:hidden">
               <LanguageToggle />
               <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="mr-2">
-                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" /> }
               </Button>
               <Button
                 variant="ghost"
@@ -187,11 +176,8 @@ export function Header() {
                    const isFrenchAnchorToHomepage = item.path.startsWith('https://workflowleaf.com/fr/') && item.path.includes('#');
 
                    if (isLegalPage && (isAnchorToHomepage || isFrenchAnchorToHomepage)) {
-                      console.log(`Header Mobile Link (Clicked): Forcing full navigation for ${item.label} to ${item.path}`); // Debug log
                       e.preventDefault();
                       window.location.href = item.path;
-                   } else {
-                      console.log(`Header Mobile Link (Clicked): Allowing default navigation for ${item.label} to ${item.path}`); // Debug log
                    }
                   setIsMobileMenuOpen(false); // Close menu after click
                 }}

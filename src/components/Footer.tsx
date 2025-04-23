@@ -54,14 +54,6 @@ export function Footer() {
     { label: t('nav.pricing'), path: getAnchorPath('#pricing') },
   ];
 
-  // Add useEffect to log generated hrefs after mount
-  React.useEffect(() => {
-    navLinks.forEach(link => {
-      console.log(`Footer Link (Generated): ${link.label} -> ${link.path}`);
-    });
-  }, [navLinks]);
-
-
   return (
     <footer className="bg-secondary-main text-white">
       <div className="max-w-3xl mx-auto py-4 px-4 text-center">
@@ -87,11 +79,8 @@ export function Footer() {
                  const isFrenchAnchorToHomepage = link.path.startsWith('https://workflowleaf.com/fr/') && link.path.includes('#');
 
                  if (isLegalPage && (isAnchorToHomepage || isFrenchAnchorToHomepage)) {
-                    console.log(`Footer Link (Clicked): Forcing full navigation for ${link.label} to ${link.path}`); // Debug log
                     e.preventDefault();
                     window.location.href = link.path;
-                 } else {
-                    console.log(`Footer Link (Clicked): Allowing default navigation for ${link.label} to ${link.path}`); // Debug log
                  }
               }}
             >
