@@ -57,7 +57,7 @@ export function Footer() {
   // Add useEffect to log generated hrefs after mount
   React.useEffect(() => {
     navLinks.forEach(link => {
-      console.log(`Footer Link: ${link.label} -> ${link.path}`);
+      console.log(`Footer Link (Generated): ${link.label} -> ${link.path}`);
     });
   }, [navLinks]);
 
@@ -82,10 +82,17 @@ export function Footer() {
               className="hover:text-white transition-colors"
               // Add onClick handler to force full page navigation on legal pages
               onClick={(e) => {
-                if (isLegalPage) {
-                  e.preventDefault();
-                  window.location.href = link.path;
-                }
+                 // Check if current page is legal AND the link is an absolute homepage anchor
+                 const isAnchorToHomepage = link.path.startsWith('https://workflowleaf.com/') && link.path.includes('#');
+                 const isFrenchAnchorToHomepage = link.path.startsWith('https://workflowleaf.com/fr/') && link.path.includes('#');
+
+                 if (isLegalPage && (isAnchorToHomepage || isFrenchAnchorToHomepage)) {
+                    console.log(`Footer Link (Clicked): Forcing full navigation for ${link.label} to ${link.path}`); // Debug log
+                    e.preventDefault();
+                    window.location.href = link.path;
+                 } else {
+                    console.log(`Footer Link (Clicked): Allowing default navigation for ${link.label} to ${link.path}`); // Debug log
+                 }
               }}
             >
               {link.label}

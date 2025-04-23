@@ -88,7 +88,7 @@ export function Header() {
   // Add useEffect to log generated hrefs after mount
   useEffect(() => {
     leftNavItems.forEach(item => {
-      console.log(`Header Link: ${item.label} -> ${item.path}`);
+      console.log(`Header Link (Generated): ${item.label} -> ${item.path}`);
     });
   }, [leftNavItems]);
 
@@ -123,9 +123,16 @@ export function Header() {
                   className="text-foreground hover:text-primary-main transition-colors font-medium"
                   // Add onClick handler to force full page navigation on legal pages
                   onClick={(e) => {
-                    if (isLegalPage) {
-                      e.preventDefault();
-                      window.location.href = item.path;
+                    // Check if current page is legal AND the link is an absolute homepage anchor
+                    const isAnchorToHomepage = item.path.startsWith('https://workflowleaf.com/') && item.path.includes('#');
+                    const isFrenchAnchorToHomepage = item.path.startsWith('https://workflowleaf.com/fr/') && item.path.includes('#');
+
+                    if (isLegalPage && (isAnchorToHomepage || isFrenchAnchorToHomepage)) {
+                       console.log(`Header Link (Clicked): Forcing full navigation for ${item.label} to ${item.path}`); // Debug log
+                       e.preventDefault();
+                       window.location.href = item.path;
+                    } else {
+                       console.log(`Header Link (Clicked): Allowing default navigation for ${item.label} to ${item.path}`); // Debug log
                     }
                   }}
                 >
@@ -151,7 +158,7 @@ export function Header() {
             <div className="flex items-center md:hidden">
               <LanguageToggle />
               <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="mr-2">
-                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" /> } {/* Corrected quote here */}
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
               <Button
                 variant="ghost"
@@ -175,11 +182,18 @@ export function Header() {
                 href={item.path}
                 className="block py-2 text-foreground hover:text-primary-main transition-colors font-medium"
                 onClick={(e) => {
-                  if (isLegalPage) {
-                    e.preventDefault();
-                    window.location.href = item.path;
-                  }
-                  setIsMobileMenuOpen(false);
+                   // Check if current page is legal AND the link is an absolute homepage anchor
+                   const isAnchorToHomepage = item.path.startsWith('https://workflowleaf.com/') && item.path.includes('#');
+                   const isFrenchAnchorToHomepage = item.path.startsWith('https://workflowleaf.com/fr/') && item.path.includes('#');
+
+                   if (isLegalPage && (isAnchorToHomepage || isFrenchAnchorToHomepage)) {
+                      console.log(`Header Mobile Link (Clicked): Forcing full navigation for ${item.label} to ${item.path}`); // Debug log
+                      e.preventDefault();
+                      window.location.href = item.path;
+                   } else {
+                      console.log(`Header Mobile Link (Clicked): Allowing default navigation for ${item.label} to ${item.path}`); // Debug log
+                   }
+                  setIsMobileMenuOpen(false); // Close menu after click
                 }}
               >
                 {item.label}
