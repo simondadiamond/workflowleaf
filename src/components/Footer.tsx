@@ -14,7 +14,7 @@ export function Footer() {
   const getAnchorPath = (path: string) => {
     const base = locale === 'fr' ? '/fr' : '';
     if (isLegalPage) {
-      // Include anchor hashes in links to main page sections
+      // On legal pages, link to main page with anchors included
       if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
         return `${base}/${path}`;
       }
