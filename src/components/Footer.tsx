@@ -6,28 +6,41 @@ export function Footer() {
   const [currentPath, setCurrentPath] = React.useState('');
 
   React.useEffect(() => {
-    setCurrentPath(window.location.pathname);
+    // Set currentPath, ensuring it includes a leading slash and no trailing slash for consistency
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    setCurrentPath(path);
+    console.log('Footer: Initial Path:', path); // Debugging log
   }, []);
 
+  // Refined check for legal page, handling potential trailing slashes
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
+  console.log('Footer: isLegalPage:', isLegalPage, 'currentPath:', currentPath); // Debugging log
+
 
   // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (path: string) => {
     const base = locale === 'fr' ? '/fr' : '';
+    let href = '';
+
     if (isLegalPage) {
       // On legal page, anchors like #pricing do not exist, so link to homepage + anchor
       if (path === '#challenges' || path === '#how-it-works' || path === '#pricing') {
-        return `${base}/#${path.substring(1)}`; // e.g. /fr/#pricing
+        href = `${base}/#${path.substring(1)}`; // e.g. /#pricing or /fr/#pricing
+      } else if (path === '/') {
+        href = `${base}/`; // e.g. / or /fr/
+      } else {
+        href = `${base}${path}`; // For other specific links on legal page if any
       }
+    } else {
+      // If NOT isLegalPage (i.e., on index page)
       if (path === '/') {
-        return `${base}/`;
+        href = `${base}/`;
+      } else {
+        href = `${base}${path}`;
       }
-      return `${base}${path}`;
     }
-    if (path === '/') {
-      return `${base}/`;
-    }
-    return `${base}${path}`;
+    console.log(`Footer: getAnchorPath(${path}) -> ${href}`); // Debugging log
+    return href;
   };
 
   const navLinks = [

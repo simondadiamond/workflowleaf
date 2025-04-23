@@ -13,7 +13,10 @@ export function Header() {
   const [currentPath, setCurrentPath] = useState('');
 
   useEffect(() => {
-    setCurrentPath(window.location.pathname);
+    // Set currentPath, ensuring it includes a leading slash and no trailing slash for consistency
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    setCurrentPath(path);
+    console.log('Header: Initial Path:', path); // Debugging log
   }, []);
 
   useEffect(() => {
@@ -40,26 +43,34 @@ export function Header() {
     }
   };
 
+  // Refined check for legal page, handling potential trailing slashes
   const isLegalPage = currentPath === '/legal' || currentPath === '/fr/legal';
+  console.log('Header: isLegalPage:', isLegalPage, 'currentPath:', currentPath); // Debugging log
 
   // Helper to build anchor links that work on legal page and others
   const getAnchorPath = (anchor: string) => {
     const base = locale === 'fr' ? '/fr' : '';
+    let href = '';
+
     // On legal page, anchors like #pricing do not exist, so link to homepage + anchor
     if (isLegalPage) {
       if (anchor === '#challenges' || anchor === '#how-it-works' || anchor === '#pricing') {
-        return `${base}/#${anchor.substring(1)}`; // e.g. /fr/#pricing
+        href = `${base}/#${anchor.substring(1)}`; // e.g. /#pricing or /fr/#pricing
+      } else if (anchor === '/') {
+        href = `${base}/`; // e.g. / or /fr/
+      } else {
+         href = `${base}${anchor}`; // For other specific links on legal page if any
       }
+    } else {
+      // If NOT isLegalPage (i.e., on index page)
       if (anchor === '/') {
-        return `${base}/`;
+        href = `${base}/`; // e.g. / or /fr/
+      } else {
+        href = `${base}${anchor}`; // e.g. /#pricing or /fr/#pricing
       }
-      return `${base}${anchor}`;
     }
-    // On other pages, anchors can be relative
-    if (anchor === '/') {
-      return `${base}/`;
-    }
-    return `${base}${anchor}`;
+    console.log(`Header: getAnchorPath(${anchor}) -> ${href}`); // Debugging log
+    return href;
   };
 
   const leftNavItems = [
