@@ -259,11 +259,11 @@ export function Pricing() {
             features={pilotFeatures}
             buttonText={t('pricing.pilot.button')}
             buttonVariant="secondary"
-            additionalInfo={
-              <div className="text-sm text-muted-foreground">
-                <p>{t('pricing.pilot.upgrade')}</p>
-              </div>
-            }
+            //additionalInfo={
+             // <div className="text-sm text-muted-foreground">
+             //   <p>{t('pricing.pilot.upgrade')}</p>
+             // </div>
+            //}
           />
 
           <PricingCard
