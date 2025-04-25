@@ -1,0 +1,22 @@
+{`---
+import Layout from '../layouts/Layout.astro';
+import { Header } from '@/components/Header';
+import { Pricing } from '@/components/Pricing';
+import { Footer } from '@/components/Footer';
+
+const seoTitle = "Transparent Pricing - WorkflowLeaf";
+const seoDescription = "Transparent pricing for our automation solutions. Choose from Quick Start Automation or Guided Automation Plans for property management.";
+const currentPath = "/pricing";
+const lang = "en";
+---
+
+<Layout title={seoTitle} description={seoDescription} lang={lang} currentPath={currentPath}>
+  <Header client:load />
+  <main class="py-20 bg-background">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+      <Pricing client:load />
+    </div>
+  </main>
+  <Footer client:load />
+</Layout>
+`}

@@ -85,7 +85,8 @@ type TranslationKey =
   | 'pricing.managed.premium.feature6'
   | 'pricing.managed.premium.feature7'
   | 'pricing.managed.premium.feature8'
-  | 'pricing.addons'
+  | 'pricing.managed.premium.feature9'
+  | 'pricing.addons' // Added pricing.addons
   | 'footer.copyright'
   | 'footer.links'
   | 'footer.privacy'
@@ -117,7 +118,9 @@ type FeatureKey =
   | 'pricing.managed.premium.feature5'
   | 'pricing.managed.premium.feature6'
   | 'pricing.managed.premium.feature7'
-  | 'pricing.managed.premium.feature8';
+  | 'pricing.managed.premium.feature8'
+	| 'pricing.managed.premium.feature9'
+  | 'pricing.addons'; // Added pricing.addons
 
 const translations: Record<string, Record<TranslationKey, string | string[]>> = {
   en: {
@@ -178,7 +181,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.description': 'Monitoring, optimisation and incremental improvements',
     'pricing.managed.period': '/month',
     'pricing.managed.essentials.price': 'CA $647',
-    'pricing.managed.growth.price': 'CA $1,447+',
+    'pricing.managed.growth.price': 'CA $1,497+',
     'pricing.managed.premium.price': 'CA $2,997+',
     'pricing.managed.essentials.button': 'Explore  Essentials',
     'pricing.managed.growth.button': 'Explore  Growth',
@@ -202,7 +205,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.growth.feature5': '**5 Included Support Hours / Month**',
     'pricing.managed.growth.feature6': '**New Workflow Builds (~Bi-Monthly) **',
     'pricing.managed.growth.feature7': 'Regular Performance Check-ins',
-    'pricing.managed.growth.feature8': '–',
+    'pricing.managed.growth.feature8': 'Premium Chatbot/VoiceBot Projects: Starting at CA $4,500 (Chat) / $6,500 (Voice)',
     'pricing.managed.premium.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.premium.feature2': 'Monthly Performance Summary',
     'pricing.managed.premium.feature3': 'Quarterly ROI Report',
@@ -211,7 +214,8 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.premium.feature6': '**Custom Complex Workflow & AI Development**',
     'pricing.managed.premium.feature7': '**Monthly Strategic Roadmap Call**',
     'pricing.managed.premium.feature8': '**AI Agent & VoiceBot Support**',
-    'pricing.addons': 'Need Chat or Voice Bot creation? Premium Add-On Projects start at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.',
+		'pricing.managed.premium.feature9': 'Premium Chatbot/VoiceBot Projects: Starting at CA $4,500 (Chat) / $6,500 (Voice)',
+    'pricing.addons': '*(Add-on: Chat or Voice Bot creation available as Premium Add-On Projects starting at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.)*',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
     'footer.privacy': 'Privacy Policy',
@@ -291,7 +295,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.essentials.feature3': 'Rapport ROI Trimestriel',
     'pricing.managed.essentials.feature4': 'Service Bilingue (FR/EN)',
     'pricing.managed.essentials.feature5': '**2 Heures de Support Incluses / Mois**',
-    'pricing.managed.essentials.feature6': '*(Nouveaux Processus : Projets Ad-hoc Disponibles)*',
+    'pricing.managed.essentials.feature6': '*(Nouveaux Processus : Projets Ad-hoc Disponibles) *',
     'pricing.managed.essentials.feature7': '–',
     'pricing.managed.essentials.feature8': '–',
     'pricing.managed.growth.feature1': 'Surveillance Santé des Processus 24/7',
@@ -301,7 +305,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.growth.feature5': '**5 Heures de Support Incluses / Mois**',
     'pricing.managed.growth.feature6': '**Création Nouveau Processus (~Bi-Mensuel) **',
     'pricing.managed.growth.feature7': 'Bilans de Performance Réguliers',
-    'pricing.managed.growth.feature8': '–',
+    'pricing.managed.growth.feature8': 'Projets Premium Chatbot/VoiceBot : Dès 4 500$ CA (Chat) / 6 500$ CA (Voice)',
     'pricing.managed.premium.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.premium.feature2': 'Sommaire de Performance Mensuel',
     'pricing.managed.premium.feature3': 'Rapport ROI Trimestriel',
@@ -310,7 +314,9 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.premium.feature6': '**Développement Processus Complexes & IA Sur Mesure**',
     'pricing.managed.premium.feature7': '**Appel Stratégique Mensuel (Feuille de Route) **',
     'pricing.managed.premium.feature8': '**Support Agent IA & VoiceBot**',
-    'pricing.addons': 'Besoin d\'un Chat ou Voice Bot? Les projets Premium commencent à 4 500$ CA (Chat) et 6 500$ CA (Voice). Contactez-nous pour plus de détails.',
+		'pricing.managed.premium.feature9': 'Projets Premium Chatbot/VoiceBot : Dès 4 500$ CA (Chat) / 6 500$ CA (Voice)',
+    // Modified pricing.addons to be a list item format
+    'pricing.addons': '*(Add-on : Création de Chat ou Voice Bot disponible en tant que Projets Premium Add-On à partir de 4 500$ CA (Chat) et 6 500$ CA (Voice). Contactez-nous pour plus de détails.)*',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
     'footer.privacy': 'Privacy Policy',

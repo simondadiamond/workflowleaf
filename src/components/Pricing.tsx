@@ -73,10 +73,6 @@ function PricingCard({
     ? 'https://cal.com/workflowleaf/consultation-gratuite'
     : 'https://cal.com/workflowleaf/free-consultation';
 
-  // Determine package query param based on title or selectedPlan
-  // We'll map the buttonText to package param for the main managed plans
-  // For pilot plan, no package param needed
-
   // Helper to get package param for managed plans
   const getPackageParam = (plan: PlanType | 'quickstart' | 'pilot') => {
     switch (plan) {
@@ -219,6 +215,7 @@ export function Pricing() {
       'pricing.managed.premium.feature6',
       'pricing.managed.premium.feature7',
       'pricing.managed.premium.feature8',
+			'pricing.managed.premium.feature9',
     ],
   };
 
@@ -259,11 +256,11 @@ export function Pricing() {
             features={pilotFeatures}
             buttonText={t('pricing.pilot.button')}
             buttonVariant="secondary"
-            //additionalInfo={
-             // <div className="text-sm text-muted-foreground">
-             //   <p>{t('pricing.pilot.upgrade')}</p>
-             // </div>
-            //}
+            additionalInfo={
+              <div className="text-sm text-muted-foreground">
+                <p>{t('pricing.pilot.upgrade')}</p>
+              </div>
+            }
           />
 
           <PricingCard
@@ -271,10 +268,10 @@ export function Pricing() {
             price={getPlanPrice(selectedPlan)}
             period={t('pricing.managed.period')}
             description={t('pricing.managed.description')}
-            features={managedFeatures[selectedPlan]}
             isPrimary={true}
             buttonText={getPlanButton(selectedPlan)}
             selectedPlan={selectedPlan}
+						features={managedFeatures[selectedPlan]}
             managedTabs={
               <div className="space-y-4">
                 <Tabs
@@ -296,10 +293,6 @@ export function Pricing() {
               </div>
             }
           />
-        </div>
-
-        <div className="text-center mt-12 text-sm text-muted-foreground">
-          <p>{t('pricing.addons')}</p>
         </div>
       </div>
     </section>
