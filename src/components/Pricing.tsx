@@ -141,13 +141,25 @@ function PricingCard({
 
           const cleanText = featureText.replace(/\*\*|\*\(|\)\*|–/g, '').trim();
 
+          // Determine icon: Minus for placeholder, Asterisk text for italic (*() start), Check otherwise
+          const IconComponent = isPlaceholder
+            ? () => <Minus className="h-5 w-5 text-muted-foreground flex-shrink-0 mr-2 mt-0.5" />
+            : isItalic
+            ? () => (
+                <span
+                  className="flex-shrink-0 mr-2 mt-0.5 text-muted-foreground text-lg leading-none select-none"
+                  aria-label="Addon feature"
+                  title="Addon feature"
+                  style={{ lineHeight: 1, userSelect: 'none' }}
+                >
+                  *
+                </span>
+              )
+            : () => <Check className="h-5 w-5 text-accent-dark flex-shrink-0 mr-2 mt-0.5" />;
+
           return (
             <li key={index} className={cn('flex items-start', isPlaceholder && 'invisible')}>
-              {isPlaceholder ? (
-                <Minus className="h-5 w-5 text-muted-foreground flex-shrink-0 mr-2 mt-0.5" />
-              ) : (
-                <Check className="h-5 w-5 text-accent-dark flex-shrink-0 mr-2 mt-0.5" />
-              )}
+              <IconComponent />
               <span
                 className={cn(
                   isBold ? 'font-bold' : '',
@@ -215,7 +227,7 @@ export function Pricing() {
       'pricing.managed.premium.feature6',
       'pricing.managed.premium.feature7',
       'pricing.managed.premium.feature8',
-			'pricing.managed.premium.feature9',
+      'pricing.managed.premium.feature9',
     ],
   };
 
@@ -260,7 +272,7 @@ export function Pricing() {
             //  <div className="text-sm text-muted-foreground">
             //    <p>{t('pricing.pilot.upgrade')}</p>
             //  </div>
-           // }
+            //}
           />
 
           <PricingCard
@@ -271,7 +283,7 @@ export function Pricing() {
             isPrimary={true}
             buttonText={getPlanButton(selectedPlan)}
             selectedPlan={selectedPlan}
-						features={managedFeatures[selectedPlan]}
+            features={managedFeatures[selectedPlan]}
             managedTabs={
               <div className="space-y-4">
                 <Tabs
