@@ -9,17 +9,17 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90 transform hover:-translate-y-0.5',
         destructive:
           'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         // Outline variant remains as is
         outline:
-          'border border-input bg-background hover:bg-accent-hover hover:text-accent-dark',
+          'border border-input bg-background hover:bg-accent-hover hover:text-accent-dark ',
         // Redefined secondary variant:
         // - Added border and background to make it look like a button
         // - Kept the desired hover effect (teal text, subtle shadow)
         secondary:
-          'border border-input bg-background text-foreground hover:text-primary-main hover:shadow-sm',
+          'border border-input bg-background text-foreground hover:text-primary-main hover:shadow-sm transform hover:-translate-y-0.5',
         // Ghost variant remains as is
         ghost: 'hover:text-primary-main',
         link: 'text-primary underline-offset-4 hover:underline',
