@@ -31,7 +31,9 @@ type FeatureKey =
   | 'pricing.managed.premium.feature5'
   | 'pricing.managed.premium.feature6'
   | 'pricing.managed.premium.feature7'
-  | 'pricing.managed.premium.feature8';
+  | 'pricing.managed.premium.feature8'
+  | 'pricing.managed.premium.feature9'
+  | 'pricing.addons';
 
 interface PricingCardProps {
   title: string;
@@ -253,6 +255,18 @@ export function Pricing() {
     }
   };
 
+  // New function to get dynamic description based on selectedPlan
+  const getPlanDescription = (plan: PlanType) => {
+    switch (plan) {
+      case 'essentials':
+        return t('pricing.managed.description.essentials');
+      case 'growth':
+        return t('pricing.managed.description.growth');
+      case 'premium':
+        return t('pricing.managed.description.premium');
+    }
+  };
+
   return (
     <section className="py-20 bg-background" id="pricing">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -268,18 +282,13 @@ export function Pricing() {
             features={pilotFeatures}
             buttonText={t('pricing.pilot.button')}
             buttonVariant="secondary"
-            //additionalInfo={
-            //  <div className="text-sm text-muted-foreground">
-            //    <p>{t('pricing.pilot.upgrade')}</p>
-            //  </div>
-            //}
           />
 
           <PricingCard
             title={t('pricing.managed.title')}
             price={getPlanPrice(selectedPlan)}
             period={t('pricing.managed.period')}
-            description={t('pricing.managed.description')}
+            description={getPlanDescription(selectedPlan)}
             isPrimary={true}
             buttonText={getPlanButton(selectedPlan)}
             selectedPlan={selectedPlan}

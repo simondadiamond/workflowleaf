@@ -49,7 +49,9 @@ type TranslationKey =
   | 'pricing.pilot.button'
   | 'pricing.pilot.upgrade'
   | 'pricing.managed.title'
-  | 'pricing.managed.description'
+  | 'pricing.managed.description.essentials'
+  | 'pricing.managed.description.growth'
+  | 'pricing.managed.description.premium'
   | 'pricing.managed.period'
   | 'pricing.managed.essentials.price'
   | 'pricing.managed.growth.price'
@@ -119,7 +121,7 @@ type FeatureKey =
   | 'pricing.managed.premium.feature6'
   | 'pricing.managed.premium.feature7'
   | 'pricing.managed.premium.feature8'
-	| 'pricing.managed.premium.feature9'
+  | 'pricing.managed.premium.feature9'
   | 'pricing.addons'; // Added pricing.addons
 
 const translations: Record<string, Record<TranslationKey, string | string[]>> = {
@@ -167,7 +169,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.title': 'Transparent Pricing',
     'pricing.pilot.title': 'Quick Start Automation',
     'pricing.pilot.price': 'CA $997',
-    'pricing.pilot.description': 'Process deep‑dive and setup of your first automated process.',
+    'pricing.pilot.description': 'Solve Your Most Pressing PM Bottleneck, Fast. Get tangible results and prove the ROI of automation by tackling one high-impact workflow (like rent reminders or maintenance intake) in just 6-8 weeks. Includes deep-dive discovery and expert build.',
     'pricing.pilot.features': [
       '90-minute deep-dive + ROI worksheet',
       'Process map & recommendations',
@@ -178,7 +180,9 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.pilot.button': 'Explore Quick Start',
     'pricing.pilot.upgrade': 'Need more? Full Automation Setup starts at CA $2,400 for up to 2 workflows.',
     'pricing.managed.title': 'Automation Partnerships',
-    'pricing.managed.description': 'Monitoring, optimisation and incremental improvements',
+    'pricing.managed.description.essentials': 'Keep Your Automated Workflows Running Smoothly. Ensure the critical processes we\'ve automated continue delivering value with 24/7 health checks, performance summaries, quarterly value reports, and dedicated support hours. Peace of mind for your core operations.',
+    'pricing.managed.description.growth': 'Systematically Eliminate Inefficiency & Enable Scale. Continuously improve your operations through ongoing automation builds (~1 new workflow bi-monthly), proactive monitoring, and expert support. We partner with you to systematically reduce manual work and free up your team for growth.',
+    'pricing.managed.description.premium': 'Maximize Efficiency with Strategic Automation & Advanced Tech. Your dedicated automation partner for tackling complex challenges, leveraging AI/Voice solutions, and developing a strategic roadmap for peak operational performance. Includes priority support and development for transformative results.',
     'pricing.managed.period': '/month',
     'pricing.managed.essentials.price': 'CA $647',
     'pricing.managed.growth.price': 'CA $1,497+',
@@ -192,7 +196,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.premium.tab': 'Premium',
     'pricing.managed.essentials.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.essentials.feature2': 'Monthly Performance Summary',
-    'pricing.managed.essentials.feature3': 'Quarterly ROI Report',
+    'pricing.managed.essentials.feature3': 'Quarterly Performance & Value Report',
     'pricing.managed.essentials.feature4': 'Bilingual Service (EN/FR)',
     'pricing.managed.essentials.feature5': '**2 Included Support Hours / Month**',
     'pricing.managed.essentials.feature6': '*(New Workflow Builds: Available as Separately Quoted Projects)*',
@@ -200,21 +204,21 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.essentials.feature8': '–',
     'pricing.managed.growth.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.growth.feature2': 'Monthly Performance Summary',
-    'pricing.managed.growth.feature3': 'Quarterly ROI Report',
+    'pricing.managed.growth.feature3': 'Quarterly Performance & Value Report',
     'pricing.managed.growth.feature4': 'Bilingual Service (EN/FR)',
-    'pricing.managed.growth.feature5': '**5+ included Support Hours / Month**',
+    'pricing.managed.growth.feature5': '**Includes 5 Support & Development Hours/Month**',
     'pricing.managed.growth.feature6': '**New Workflow Builds (~Bi-Monthly) **',
     'pricing.managed.growth.feature7': 'Regular Performance Check-ins',
     'pricing.managed.growth.feature8': '–',
     'pricing.managed.premium.feature1': '24/7 Workflow Health Checks',
     'pricing.managed.premium.feature2': 'Monthly Performance Summary',
-    'pricing.managed.premium.feature3': 'Quarterly ROI Report',
+    'pricing.managed.premium.feature3': 'Quarterly Performance & Value Report',
     'pricing.managed.premium.feature4': 'Bilingual Service (EN/FR)',
-    'pricing.managed.premium.feature5': '**10+ Priority Hours/Month (<4hr Response) **',
+    'pricing.managed.premium.feature5': '**10 Priority Hours/Month (<4hr Response) **',
     'pricing.managed.premium.feature6': '**Custom Complex Workflow & AI Development**',
     'pricing.managed.premium.feature7': '**Monthly Strategic Roadmap Call**',
     'pricing.managed.premium.feature8': '**AI Agent & VoiceBot Support**',
-		'pricing.managed.premium.feature9': 'Premium Chatbot/VoiceBot Projects: Starting at CA $4,500 (Chat) / $6,500 (Voice)',
+    'pricing.managed.premium.feature9': 'Premium Chatbot/VoiceBot Projects: Starting at CA $4,500 (Chat) / $6,500 (Voice)',
     'pricing.addons': '*(Add-on: Chat or Voice Bot creation available as Premium Add-On Projects starting at CA $4,500 (Chat) and CA $6,500 (Voice). Contact us for details.)*',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
@@ -267,7 +271,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.title': 'Tarification Transparente',
     'pricing.pilot.title': 'Automatisation Démarrage Rapide',
     'pricing.pilot.price': 'CA 997$',
-    'pricing.pilot.description': 'Analyse approfondie et déploiement de votre premier processus automatisé.',
+    'pricing.pilot.description': 'Attaquez votre problème le plus urgent et voyez des résultats concrets, rapidement. Prouvez la valeur de l\'automatisation en ciblant un processus clé à fort impact (ex: rappels de loyer, demandes d\'entretien) en 6-8 semaines. Inclut l\'analyse de vos besoins et l\'implantation experte.',
     'pricing.pilot.features': [
       'Session approfondie de 90 min + feuille ROI',
       'Cartographie des processus & recommandations',
@@ -278,7 +282,9 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.pilot.button': 'Explorez Démarrage',
     'pricing.pilot.upgrade': 'Besoin de plus? La Configuration Complète commence à 2 400$ CA pour 2 processus de travail.',
     'pricing.managed.title': 'Partenariats d\'Automatisation',
-    'pricing.managed.description': 'Surveillance, optimisation et améliorations progressives',
+    'pricing.managed.description.essentials': 'Gardez vos automatisations performantes et sans tracas.** Assurez la fiabilité de vos processus clés grâce à la surveillance 24/7, aux bilans de performance mensuels, aux suivis de valeur trimestriels et au support inclus. La tranquillité d\'esprit pour vos opérations.',
+    'pricing.managed.description.growth': 'Améliorez votre efficacité, mois après mois, et facilitez votre croissance. Optimisez vos opérations en continu avec de nouvelles automatisations ciblées (env. 1 processus aux deux mois), la surveillance proactive et le support expert. Un partenariat pour réduire le travail manuel et soutenir votre expansion.',
+    'pricing.managed.description.premium': 'Atteignez une efficacité maximale grâce à l\'automatisation stratégique et la technologie avancée. Votre partenaire d\'automatisation dédié pour les défis complexes, intégrant l\'IA et les agents vocaux, avec une feuille de route pour optimiser vos opérations. Inclut support et développement prioritaires pour des résultats majeurs.',
     'pricing.managed.period': '/mois',
     'pricing.managed.essentials.price': 'CA $647',
     'pricing.managed.growth.price': 'CA $1,497+',
@@ -292,7 +298,7 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.premium.tab': 'Premium',
     'pricing.managed.essentials.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.essentials.feature2': 'Sommaire de Performance Mensuel',
-    'pricing.managed.essentials.feature3': 'Rapport ROI Trimestriel',
+    'pricing.managed.essentials.feature3': 'Rapport trimestriel de performance et valeur',
     'pricing.managed.essentials.feature4': 'Service Bilingue (FR/EN)',
     'pricing.managed.essentials.feature5': '**2 Heures de Support Incluses / Mois**',
     'pricing.managed.essentials.feature6': '*(Nouveaux Processus : Disponibles sur devis)*',
@@ -300,22 +306,21 @@ const translations: Record<string, Record<TranslationKey, string | string[]>> = 
     'pricing.managed.essentials.feature8': '–',
     'pricing.managed.growth.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.growth.feature2': 'Sommaire de Performance Mensuel',
-    'pricing.managed.growth.feature3': 'Rapport ROI Trimestriel',
+    'pricing.managed.growth.feature3': 'Rapport trimestriel de performance et valeur',
     'pricing.managed.growth.feature4': 'Service Bilingue (FR/EN)',
-    'pricing.managed.growth.feature5': '**5+ Heures de Support Incluses / Mois**',
+    'pricing.managed.growth.feature5': '**5 Heures de Support Incluses / Mois**',
     'pricing.managed.growth.feature6': '**Création Nouveau Processus (~Bi-Mensuel) **',
     'pricing.managed.growth.feature7': 'Bilans de Performance Réguliers',
     'pricing.managed.growth.feature8': '–',
     'pricing.managed.premium.feature1': 'Surveillance Santé des Processus 24/7',
     'pricing.managed.premium.feature2': 'Sommaire de Performance Mensuel',
-    'pricing.managed.premium.feature3': 'Rapport ROI Trimestriel',
+    'pricing.managed.premium.feature3': 'Rapport trimestriel de performance et valeur',
     'pricing.managed.premium.feature4': 'Service Bilingue (FR/EN)',
-    'pricing.managed.premium.feature5': '**10+ Heures Prioritaires / Mois (Réponse <4h) **',
+    'pricing.managed.premium.feature5': '**10 Heures Prioritaires / Mois (Réponse <4h) **',
     'pricing.managed.premium.feature6': '**Développement Processus Complexes & IA Sur Mesure**',
     'pricing.managed.premium.feature7': '**Appel Stratégique Mensuel (Feuille de Route) **',
     'pricing.managed.premium.feature8': '**Support Agent IA & VoiceBot**',
-		'pricing.managed.premium.feature9': 'Projets Premium Chatbot/VoiceBot : Dès 4 500$ CA (Chat) / 6 500$ CA (Voice)',
-    // Modified pricing.addons to be a list item format
+    'pricing.managed.premium.feature9': 'Projets Premium Chatbot/VoiceBot : Dès 4 500$ CA (Chat) / 6 500$ CA (Voice)',
     'pricing.addons': '*(Add-on : Création de Chat ou Voice Bot disponible en tant que Projets Premium Add-On à partir de 4 500$ CA (Chat) et 6 500$ CA (Voice). Contactez-nous pour plus de détails.)*',
     'footer.copyright': '© 2025 WorkflowLeaf. All rights reserved.',
     'footer.links': 'Quick Links',
