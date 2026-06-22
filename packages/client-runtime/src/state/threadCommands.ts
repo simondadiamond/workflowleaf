@@ -1,18 +1,16 @@
 import * as Crypto from "effect/Crypto";
 import { Atom } from "effect/unstable/reactivity";
-import { WS_METHODS } from "@t3tools/contracts";
 
-import {
-  createAtomCommandScheduler,
-  createEnvironmentCommand,
-  createEnvironmentRpcCommand,
-} from "./runtime.ts";
+import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.ts";
 import {
   type ArchiveThreadInput,
   type CreateThreadInput,
   type DeleteThreadInput,
   type InterruptThreadTurnInput,
-  type LinkThreadPullRequestInput,
+  type ForkThreadFromRunInput,
+  type MergeThreadBackInput,
+  type PromoteQueuedRunInput,
+  type ReorderQueuedRunInput,
   type RespondToThreadApprovalInput,
   type RespondToThreadUserInputInput,
   type DismissThreadUserInputInput,
@@ -27,7 +25,6 @@ import {
   type StartThreadTurnInput,
   type StopThreadSessionInput,
   type UnarchiveThreadInput,
-  type UnlinkThreadPullRequestInput,
   type UnpinThreadInput,
   type UnsettleThreadInput,
   type UnsnoozeThreadInput,
@@ -36,7 +33,10 @@ import {
   createThread,
   deleteThread,
   interruptThreadTurn,
-  linkThreadPullRequest,
+  forkThreadFromRun,
+  mergeThreadBack,
+  promoteQueuedRun,
+  reorderQueuedRun,
   respondToThreadApproval,
   respondToThreadUserInput,
   dismissThreadUserInput,
@@ -51,7 +51,6 @@ import {
   startThreadTurn,
   stopThreadSession,
   unarchiveThread,
-  unlinkThreadPullRequest,
   unpinThread,
   unsettleThread,
   unsnoozeThread,
@@ -64,7 +63,10 @@ export type {
   CreateThreadInput,
   DeleteThreadInput,
   InterruptThreadTurnInput,
-  LinkThreadPullRequestInput,
+  ForkThreadFromRunInput,
+  MergeThreadBackInput,
+  PromoteQueuedRunInput,
+  ReorderQueuedRunInput,
   RespondToThreadApprovalInput,
   RespondToThreadUserInputInput,
   DismissThreadUserInputInput,
@@ -80,7 +82,6 @@ export type {
   StopThreadSessionInput,
   ThreadCommandInput,
   UnarchiveThreadInput,
-  UnlinkThreadPullRequestInput,
   UnpinThreadInput,
   UnsettleThreadInput,
   UnsnoozeThreadInput,
@@ -175,18 +176,6 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
-    linkPullRequest: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:thread:link-pull-request",
-      execute: (input: LinkThreadPullRequestInput) => linkThreadPullRequest(input),
-      scheduler,
-      concurrency,
-    }),
-    unlinkPullRequest: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:thread:unlink-pull-request",
-      execute: (input: UnlinkThreadPullRequestInput) => unlinkThreadPullRequest(input),
-      scheduler,
-      concurrency,
-    }),
     setRuntimeMode: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-runtime-mode",
       execute: (input: SetThreadRuntimeModeInput) => setThreadRuntimeMode(input),
@@ -241,9 +230,34 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
-    uploadFeedback: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:commands:thread:upload-feedback",
-      tag: WS_METHODS.providerUploadFeedback,
+    forkFromRun: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:fork-from-run",
+      execute: (input: ForkThreadFromRunInput) => forkThreadFromRun(input),
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sourceThreadId]),
+      },
+    }),
+    mergeBack: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:merge-back",
+      execute: (input: MergeThreadBackInput) => mergeThreadBack(input),
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.sourceThreadId, input.targetThreadId]),
+      },
+    }),
+    reorderQueuedRun: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:reorder-queued-run",
+      execute: (input: ReorderQueuedRunInput) => reorderQueuedRun(input),
+      scheduler,
+      concurrency,
+    }),
+    promoteQueuedRun: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:promote-queued-run",
+      execute: (input: PromoteQueuedRunInput) => promoteQueuedRun(input),
       scheduler,
       concurrency,
     }),
