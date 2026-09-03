@@ -59,7 +59,7 @@ export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedErr
   }
 }
 
-export class PrimaryEnvironmentDisabledError extends Schema.TaggedErrorClass<PrimaryEnvironmentDisabledError>()(
+export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<PrimaryEnvironmentDisabledError>()(
   "PrimaryEnvironmentDisabledError",
   {},
 ) {

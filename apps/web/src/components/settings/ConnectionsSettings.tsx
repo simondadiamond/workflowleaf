@@ -3277,45 +3277,49 @@ export function ConnectionsSettings() {
             }
           >
             <LocalEnvironmentSetting />
-            {canManageLocalBackend ? <SettingsRow
-              title="Version"
-              description={
-                primaryServerUpdateState.status !== "idle" ? (
-                  <ServerUpdateProgress state={primaryServerUpdateState} />
-                ) : (
-                  [
-                    primaryServerConfig?.environment.serverVersion ?? null,
-                    primaryEnvironment?.displayUrl ?? null,
-                  ]
-                    .filter((value): value is string => value !== null)
-                    .join(" · ") || "Loading…"
-                )
-              }
-              control={
-                primaryVersionMismatch &&
-                primaryEnvironmentId !== null &&
-                primaryServerUpdateState.status !== "running" ? (
-                  <ServerUpdateAction
-                    size="sm"
-                    environmentId={primaryEnvironmentId}
-                    serverLabel={
-                      primaryEnvironment ? `${primaryEnvironment.label} server` : "server"
-                    }
-                    selfUpdate={resolveServerSelfUpdateCapability(primaryServerConfig)}
-                    desktopAppUpdate={supportsDesktopAppUpdate(primaryServerConfig)}
-                    threadContinuation={supportsServerUpdateThreadContinuation(primaryServerConfig)}
-                    targetVersion={primaryVersionMismatch.clientVersion}
-                    label={
-                      primaryServerUpdateState.status === "failed"
-                        ? "Retry update"
-                        : `Update to ${primaryVersionMismatch.clientVersion}`
-                    }
-                  />
-                ) : primaryServerUpdateState.status === "idle" && primaryServerConfig ? (
-                  <span className="text-xs text-muted-foreground">Up to date</span>
-                ) : undefined
-              }
-            /> : null}
+            {canManageLocalBackend ? (
+              <SettingsRow
+                title="Version"
+                description={
+                  primaryServerUpdateState.status !== "idle" ? (
+                    <ServerUpdateProgress state={primaryServerUpdateState} />
+                  ) : (
+                    [
+                      primaryServerConfig?.environment.serverVersion ?? null,
+                      primaryEnvironment?.displayUrl ?? null,
+                    ]
+                      .filter((value): value is string => value !== null)
+                      .join(" · ") || "Loading…"
+                  )
+                }
+                control={
+                  primaryVersionMismatch &&
+                  primaryEnvironmentId !== null &&
+                  primaryServerUpdateState.status !== "running" ? (
+                    <ServerUpdateAction
+                      size="sm"
+                      environmentId={primaryEnvironmentId}
+                      serverLabel={
+                        primaryEnvironment ? `${primaryEnvironment.label} server` : "server"
+                      }
+                      selfUpdate={resolveServerSelfUpdateCapability(primaryServerConfig)}
+                      desktopAppUpdate={supportsDesktopAppUpdate(primaryServerConfig)}
+                      threadContinuation={supportsServerUpdateThreadContinuation(
+                        primaryServerConfig,
+                      )}
+                      targetVersion={primaryVersionMismatch.clientVersion}
+                      label={
+                        primaryServerUpdateState.status === "failed"
+                          ? "Retry update"
+                          : `Update to ${primaryVersionMismatch.clientVersion}`
+                      }
+                    />
+                  ) : primaryServerUpdateState.status === "idle" && primaryServerConfig ? (
+                    <span className="text-xs text-muted-foreground">Up to date</span>
+                  ) : undefined
+                }
+              />
+            ) : null}
             {canManageLocalBackend && desktopBridge ? (
               <>
                 {renderNetworkAccessRow()}
