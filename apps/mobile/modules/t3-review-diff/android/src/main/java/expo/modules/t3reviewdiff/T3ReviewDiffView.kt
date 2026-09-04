@@ -61,8 +61,8 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
       onDebug(
         mapOf(
           "message" to "visible-range",
-          "firstRowIndex" to first,
-          "lastRowIndex" to last,
+          "firstRowIndex" to (visibleRows.getOrNull(first)?.sourceIndex ?: first),
+          "lastRowIndex" to (visibleRows.getOrNull(last)?.sourceIndex ?: last),
         ),
       )
       emitVisibleFile(first)
@@ -78,6 +78,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     if (tokensResetKey == value) return
     tokensResetKey = value
     canvasView.tokensByRowId = emptyMap()
+    canvasView.clearWordDiffRanges()
   }
 
   fun setContentResetKey(value: String) {
@@ -85,6 +86,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     contentResetKey = value
     tokensDecodeGeneration += 1
     canvasView.tokensByRowId = emptyMap()
+    canvasView.clearWordDiffRanges()
     lastVisibleFileId = null
     pendingInitialScroll = true
     canvasView.setVerticalOffset(0)
@@ -167,6 +169,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   }
 
   fun setTokensPatchJson(value: String) {
+    val expectedContentResetKey = contentResetKey
     payloadDecodeExecutor.execute {
       try {
         val payload = JSONObject(value)
@@ -174,10 +177,17 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
         val decodedTokens = parseTokensObject(
           payload.optJSONObject("tokensByRowId") ?: JSONObject(),
         )
+        val decodedWordDiffRanges = parseWordDiffRangesObject(
+          payload.optJSONObject("wordDiffRangesByRowId") ?: JSONObject(),
+        )
         post {
+          if (expectedContentResetKey != contentResetKey) return@post
           if (resetKey.isNotEmpty() && resetKey != tokensResetKey) return@post
           if (decodedTokens.isNotEmpty()) {
             canvasView.tokensByRowId = canvasView.tokensByRowId + decodedTokens
+          }
+          if (decodedWordDiffRanges.isNotEmpty()) {
+            canvasView.mergeWordDiffRangesByRowId(decodedWordDiffRanges)
           }
         }
       } catch (_: Exception) {
@@ -434,6 +444,8 @@ private data class HorizontalPanTarget(
 )
 
 internal data class DiffRow(
+  // JavaScript range requests use the full payload position, even when files are collapsed.
+  val sourceIndex: Int,
   val kind: String,
   val id: String,
   val fileId: String,
@@ -701,6 +713,18 @@ private class DiffCanvasView(context: Context) : View(context) {
       field = value
       invalidate()
     }
+  private val wordDiffRangesByRowId = mutableMapOf<String, List<DiffWordDiffRange>>()
+
+  fun mergeWordDiffRangesByRowId(patch: Map<String, List<DiffWordDiffRange>>) {
+    wordDiffRangesByRowId.putAll(patch)
+    invalidate()
+  }
+
+  fun clearWordDiffRanges() {
+    wordDiffRangesByRowId.clear()
+    invalidate()
+  }
+
   var viewedFileIds: Set<String> = emptySet()
     set(value) {
       field = value
@@ -1194,7 +1218,14 @@ private class DiffCanvasView(context: Context) : View(context) {
     val tokens = tokensByRowId[row.id]
     drawScrollableCode(canvas, top, bottom) { codeX ->
       drawing.configureCodePaint(theme.text, 0, style)
-      drawing.drawWordDiffRanges(canvas, row, codeX, top, bottom)
+      drawing.drawWordDiffRanges(
+        canvas,
+        row,
+        codeX,
+        top,
+        bottom,
+        wordDiffRangesByRowId[row.id] ?: row.wordDiffRanges,
+      )
       if (tokens.isNullOrEmpty()) {
         canvas.drawText(row.content, codeX, centeredBaseline(top, bottom, textPaint), textPaint)
       } else {
@@ -1337,6 +1368,7 @@ private fun parseRows(value: String): List<DiffRow> = try {
   List(array.length()) { index ->
     val row = array.getJSONObject(index)
     DiffRow(
+      sourceIndex = index,
       kind = row.optString("kind"),
       id = row.optString("id"),
       fileId = row.optString("fileId"),
@@ -1368,6 +1400,15 @@ private fun parseWordDiffRanges(value: JSONArray): List<DiffWordDiffRange> = bui
     if (start >= 0 && end > start) {
       add(DiffWordDiffRange(start = start, end = end))
     }
+  }
+}
+
+private fun parseWordDiffRangesObject(value: JSONObject): Map<String, List<DiffWordDiffRange>> = buildMap {
+  val keys = value.keys()
+  while (keys.hasNext()) {
+    val rowId = keys.next()
+    val ranges = value.optJSONArray(rowId) ?: continue
+    put(rowId, parseWordDiffRanges(ranges))
   }
 }
 

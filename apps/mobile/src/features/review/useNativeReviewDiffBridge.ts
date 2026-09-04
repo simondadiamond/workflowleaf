@@ -63,13 +63,15 @@ export function useNativeReviewDiffBridge(input: {
       }),
     [data.files.length, data.rows.length, diff, scheme, sectionId, threadKey],
   );
-  const { tokensPatchJson, updateVisibleRange } = useNativeReviewDiffHighlighting({
-    files: data.files,
-    rows: data.rows,
-    scheme,
-    resetKey: tokensResetKey,
-    enabled: canHighlight,
-  });
+  const { tokensPatchJson, wordDiffRangesPatchJson, updateVisibleRange } =
+    useNativeReviewDiffHighlighting({
+      files: data.files,
+      rows: data.rows,
+      scheme,
+      resetKey: tokensResetKey,
+      enabled: canHighlight,
+      collapsedFileIds,
+    });
 
   const onDebug = useCallback(
     (event: NativeSyntheticEvent<Record<string, unknown>>) => {
@@ -120,6 +122,7 @@ export function useNativeReviewDiffBridge(input: {
     themeJson,
     styleJson,
     tokensPatchJson,
+    wordDiffRangesPatchJson,
     tokensResetKey,
     onDebug,
     onToggleComment,

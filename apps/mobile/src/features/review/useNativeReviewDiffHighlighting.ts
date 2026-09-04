@@ -7,6 +7,7 @@ import {
 } from "../diffs/nativeReviewDiffHighlighter";
 import type { NativeReviewDiffRow } from "../diffs/nativeReviewDiffSurface";
 import type { NativeReviewDiffFile } from "../diffs/nativeReviewDiffTypes";
+import { computeVisibleNativeReviewWordDiffRanges } from "./nativeReviewWordDiffs";
 
 interface NativeReviewVisibleRange {
   readonly firstRowIndex: number;
@@ -40,22 +41,29 @@ export function useNativeReviewDiffHighlighting(input: {
   readonly scheme: NativeReviewDiffHighlightScheme;
   readonly resetKey: string;
   readonly enabled: boolean;
+  readonly collapsedFileIds: ReadonlyArray<string>;
 }) {
-  const { enabled, files, resetKey, rows, scheme } = input;
+  const { collapsedFileIds, enabled, files, resetKey, rows, scheme } = input;
   const highlightedRowIdsRef = useRef<Set<string>>(new Set());
+  const wordHighlightedRowIdsRef = useRef<Set<string>>(new Set());
   const visibleRangeRef = useRef<NativeReviewVisibleRange>({
     firstRowIndex: 0,
     lastRowIndex: 80,
   });
   const visibleChunkIndexRef = useRef(0);
   const [tokensPatchJson, setTokensPatchJson] = useState(() => createEmptyTokenPatch(resetKey));
+  const [wordDiffRangesPatchJson, setWordDiffRangesPatchJson] = useState(() =>
+    JSON.stringify({ resetKey, wordDiffRangesByRowId: {} }),
+  );
   const [visibleHighlightRequest, setVisibleHighlightRequest] = useState(0);
 
   useEffect(() => {
     highlightedRowIdsRef.current = new Set();
+    wordHighlightedRowIdsRef.current = new Set();
     visibleChunkIndexRef.current = 0;
     visibleRangeRef.current = { firstRowIndex: 0, lastRowIndex: 80 };
     setTokensPatchJson(createEmptyTokenPatch(resetKey));
+    setWordDiffRangesPatchJson(JSON.stringify({ resetKey, wordDiffRangesByRowId: {} }));
     if (enabled && rows.length > 0) {
       setVisibleHighlightRequest((request) => request + 1);
     }
@@ -121,6 +129,36 @@ export function useNativeReviewDiffHighlighting(input: {
     return () => abortController.abort();
   }, [enabled, files, resetKey, rows, scheme, visibleHighlightRequest]);
 
+  // Word ranges do not depend on the syntax engine. A syntax failure must not hide them.
+  useEffect(() => {
+    if (!enabled || rows.length === 0) return;
+    const abortController = new AbortController();
+    const requestRange = visibleRangeRef.current;
+    void computeVisibleNativeReviewWordDiffRanges({
+      rows,
+      firstRowIndex: requestRange.firstRowIndex,
+      lastRowIndex: requestRange.lastRowIndex,
+      collapsedFileIds: new Set(collapsedFileIds),
+      alreadyHighlightedRowIds: wordHighlightedRowIdsRef.current,
+      signal: abortController.signal,
+    })
+      .then((result) => {
+        if (abortController.signal.aborted || result.pairCount === 0) return;
+        for (const rowId of Object.keys(result.rangesByRowId)) {
+          wordHighlightedRowIdsRef.current.add(rowId);
+        }
+        setWordDiffRangesPatchJson(
+          JSON.stringify({ resetKey, wordDiffRangesByRowId: result.rangesByRowId }),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!abortController.signal.aborted) {
+          logReviewDiffDiagnostic("native visible word diff failed", { error, resetKey });
+        }
+      });
+    return () => abortController.abort();
+  }, [collapsedFileIds, enabled, resetKey, rows, visibleHighlightRequest]);
+
   const updateVisibleRange = useCallback((nextRange: NativeReviewVisibleRange) => {
     const previousRange = visibleRangeRef.current;
     const movedRows =
@@ -135,6 +173,7 @@ export function useNativeReviewDiffHighlighting(input: {
 
   return {
     tokensPatchJson,
+    wordDiffRangesPatchJson,
     updateVisibleRange,
   };
 }

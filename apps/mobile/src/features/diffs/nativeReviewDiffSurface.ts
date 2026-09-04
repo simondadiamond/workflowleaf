@@ -110,6 +110,7 @@ export interface NativeReviewDiffViewProps extends ViewProps {
   readonly rowsJson: string;
   readonly tokensJson?: string;
   readonly tokensPatchJson?: string;
+  readonly wordDiffRangesPatchJson?: string;
   readonly tokensResetKey?: string;
   readonly contentResetKey?: string;
   readonly collapsedFileIdsJson?: string;
@@ -163,7 +164,7 @@ interface NativeReviewDiffViewRef {
 
 type NativeReviewDiffRawViewProps = Omit<
   NativeReviewDiffViewProps,
-  "nativeViewRef" | "rowsJson" | "tokensJson" | "tokensPatchJson"
+  "nativeViewRef" | "rowsJson" | "tokensJson" | "tokensPatchJson" | "wordDiffRangesPatchJson"
 > & {
   readonly ref?: Ref<NativeReviewDiffViewRef>;
 };
@@ -245,11 +246,19 @@ function getExpoViewConfig(moduleName: string) {
 }
 
 function NativeReviewDiffView(props: NativeReviewDiffViewProps) {
-  const { nativeViewRef, rowsJson, tokensJson, tokensPatchJson, ...nativeProps } = props;
+  const {
+    nativeViewRef,
+    rowsJson,
+    tokensJson,
+    tokensPatchJson,
+    wordDiffRangesPatchJson,
+    ...nativeProps
+  } = props;
   const nativeRef = useRef<NativeReviewDiffViewRef>(null);
   useNativeReviewDiffPayload(nativeRef, "setRowsJson", rowsJson);
   useNativeReviewDiffPayload(nativeRef, "setTokensJson", tokensJson);
   useNativeReviewDiffPayload(nativeRef, "setTokensPatchJson", tokensPatchJson);
+  useNativeReviewDiffPayload(nativeRef, "setTokensPatchJson", wordDiffRangesPatchJson);
   useImperativeHandle(
     nativeViewRef,
     () => ({

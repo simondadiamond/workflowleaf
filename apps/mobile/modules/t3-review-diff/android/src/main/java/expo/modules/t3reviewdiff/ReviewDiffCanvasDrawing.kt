@@ -203,16 +203,17 @@ internal class ReviewDiffCanvasDrawing(context: Context) {
     row: DiffRow,
     codeX: Float,
     top: Int,
-    bottom: Int
+    bottom: Int,
+    ranges: List<DiffWordDiffRange>
   ) {
-    if (row.wordDiffRanges.isEmpty() || (row.change != "add" && row.change != "delete")) return
+    if (ranges.isEmpty() || (row.change != "add" && row.change != "delete")) return
     val color = if (row.change == "add") theme.addBar else theme.deleteBar
     backgroundPaint.color = withAlpha(color, 71)
     val characterWidth = textPaint.measureText("M")
     val fontHeight = textPaint.fontMetrics.run { descent - ascent }
     val highlightHeight = max(4f * density, min(bottom - top - 4f * density, fontHeight))
     val highlightTop = (top + bottom - highlightHeight) / 2f
-    row.wordDiffRanges.forEach { range ->
+    ranges.forEach { range ->
       val left = codeX + range.start * characterWidth
       val right = max(left + 2f * density, codeX + range.end * characterWidth)
       canvas.drawRoundRect(

@@ -782,6 +782,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     styleJson={nativeBridge.styleJson}
                     themeJson={nativeBridge.themeJson}
                     tokensPatchJson={nativeBridge.tokensPatchJson}
+                    wordDiffRangesPatchJson={nativeBridge.wordDiffRangesPatchJson}
                     tokensResetKey={nativeBridge.tokensResetKey}
                     viewedFileIdsJson={nativeBridge.viewedFileIdsJson}
                     onDebug={handleNativeDebug}
