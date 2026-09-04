@@ -5,6 +5,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
+  AuthSourceControlWriteScope,
   type EnvironmentId,
   DEFAULT_SERVER_SETTINGS,
   type PullRequestAction,
@@ -77,6 +78,7 @@ import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
 import { useProjects, useServerConfigs } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentScope } from "~/state/session";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { usePullRequestTurnRefresh, useSharedPullRequestSummary } from "~/state/pullRequests";
@@ -630,6 +632,7 @@ export function PullRequestDetailPanel({
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
+  const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const detailQuery = useEnvironmentQuery(
     pullRequestEnvironment.detail({ environmentId, input: reference }),
   );
@@ -709,6 +712,25 @@ export function PullRequestDetailPanel({
         ? null
         : {
             ...coreDetail,
+            capabilities: canWriteSourceControl
+              ? coreDetail.capabilities
+              : {
+                  ...coreDetail.capabilities,
+                  reactions: false,
+                  edit: { changeRequest: false, comment: false },
+                },
+            viewerPermissions: canWriteSourceControl
+              ? coreDetail.viewerPermissions
+              : {
+                  ...coreDetail.viewerPermissions,
+                  actions: [],
+                  comment: false,
+                  resolve: false,
+                  verdicts: [],
+                  requestReviewers: false,
+                  updateMethods: [],
+                  labels: false,
+                },
             author: activity?.author ?? coreDetail.author,
             reviewers: activity?.reviewers ?? coreDetail.reviewers,
             comments: activity?.comments ?? [],
@@ -718,7 +740,7 @@ export function PullRequestDetailPanel({
             commits: activity?.commits ?? [],
             reactions: activity?.reactions ?? [],
           },
-    [activity, coreDetail],
+    [activity, canWriteSourceControl, coreDetail],
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { copyToClipboard: copyReference } = useCopyToClipboard<string>({
@@ -1004,13 +1026,13 @@ export function PullRequestDetailPanel({
     method?: PullRequestMergeMethod,
     updateMethod?: PullRequestUpdateMethod,
   ) => {
-    if (pendingAction !== null) return false;
+    if (!canWriteSourceControl || pendingAction !== null) return false;
     setPendingAction(action);
     return finishAction(action, method, updateMethod);
   };
 
   const performCommentAction = async (body: string, action: "close" | "reopen") => {
-    if (pendingAction !== null) return { commentPosted: false };
+    if (!canWriteSourceControl || pendingAction !== null) return { commentPosted: false };
     setPendingAction(action);
     const commentResult = await postComment({
       environmentId,
@@ -1030,7 +1052,7 @@ export function PullRequestDetailPanel({
 
   const saveTitle = async (next: string) => {
     const title = next.trim();
-    if (detail === null || titleSaving) return;
+    if (!canWriteSourceControl || detail === null || titleSaving) return;
     if (title.length === 0 || title === detail.title) {
       setTitleScope(null);
       return;
@@ -1061,6 +1083,7 @@ export function PullRequestDetailPanel({
   };
 
   const attachTarget = composerDraftTarget ?? null;
+  const canFixFindings = attachTarget !== null || prepareThread.isAllowed;
   const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
@@ -1188,6 +1211,7 @@ export function PullRequestDetailPanel({
       });
       return;
     }
+    if (!prepareThread.isAllowed) return;
     setHandoff(kind);
     // The menu closes on the press and takes its "Preparing..." label with it, so this is the
     // only thing answering for the checkout. It carries no timeout of its own: a loading toast
@@ -1756,7 +1780,10 @@ export function PullRequestDetailPanel({
                     <TooltipPopup>Check out this pull request</TooltipPopup>
                   </Tooltip>
                   <MenuPopup align="end" side="bottom" className="min-w-72">
-                    <MenuItem onClick={() => startCheckout("worktree")}>
+                    <MenuItem
+                      disabled={!prepareThread.isAllowed}
+                      onClick={() => startCheckout("worktree")}
+                    >
                       <GitBranchIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
                       <span className="flex min-w-0 flex-col">
                         <span>In a separate worktree</span>
@@ -1765,7 +1792,10 @@ export function PullRequestDetailPanel({
                         </span>
                       </span>
                     </MenuItem>
-                    <MenuItem onClick={() => startCheckout("local")}>
+                    <MenuItem
+                      disabled={!prepareThread.isAllowed}
+                      onClick={() => startCheckout("local")}
+                    >
                       <FolderGit2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
                       <span className="flex min-w-0 flex-col">
                         <span>In this repository</span>
@@ -1816,7 +1846,7 @@ export function PullRequestDetailPanel({
                         <Button
                           size="xs"
                           variant="destructive-outline"
-                          disabled={handoff !== null}
+                          disabled={handoff !== null || !canFixFindings}
                           onClick={startResolveConflicts}
                           aria-label={
                             handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"
@@ -2001,7 +2031,10 @@ export function PullRequestDetailPanel({
                       </span>
                     </span>
                   </MenuItem>
-                  <MenuItem disabled={handoff !== null} onClick={startFixFindings}>
+                  <MenuItem
+                    disabled={handoff !== null || !canFixFindings}
+                    onClick={startFixFindings}
+                  >
                     <HammerIcon className="size-3.5" />
                     {handoff === "findings" ? "Preparing..." : handoffLabels.fixFindings}
                   </MenuItem>
@@ -2653,7 +2686,7 @@ export function PullRequestDetailPanel({
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}
                   fixCheckLabel={handoffLabels.fixCheck}
-                  onFixFinding={startFixFinding}
+                  {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
                   onRefresh={refreshDetail}
                 />
               </div>
@@ -2692,7 +2725,7 @@ export function PullRequestDetailPanel({
                     onSelectedCommitChange={selectCodeCommit}
                     pendingFinding={handoff}
                     fixFindingLabel={handoffLabels.fixFinding}
-                    onFixFinding={startFixFinding}
+                    {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
                     onRefresh={refreshDetail}
                     refreshToken={codeRefreshToken}
                   />
