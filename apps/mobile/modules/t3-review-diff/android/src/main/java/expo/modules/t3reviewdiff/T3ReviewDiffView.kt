@@ -78,7 +78,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     if (tokensResetKey == value) return
     tokensResetKey = value
     canvasView.tokensByRowId = emptyMap()
-    canvasView.clearWordDiffRanges()
+    canvasView.drawing.clearWordDiffRanges()
   }
 
   fun setContentResetKey(value: String) {
@@ -86,7 +86,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     contentResetKey = value
     tokensDecodeGeneration += 1
     canvasView.tokensByRowId = emptyMap()
-    canvasView.clearWordDiffRanges()
+    canvasView.drawing.clearWordDiffRanges()
     lastVisibleFileId = null
     pendingInitialScroll = true
     canvasView.setVerticalOffset(0)
@@ -187,7 +187,8 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
             canvasView.tokensByRowId = canvasView.tokensByRowId + decodedTokens
           }
           if (decodedWordDiffRanges.isNotEmpty()) {
-            canvasView.mergeWordDiffRangesByRowId(decodedWordDiffRanges)
+            canvasView.drawing.mergeWordDiffRangesByRowId(decodedWordDiffRanges)
+            canvasView.invalidate()
           }
         }
       } catch (_: Exception) {
@@ -658,7 +659,7 @@ internal data class DiffStyle(
 
 private class DiffCanvasView(context: Context) : View(context) {
   private val density = resources.displayMetrics.density
-  private val drawing = ReviewDiffCanvasDrawing(context)
+  val drawing = ReviewDiffCanvasDrawing(context)
   private val backgroundPaint = drawing.backgroundPaint
   private val borderPaint = drawing.borderPaint
   private val textPaint = drawing.textPaint
@@ -713,18 +714,6 @@ private class DiffCanvasView(context: Context) : View(context) {
       field = value
       invalidate()
     }
-  private val wordDiffRangesByRowId = mutableMapOf<String, List<DiffWordDiffRange>>()
-
-  fun mergeWordDiffRangesByRowId(patch: Map<String, List<DiffWordDiffRange>>) {
-    wordDiffRangesByRowId.putAll(patch)
-    invalidate()
-  }
-
-  fun clearWordDiffRanges() {
-    wordDiffRangesByRowId.clear()
-    invalidate()
-  }
-
   var viewedFileIds: Set<String> = emptySet()
     set(value) {
       field = value
@@ -1218,14 +1207,7 @@ private class DiffCanvasView(context: Context) : View(context) {
     val tokens = tokensByRowId[row.id]
     drawScrollableCode(canvas, top, bottom) { codeX ->
       drawing.configureCodePaint(theme.text, 0, style)
-      drawing.drawWordDiffRanges(
-        canvas,
-        row,
-        codeX,
-        top,
-        bottom,
-        wordDiffRangesByRowId[row.id] ?: row.wordDiffRanges,
-      )
+      drawing.drawWordDiffRanges(canvas, row, codeX, top, bottom)
       if (tokens.isNullOrEmpty()) {
         canvas.drawText(row.content, codeX, centeredBaseline(top, bottom, textPaint), textPaint)
       } else {
