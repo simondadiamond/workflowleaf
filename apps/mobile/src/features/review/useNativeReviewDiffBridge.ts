@@ -51,6 +51,7 @@ export function useNativeReviewDiffBridge(input: {
   );
   const themeJson = useMemo(() => JSON.stringify(theme), [theme]);
   const styleJson = useMemo(() => JSON.stringify(nativeReviewDiffStyle), [nativeReviewDiffStyle]);
+  const contentResetKey = `${threadKey}:${sectionId}`;
   const tokensResetKey = useMemo(
     () =>
       buildNativeReviewTokensResetKey({
@@ -63,15 +64,20 @@ export function useNativeReviewDiffBridge(input: {
       }),
     [data.files.length, data.rows.length, diff, scheme, sectionId, threadKey],
   );
-  const { tokensPatchJson, wordDiffRangesPatchJson, updateVisibleRange } =
-    useNativeReviewDiffHighlighting({
-      files: data.files,
-      rows: data.rows,
-      scheme,
-      resetKey: tokensResetKey,
-      enabled: canHighlight,
-      collapsedFileIds,
-    });
+  const {
+    tokensPatchJson,
+    wordDiffRangesPatchJson,
+    onWordDiffRangesPatchSent,
+    updateVisibleRange,
+  } = useNativeReviewDiffHighlighting({
+    files: data.files,
+    rows: data.rows,
+    scheme,
+    resetKey: tokensResetKey,
+    contentResetKey,
+    enabled: canHighlight,
+    collapsedFileIds,
+  });
 
   const onDebug = useCallback(
     (event: NativeSyntheticEvent<Record<string, unknown>>) => {
@@ -123,7 +129,9 @@ export function useNativeReviewDiffBridge(input: {
     styleJson,
     tokensPatchJson,
     wordDiffRangesPatchJson,
+    onWordDiffRangesPatchSent,
     tokensResetKey,
+    contentResetKey,
     onDebug,
     onToggleComment,
   };

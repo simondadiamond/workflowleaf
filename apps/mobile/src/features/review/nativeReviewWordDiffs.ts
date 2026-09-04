@@ -10,6 +10,12 @@ const VISIBLE_OVERSCAN_ROWS = 160;
 const VISIBLE_MAX_PAIRS = 360;
 const MAX_PAIRS_PER_BATCH = 32;
 const MAX_BATCH_MILLISECONDS = 4;
+const SCAN_BUDGET_CHECK_INTERVAL = 256;
+
+interface WordDiffWorkBudget {
+  startedAt: number;
+  operations: number;
+}
 
 interface WordDiffPair {
   readonly deletion: NativeReviewDiffRow;
@@ -23,7 +29,10 @@ interface WordDiffPairRanges {
 
 const pairsByRows = new WeakMap<
   ReadonlyArray<NativeReviewDiffRow>,
-  ReadonlyArray<WordDiffPair | undefined>
+  {
+    readonly collapsedFileIds: ReadonlySet<string>;
+    readonly pairs: ReadonlyArray<WordDiffPair | undefined>;
+  }
 >();
 const rangesByDeletion = new WeakMap<
   NativeReviewDiffRow,
@@ -57,15 +66,52 @@ function shouldUseWordDiffRanges(
   return highlightedLength / meaningfulLength <= MAX_WORD_DIFF_COVERAGE;
 }
 
+function shouldYieldScan(budget: WordDiffWorkBudget): boolean {
+  budget.operations += 1;
+  if (budget.operations < SCAN_BUDGET_CHECK_INTERVAL) return false;
+  budget.operations = 0;
+  return performance.now() - budget.startedAt >= MAX_BATCH_MILLISECONDS;
+}
+
+function sameCollapsedFiles(
+  cached: ReadonlySet<string>,
+  next: ReadonlySet<string> | undefined,
+): boolean {
+  if (cached.size !== (next?.size ?? 0)) return false;
+  for (const id of cached) {
+    if (!next?.has(id)) return false;
+  }
+  return true;
+}
+
+async function pauseWordDiffWork(budget: WordDiffWorkBudget): Promise<void> {
+  await yieldWordDiffWork();
+  budget.startedAt = performance.now();
+  budget.operations = 0;
+}
+
 /** Index source pairs once. Comments do not change deletion/addition correspondence. */
-function getWordDiffPairs(rows: ReadonlyArray<NativeReviewDiffRow>) {
+async function getWordDiffPairs(
+  rows: ReadonlyArray<NativeReviewDiffRow>,
+  budget: WordDiffWorkBudget,
+  signal: AbortSignal | undefined,
+  collapsedFileIds: ReadonlySet<string> | undefined,
+): Promise<ReadonlyArray<WordDiffPair | undefined> | null> {
   const cached = pairsByRows.get(rows);
-  if (cached) return cached;
+  if (cached && sameCollapsedFiles(cached.collapsedFileIds, collapsedFileIds)) return cached.pairs;
   const pairs: Array<WordDiffPair | undefined> = [];
   pairs.length = rows.length;
   let index = 0;
   while (index < rows.length) {
-    if (rows[index]!.kind === "comment") {
+    if (shouldYieldScan(budget)) {
+      await pauseWordDiffWork(budget);
+      if (signal?.aborted) return null;
+    }
+    if (
+      rows[index]!.kind !== "line" ||
+      rows[index]!.change !== "delete" ||
+      collapsedFileIds?.has(rows[index]!.fileId ?? "")
+    ) {
       index += 1;
       continue;
     }
@@ -73,6 +119,10 @@ function getWordDiffPairs(rows: ReadonlyArray<NativeReviewDiffRow>) {
     const addedIndexes: number[] = [];
     const fileId = rows[index]!.fileId;
     while (index < rows.length) {
+      if (shouldYieldScan(budget)) {
+        await pauseWordDiffWork(budget);
+        if (signal?.aborted) return null;
+      }
       const row = rows[index]!;
       if (row.kind === "comment") {
         index += 1;
@@ -83,6 +133,10 @@ function getWordDiffPairs(rows: ReadonlyArray<NativeReviewDiffRow>) {
       index += 1;
     }
     while (index < rows.length) {
+      if (shouldYieldScan(budget)) {
+        await pauseWordDiffWork(budget);
+        if (signal?.aborted) return null;
+      }
       const row = rows[index]!;
       if (row.kind === "comment") {
         index += 1;
@@ -94,15 +148,18 @@ function getWordDiffPairs(rows: ReadonlyArray<NativeReviewDiffRow>) {
     }
     const pairedCount = Math.min(deletedIndexes.length, addedIndexes.length);
     for (let pairIndex = 0; pairIndex < pairedCount; pairIndex += 1) {
+      if (shouldYieldScan(budget)) {
+        await pauseWordDiffWork(budget);
+        if (signal?.aborted) return null;
+      }
       const deletionIndex = deletedIndexes[pairIndex]!;
       const additionIndex = addedIndexes[pairIndex]!;
       const pair = { deletion: rows[deletionIndex]!, addition: rows[additionIndex]! };
       pairs[deletionIndex] = pair;
       pairs[additionIndex] = pair;
     }
-    if (deletedIndexes.length === 0 && addedIndexes.length === 0) index += 1;
   }
-  pairsByRows.set(rows, pairs);
+  pairsByRows.set(rows, { pairs, collapsedFileIds: new Set(collapsedFileIds) });
   return pairs;
 }
 
@@ -145,19 +202,25 @@ export async function computeVisibleNativeReviewWordDiffRanges(input: {
 }> {
   await yieldWordDiffWork();
   if (input.signal?.aborted) return { rangesByRowId: {}, pairCount: 0 };
-  const pairs = getWordDiffPairs(input.rows);
+  const budget = { startedAt: performance.now(), operations: 0 };
+  const pairs = await getWordDiffPairs(input.rows, budget, input.signal, input.collapsedFileIds);
+  if (pairs === null) return { rangesByRowId: {}, pairCount: 0 };
   const overscanRows = input.overscanRows ?? VISIBLE_OVERSCAN_ROWS;
   const start = Math.max(0, Math.floor(input.firstRowIndex - overscanRows));
   const end = Math.min(input.rows.length - 1, Math.ceil(input.lastRowIndex + overscanRows));
   const selectedPairs = new Set<WordDiffPair>();
   const rangesByRowId: Record<string, ReadonlyArray<NativeReviewDiffWordDiffRange>> = {};
   let batchCount = 0;
-  let batchStartedAt = performance.now();
   for (
     let index = start;
     index <= end && selectedPairs.size < (input.maxPairs ?? VISIBLE_MAX_PAIRS);
     index += 1
   ) {
+    if (shouldYieldScan(budget)) {
+      await pauseWordDiffWork(budget);
+      if (input.signal?.aborted) return { rangesByRowId: {}, pairCount: 0 };
+      batchCount = 0;
+    }
     const pair = pairs[index];
     if (
       !pair ||
@@ -170,12 +233,11 @@ export async function computeVisibleNativeReviewWordDiffRanges(input: {
     }
     if (
       batchCount >= MAX_PAIRS_PER_BATCH ||
-      (batchCount > 0 && performance.now() - batchStartedAt >= MAX_BATCH_MILLISECONDS)
+      performance.now() - budget.startedAt >= MAX_BATCH_MILLISECONDS
     ) {
-      await yieldWordDiffWork();
+      await pauseWordDiffWork(budget);
       if (input.signal?.aborted) return { rangesByRowId: {}, pairCount: 0 };
       batchCount = 0;
-      batchStartedAt = performance.now();
     }
     const ranges = getWordDiffPairRanges(pair);
     rangesByRowId[pair.deletion.id] = ranges.deletion;

@@ -773,7 +773,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     appearanceScheme={selectedTheme}
                     collapsedFileIdsJson={nativeBridge.collapsedFileIdsJson}
                     collapsedCommentIdsJson={nativeBridge.collapsedCommentIdsJson}
-                    contentResetKey={`${reviewCache.threadKey}:${selectedSection.id}`}
+                    contentResetKey={nativeBridge.contentResetKey}
                     contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}
                     nativeViewRef={nativeReviewDiffViewRef}
                     rowHeight={nativeReviewDiffStyle.rowHeight}
@@ -783,6 +783,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     themeJson={nativeBridge.themeJson}
                     tokensPatchJson={nativeBridge.tokensPatchJson}
                     wordDiffRangesPatchJson={nativeBridge.wordDiffRangesPatchJson}
+                    onWordDiffRangesPatchSent={nativeBridge.onWordDiffRangesPatchSent}
                     tokensResetKey={nativeBridge.tokensResetKey}
                     viewedFileIdsJson={nativeBridge.viewedFileIdsJson}
                     onDebug={handleNativeDebug}

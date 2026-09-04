@@ -285,16 +285,53 @@ describe("visible native word diffs", () => {
     const data = buildNativeReviewDiffData(
       buildReviewParsedDiff(filesPatch(["first.ts", "second.ts"]), "collapsed-pairs"),
     );
+    const collapsedFileIds = new Set([data.files[0]!.id]);
     const result = await computeVisibleNativeReviewWordDiffRanges({
       rows: data.rows,
       firstRowIndex: 0,
       lastRowIndex: data.rows.length - 1,
-      collapsedFileIds: new Set([data.files[0]!.id]),
+      collapsedFileIds,
       overscanRows: 0,
       maxPairs: 1,
     });
     expect(result.pairCount).toBe(1);
     expect(Object.keys(result.rangesByRowId)).toEqual([data.rows[8]!.id, data.rows[10]!.id]);
+    collapsedFileIds.clear();
+    const reopened = await computeVisibleNativeReviewWordDiffRanges({
+      rows: data.rows,
+      firstRowIndex: 0,
+      lastRowIndex: data.rows.length - 1,
+      collapsedFileIds,
+      overscanRows: 0,
+      maxPairs: 1,
+    });
+    expect(Object.keys(reopened.rangesByRowId)).toEqual([data.rows[2]!.id, data.rows[4]!.id]);
+  });
+
+  it("yields and cancels while indexing rows without replacement pairs", async () => {
+    const rows: NativeReviewDiffRow[] = Array.from({ length: 2_000 }, (_, index) => ({
+      kind: "line",
+      id: `context-${index}`,
+      fileId: "context",
+      change: "context",
+      content: "unchanged",
+    }));
+    let elapsed = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => (elapsed += 5));
+    const controller = new AbortController();
+    try {
+      const pending = computeVisibleNativeReviewWordDiffRanges({
+        rows,
+        firstRowIndex: 0,
+        lastRowIndex: rows.length - 1,
+        signal: controller.signal,
+      });
+      setTimeout(() => controller.abort(), 0);
+      expect(await pending).toEqual({ rangesByRowId: {}, pairCount: 0 });
+      expect(controller.signal.aborted).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("discards partial results when cancelled between batches and reuses completed pairs", async () => {

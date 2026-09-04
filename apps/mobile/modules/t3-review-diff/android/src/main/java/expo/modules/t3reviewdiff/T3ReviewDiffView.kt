@@ -1403,7 +1403,9 @@ private fun parseWordDiffRanges(value: JSONArray): List<DiffWordDiffRange> = bui
   }
 }
 
-private fun parseWordDiffRangesObject(value: JSONObject): Map<String, List<DiffWordDiffRange>> = buildMap {
+private fun parseWordDiffRangesObject(
+  value: JSONObject
+): Map<String, List<DiffWordDiffRange>> = buildMap {
   val keys = value.keys()
   while (keys.hasNext()) {
     val rowId = keys.next()
