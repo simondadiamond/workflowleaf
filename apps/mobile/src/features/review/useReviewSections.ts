@@ -1,5 +1,5 @@
-import { AuthFilesystemReadScope } from "@t3tools/contracts";
-import { useEnvironmentScope } from "../../state/session";
+import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
+import { environmentSession } from "../../state/session";
 import { useCallback, useEffect, useMemo } from "react";
 import * as DateTime from "effect/DateTime";
 
@@ -7,6 +7,7 @@ import type { EnvironmentId, OrchestrationCheckpointSummary, ThreadId } from "@t
 
 import { useCheckpointDiff } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
+import { useEnvironmentPresentation } from "../../state/presentation";
 import { reviewEnvironment } from "../../state/review";
 import { useSelectedThreadDetail } from "../../state/use-thread-detail";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
@@ -33,7 +34,17 @@ export function useReviewSections(input: {
 }) {
   const { environmentId, reviewCache, threadId } = input;
   const enabled = input.enabled ?? true;
-  const canReadFiles = useEnvironmentScope(environmentId ?? null, AuthFilesystemReadScope);
+  const fileAccessSession = useEnvironmentQuery(
+    environmentId === undefined ? null : environmentSession.sessionStateAtom(environmentId),
+  );
+  const fileEnvironment = useEnvironmentPresentation(environmentId ?? null);
+  const fileAccess = resolveFilesystemReadAccess({
+    isCatalogReady: fileEnvironment.isReady,
+    connection: fileEnvironment.presentation?.connection ?? null,
+    session: fileAccessSession.data,
+    sessionError: fileAccessSession.error,
+  });
+  const { canReadFiles } = fileAccess;
   const selectedThread = useSelectedThreadDetail();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const diffPreview = useEnvironmentQuery(
@@ -66,25 +77,30 @@ export function useReviewSections(input: {
       ) as Record<string, OrchestrationCheckpointSummary>,
     [readyCheckpoints],
   );
-  const reviewSections = useMemo(
-    () =>
-      buildReviewSectionItems({
-        checkpoints: readyCheckpoints,
-        gitSections: canReadFiles ? (diffPreview.data?.sources ?? reviewCache.gitSections) : [],
-        turnDiffById: reviewCache.turnDiffById,
-        loadingTurnIds,
-        loadingGitSections: diffPreview.isPending,
-      }),
-    [
-      canReadFiles,
-      diffPreview.isPending,
-      diffPreview.data?.sources,
+  const reviewSections = useMemo(() => {
+    const sections = buildReviewSectionItems({
+      checkpoints: readyCheckpoints,
+      gitSections: canReadFiles || fileAccess.isPending ? (diffPreview.data?.sources ?? reviewCache.gitSections) : [],
+      turnDiffById: reviewCache.turnDiffById,
       loadingTurnIds,
-      readyCheckpoints,
-      reviewCache.gitSections,
-      reviewCache.turnDiffById,
-    ],
-  );
+      loadingGitSections: fileAccess.isPending || diffPreview.isPending,
+    });
+    // Keep the selected section while its grant loads, without displaying cached host files.
+    return fileAccess.isPending
+      ? sections.map((section) =>
+          section.kind === "turn" ? section : { ...section, diff: null, isLoading: true },
+        )
+      : sections;
+  }, [
+    canReadFiles,
+    diffPreview.data?.sources,
+    diffPreview.isPending,
+    fileAccess.isPending,
+    loadingTurnIds,
+    readyCheckpoints,
+    reviewCache.gitSections,
+    reviewCache.turnDiffById,
+  ]);
   const selectedSection = useMemo(
     () =>
       reviewSections.find((section) => section.id === reviewCache.selectedSectionId) ??
@@ -181,7 +197,7 @@ export function useReviewSections(input: {
     error: diffPreview.error ?? activeTurnDiff.error ?? reviewCache.asyncState.error,
     isSelectedSectionPending:
       selectedSection?.kind === "turn" ? activeTurnDiff.isPending : diffPreview.isPending,
-    loadingGitDiffs: diffPreview.isPending,
+    loadingGitDiffs: fileAccess.isPending || diffPreview.isPending,
     diffPreviewRevision: diffPreview.data
       ? DateTime.formatIso(diffPreview.data.generatedAt)
       : undefined,
