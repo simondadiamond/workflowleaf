@@ -822,7 +822,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
               }
             >
               {listHeader}
-              {!selectedSection ? (
+              {!selectedSection ? (error ? null : (
                 <View
                   className={
                     Platform.OS === "android"
@@ -840,7 +840,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     This thread has no ready turn diffs and the worktree diff is empty.
                   </Text>
                 </View>
-              ) : selectedSection.isLoading && selectedSection.diff === null ? (
+              )) : selectedSection.isLoading && selectedSection.diff === null ? (
                 <View
                   className={cn(
                     "items-center gap-3 px-4 py-6",
