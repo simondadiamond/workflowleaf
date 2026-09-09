@@ -71,6 +71,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
+  const mixedCua = useScopedSettingsMixed(["enableCua"]);
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
@@ -449,6 +450,31 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 mixed={mixedBrowser}
                 checked={mixedBrowser ? false : settings.enableAgentBrowserAccess}
                 onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
+              />
+            }
+          />
+          <SettingsRow
+            serverScoped
+            settingKeys={["enableCua"]}
+            mixed={mixedCua}
+            id={searchableSetting("cua-computer-use").id}
+            title="Cua computer use"
+            description="Let Codex control the selected machine through Cua Driver. Host permissions are required. Start a new session after enabling. Disabling revokes managed access."
+            resetAction={
+              settings.enableCua !== DEFAULT_SERVER_SETTINGS.enableCua ? (
+                <SettingResetButton
+                  label="Cua computer use"
+                  tooltip="Reset Cua computer use to off"
+                  onClick={() => updateSettings({ enableCua: DEFAULT_SERVER_SETTINGS.enableCua })}
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                aria-label="Cua computer use"
+                mixed={mixedCua}
+                checked={mixedCua ? false : settings.enableCua}
+                onCheckedChange={(enabled) => updateSettings({ enableCua: enabled })}
               />
             }
           />
