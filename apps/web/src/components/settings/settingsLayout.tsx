@@ -292,8 +292,14 @@ export function SettingsRow({
   const context = useOptionalSettingsScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const primaryCanWrite = useEnvironmentScope(primaryEnvironmentId, AuthSettingsWriteScope);
-  const writableIds = useEnvironmentsWithScope(context?.connectedEnvironments ?? [], AuthSettingsWriteScope);
-  const canWriteSettings = context ? context.connectedEnvironments.length > 0 && context.connectedEnvironments.every((target) => writableIds.has(target.environmentId)) : primaryCanWrite;
+  const writableIds = useEnvironmentsWithScope(
+    context?.connectedEnvironments ?? [],
+    AuthSettingsWriteScope,
+  );
+  const canWriteSettings = context
+    ? context.connectedEnvironments.length > 0 &&
+      context.connectedEnvironments.every((target) => writableIds.has(target.environmentId))
+    : primaryCanWrite;
   const clearOverrides = useClearScopedSettings();
   const clearProjectOverrides = useClearProjectOverrides();
   const isProjectScope =
@@ -308,7 +314,8 @@ export function SettingsRow({
     context && isProjectScope ? scopedSettingsSource(context.targets, scopedKeys) : null;
   const unavailable =
     serverScoped &&
-    (!canWriteSettings || !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable));
+    (!canWriteSettings ||
+      !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable));
   const inheritedFrom =
     source === "environment" && context?.scope.environmentIds.length === 1
       ? (context.environments.find(
@@ -393,8 +400,8 @@ export function SettingsRow({
           !canWriteSettings
             ? "This connection does not have permission to change environment settings."
             : context
-            ? "Reconnect the selected environment to change this setting."
-            : PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+              ? "Reconnect the selected environment to change this setting."
+              : PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
         )
       : environmentWide && control
         ? inertControl("Environment-wide setting. Select an environment to change it.")
@@ -430,7 +437,13 @@ export function SettingsRow({
         environments={context.connectedEnvironments}
         keys={settingKeys}
         overridingProjects={overridingProjects}
-        onClearOverrides={canWriteSettings ? (entries) => clearProjectOverrides(entries, scopedKeys) : undefined}
+        {...(canWriteSettings
+          ? {
+              onClearOverrides: (
+                entries: readonly import("./scopedSettings").ProjectOverrideEntry[],
+              ) => clearProjectOverrides(entries, scopedKeys),
+            }
+          : {})}
       />
     ) : null;
   const renderedStatus = status;
