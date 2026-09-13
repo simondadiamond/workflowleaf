@@ -117,7 +117,7 @@ export async function listTranscriptFiles(
     } catch (error) {
       if (dir === root) {
         rootStatus = isMissingEntry(error) ? "missing" : "failed";
-      } else if (!isMissingEntry(error)) {
+      } else {
         failedEntries += 1;
       }
       return;

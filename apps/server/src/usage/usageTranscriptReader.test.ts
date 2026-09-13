@@ -225,22 +225,25 @@ describe("transcript listing coverage", () => {
     assert.strictEqual((await listTranscriptFiles(file, 0)).status, "failed");
   });
 
-  it("retains readable files when a nested directory cannot be listed", async () => {
-    await NodeFSP.mkdir(NodePath.join(dir, "nested"));
-    const readable = NodePath.join(dir, "readable.jsonl");
-    await NodeFSP.writeFile(readable, claudeLine(1, 5));
-    const actual = await vi.importActual<typeof NodeFSP>("node:fs/promises");
-    vi.mocked(NodeFSP.readdir)
-      .mockImplementationOnce((...args) => actual.readdir(...args))
-      .mockRejectedValueOnce(Object.assign(new Error("private detail"), { code: "EACCES" }));
-    const result = await listTranscriptFiles(dir, 0);
-    assert.strictEqual(result.status, "partial");
-    assert.strictEqual(result.failedEntries, 1);
-    assert.deepStrictEqual(
-      result.files.map((file) => file.path),
-      [readable],
-    );
-  });
+  it.each(["EACCES", "ENOENT"])(
+    "retains readable files when a nested directory fails with %s",
+    async (code) => {
+      await NodeFSP.mkdir(NodePath.join(dir, "nested"));
+      const readable = NodePath.join(dir, "readable.jsonl");
+      await NodeFSP.writeFile(readable, claudeLine(1, 5));
+      const actual = await vi.importActual<typeof NodeFSP>("node:fs/promises");
+      vi.mocked(NodeFSP.readdir)
+        .mockImplementationOnce((...args) => actual.readdir(...args))
+        .mockRejectedValueOnce(Object.assign(new Error("private detail"), { code }));
+      const result = await listTranscriptFiles(dir, 0);
+      assert.strictEqual(result.status, "partial");
+      assert.strictEqual(result.failedEntries, 1);
+      assert.deepStrictEqual(
+        result.files.map((file) => file.path),
+        [readable],
+      );
+    },
+  );
 
   it.each(["EACCES", "EIO", "ENOENT"])(
     "reports %s stat failures while allowing vanished files",

@@ -540,7 +540,7 @@ export const make = Effect.gen(function* () {
         for (const record of file.records) {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
-          if (aggregator.add(record) && record.sessionId.length > 0) {
+          if (aggregator.add(record, sources.length) && record.sessionId.length > 0) {
             sessionIds.add(record.sessionId);
           }
         }

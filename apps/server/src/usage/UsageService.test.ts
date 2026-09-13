@@ -203,6 +203,19 @@ describe("UsageService", () => {
       );
       const summary = yield* service.readSummary(WINDOW);
       assert.strictEqual(totalOutputTokens(summary), 36);
+      assert.deepStrictEqual(
+        summary.buckets
+          .filter((bucket) => bucket.provider === "claude")
+          .map((bucket) => ({
+            path: summary.sources[bucket.sourceIndex!]?.fingerprint.resolvedHomePath,
+            output: bucket.totals.outputTokens,
+          }))
+          .sort((a, b) => a.output - b.output),
+        [
+          { path: NodePath.join(home, "claude", "projects"), output: 5 },
+          { path: NodePath.join(claudeHome, "projects"), output: 7 },
+        ],
+      );
       const sources = summary.sources.filter((source) => source.status === "ok");
       assert.strictEqual(sources.length, 4);
       assert.strictEqual(
@@ -646,50 +659,52 @@ describe("UsageService scan coverage", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("keeps cached transcripts hidden by an incomplete directory walk", () =>
-    Effect.gen(function* () {
-      const { transcript, settings, home } = yield* setup;
-      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
-      yield* Effect.promise(() =>
-        NodeFSP.writeFile(
-          NodePath.join(home, "claude", "projects", "readable.jsonl"),
-          claudeLine(2, 7),
-        ),
-      );
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(
-          serviceLayers({ prefix: "usage-service-partial-cache-test", home, settings }),
-        ),
-      );
-      assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 12);
-      const actual = yield* Effect.promise(() =>
-        vi.importActual<typeof NodeFSP>("node:fs/promises"),
-      );
-      const readdir = vi
-        .mocked(NodeFSP.readdir)
-        .mockImplementationOnce((...args) => actual.readdir(...args))
-        .mockRejectedValueOnce(
-          Object.assign(new Error("cannot list nested directory"), { code: "EACCES" }),
+  it.live.each(["EACCES", "ENOENT"])(
+    "keeps cached transcripts hidden by a %s directory walk",
+    (code) =>
+      Effect.gen(function* () {
+        const { transcript, settings, home } = yield* setup;
+        yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(home, "claude", "projects", "readable.jsonl"),
+            claudeLine(2, 7),
+          ),
         );
-      const partial = yield* service
-        .readSummary(WINDOW)
-        .pipe(Effect.ensuring(Effect.sync(() => readdir.mockRestore())));
-      assert.strictEqual(
-        partial.sources.find((source) => source.fingerprint.provider === "claude")?.status,
-        "partial",
-      );
-      assert.strictEqual(totalOutputTokens(partial), 7);
-      // The unchanged file should remain cached. A reread would fail here.
-      const open = vi.mocked(NodeFSP.open).mockRejectedValueOnce(new Error("unexpected reread"));
-      const recovered = yield* service
-        .readSummary(WINDOW)
-        .pipe(Effect.ensuring(Effect.sync(() => open.mockRestore())));
-      assert.strictEqual(totalOutputTokens(recovered), 12);
-      assert.strictEqual(
-        recovered.sources.find((source) => source.fingerprint.provider === "claude")?.status,
-        "ok",
-      );
-    }).pipe(Effect.scoped),
+        const service = yield* UsageService.make.pipe(
+          Effect.provide(
+            serviceLayers({ prefix: "usage-service-partial-cache-test", home, settings }),
+          ),
+        );
+        assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 12);
+        const actual = yield* Effect.promise(() =>
+          vi.importActual<typeof NodeFSP>("node:fs/promises"),
+        );
+        const readdir = vi
+          .mocked(NodeFSP.readdir)
+          .mockImplementationOnce((...args) => actual.readdir(...args))
+          .mockRejectedValueOnce(
+            Object.assign(new Error("cannot list nested directory"), { code }),
+          );
+        const partial = yield* service
+          .readSummary(WINDOW)
+          .pipe(Effect.ensuring(Effect.sync(() => readdir.mockRestore())));
+        assert.strictEqual(
+          partial.sources.find((source) => source.fingerprint.provider === "claude")?.status,
+          "partial",
+        );
+        assert.strictEqual(totalOutputTokens(partial), 7);
+        // The unchanged file should remain cached. A reread would fail here.
+        const open = vi.mocked(NodeFSP.open).mockRejectedValueOnce(new Error("unexpected reread"));
+        const recovered = yield* service
+          .readSummary(WINDOW)
+          .pipe(Effect.ensuring(Effect.sync(() => open.mockRestore())));
+        assert.strictEqual(totalOutputTokens(recovered), 12);
+        assert.strictEqual(
+          recovered.sources.find((source) => source.fingerprint.provider === "claude")?.status,
+          "ok",
+        );
+      }).pipe(Effect.scoped),
   );
 
   it.live("distinguishes an unreadable root from absent provider directories", () =>
