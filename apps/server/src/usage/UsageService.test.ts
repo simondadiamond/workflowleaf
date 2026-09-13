@@ -412,8 +412,8 @@ describe("UsageService", () => {
         const service = yield* UsageService.make.pipe(
           Effect.provideService(FileSystem.FileSystem, {
             ...fileSystem,
-            exists: (path) =>
-              fileSystem.exists(path).pipe(
+            realPath: (path) =>
+              fileSystem.realPath(path).pipe(
                 Effect.tap(() => {
                   if (path !== NodePath.join(home, "claude", "projects")) return Effect.void;
                   homeProbes += 1;
