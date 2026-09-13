@@ -273,6 +273,7 @@ public struct FeatureThread: Identifiable, Sendable, Equatable, Hashable, Codabl
     public var updatedAt: Date
     public var state: FeatureThreadState
     public var providerID: String?
+    public var sessionProviderID: String?
     public var providerName: String?
     public var modelID: String?
     public var modelOptions: [FeatureModelOptionSelection]
@@ -291,6 +292,9 @@ public struct FeatureThread: Identifiable, Sendable, Equatable, Hashable, Codabl
     public var supportsPinning: Bool?
     public var supportsTitleRegeneration: Bool?
     public var supportsPullRequestLinking: Bool?
+    /// True while the server is generating a new title. Derived from the wire
+    /// snapshot only, the same way the web and React Native clients do it.
+    public var isRegeneratingTitle: Bool
     public var attentionAt: Date?
     public var workingStartedAt: Date?
     public var latestTurnCompletedAt: Date?
@@ -314,6 +318,7 @@ public struct FeatureThread: Identifiable, Sendable, Equatable, Hashable, Codabl
         updatedAt: Date = .now,
         state: FeatureThreadState = .idle,
         providerID: String? = nil,
+        sessionProviderID: String? = nil,
         providerName: String? = nil,
         modelID: String? = nil,
         modelOptions: [FeatureModelOptionSelection] = [],
@@ -332,6 +337,7 @@ public struct FeatureThread: Identifiable, Sendable, Equatable, Hashable, Codabl
         supportsPinning: Bool? = nil,
         supportsTitleRegeneration: Bool? = nil,
         supportsPullRequestLinking: Bool? = nil,
+        isRegeneratingTitle: Bool = false,
         attentionAt: Date? = nil,
         workingStartedAt: Date? = nil,
         latestTurnCompletedAt: Date? = nil,
@@ -354,6 +360,7 @@ public struct FeatureThread: Identifiable, Sendable, Equatable, Hashable, Codabl
         self.updatedAt = updatedAt
         self.state = state
         self.providerID = providerID
+        self.sessionProviderID = sessionProviderID
         self.providerName = providerName
         self.modelID = modelID
         self.modelOptions = modelOptions
@@ -372,6 +379,7 @@ public struct FeatureThread: Identifiable, Sendable, Equatable, Hashable, Codabl
         self.supportsPinning = supportsPinning
         self.supportsTitleRegeneration = supportsTitleRegeneration
         self.supportsPullRequestLinking = supportsPullRequestLinking
+        self.isRegeneratingTitle = isRegeneratingTitle
         self.attentionAt = attentionAt
         self.workingStartedAt = workingStartedAt
         self.latestTurnCompletedAt = latestTurnCompletedAt
@@ -665,6 +673,9 @@ public struct FeatureInputQuestion: Identifiable, Sendable, Equatable, Hashable,
     public var question: String
     public var options: [FeatureInputOption]
     public var allowsMultiple: Bool
+    public var allowCustomAnswer: Bool? = nil
+
+    public var canWriteCustomAnswer: Bool { allowCustomAnswer != false }
 
     public init(
         id: String,
@@ -687,6 +698,11 @@ public struct FeatureUserInput: Identifiable, Sendable, Equatable, Hashable, Cod
     public var wireID: String?
     public var threadID: String
     public var questions: [FeatureInputQuestion]
+    /// Only message-based questions can close without a provider callback.
+    public var dismissible: Bool? = nil
+    public var supportsAttachments: Bool? = nil
+
+    public var canDismiss: Bool { dismissible == true }
 
     public init(
         id: String,
@@ -936,6 +952,7 @@ public struct FeatureProvider: Identifiable, Sendable, Equatable, Hashable, Coda
     public var isInstalled: Bool? = nil
     public var authStatus: String? = nil
     public var statusMessage: String? = nil
+    public var accentColor: String? = nil
 
     func workspaceCatalog(cwd: String?) -> FeatureProviderWorkspace {
         if let cwd, let workspace = workspaceSnapshots?.first(where: { $0.cwd == cwd }) {

@@ -3,6 +3,40 @@ import XCTest
 @testable import T3Code
 
 final class WireFixtureContractTests: XCTestCase {
+    func testQuestionAttachmentAnswerMatchesTheServerContract() throws {
+        let image = try UploadChatAttachment(data: Data([1, 2]), name: "screenshot.png", mimeType: "image/png")
+        XCTAssertEqual(
+            OrchestrationCommands.respondToUserInput(
+                threadID: "thread-fixture", requestID: "question-fixture",
+                answers: ["scope": .string("Server and Web")],
+                attachmentsByQuestionID: ["scope": [image.uploadedJSONValue(id: "attachment-fixture")]],
+                commandID: "command-fixture", createdAt: "2026-08-07T12:00:00.000Z"
+            ),
+            try decodeFixture("question-attachment-command", as: JSONValue.self)
+        )
+    }
+
+    func testHubCreditsMatchTheServerContract() throws {
+        let input = try decodeFixture("hub-reset-credit-input", as: ProviderConsumeResetCreditInput.self)
+        XCTAssertEqual(input, .source(sourceID: "hub-fixture", accountID: "account-fixture", creditID: "credit-fixture"))
+        XCTAssertEqual(try JSONValue.encode(input), try decodeFixture("hub-reset-credit-input", as: JSONValue.self))
+        let result = try decodeFixture("hub-reset-credit-result", as: ProviderConsumeResetCreditResult.self)
+        XCTAssertEqual(result.warning, "Could not clear the hub cooldown.")
+        let credits = try decodeFixture("hub-reset-credits", as: ServerProviderResetCredits.self)
+        XCTAssertEqual(credits.nextCreditId, "credit-fixture")
+        XCTAssertEqual(credits.availableCount, 1)
+    }
+
+    func testQuestionDismissalMatchesTheServerContract() throws {
+        XCTAssertEqual(
+            OrchestrationCommands.dismissUserInput(
+                threadID: "thread-fixture", requestID: "question-fixture",
+                commandID: "command-fixture", createdAt: "2026-08-07T12:00:00.000Z"
+            ),
+            try decodeFixture("question-dismiss-command", as: JSONValue.self)
+        )
+    }
+
     func testGeneratedContractFixturesDecodeInSwift() throws {
         let shell = try decodeFixture(
             "shell-snapshot",
@@ -92,6 +126,32 @@ final class WireFixtureContractTests: XCTestCase {
             from: JSONSerialization.data(withJSONObject: detail)
         )
         XCTAssertEqual(threadSnapshot.thread.linkedPullRequest?.repository, "pingdotgg/t3code")
+    }
+
+    func testThreadSnapshotsDecodeTitleRegenerationState() throws {
+        let regeneration: [String: Any] = [
+            "requestId": "command-regenerate-title",
+            "startedAt": "2026-08-07T12:01:00.000Z",
+        ]
+        var shell = try XCTUnwrap(try fixtureObject("shell-snapshot") as? [String: Any])
+        var shellThread = try XCTUnwrap((shell["threads"] as? [[String: Any]])?.first)
+        shellThread["titleRegeneration"] = regeneration
+        shell["threads"] = [shellThread]
+        let snapshot = try JSONDecoder.t3.decode(
+            OrchestrationShellSnapshot.self,
+            from: JSONSerialization.data(withJSONObject: shell)
+        )
+        XCTAssertEqual(snapshot.threads.first?.titleRegeneration?.requestId, "command-regenerate-title")
+
+        var detail = try XCTUnwrap(try fixtureObject("thread-detail-snapshot") as? [String: Any])
+        var detailThread = try XCTUnwrap(detail["thread"] as? [String: Any])
+        detailThread["titleRegeneration"] = regeneration
+        detail["thread"] = detailThread
+        let threadSnapshot = try JSONDecoder.t3.decode(
+            OrchestrationThreadDetailSnapshot.self,
+            from: JSONSerialization.data(withJSONObject: detail)
+        )
+        XCTAssertEqual(threadSnapshot.thread.titleRegeneration?.startedAt, "2026-08-07T12:01:00.000Z")
     }
 
     func testReopenTimestampsRoundTripAndRemainOptionalForOlderServers() throws {

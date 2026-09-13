@@ -60,6 +60,9 @@ public protocol FeatureClient: AnyObject {
         projectID: String,
         refresh: Bool
     ) async throws -> [FeatureWorkspaceBranch]
+    func selectWorkspaceBranch(
+        projectID: String, branch: FeatureWorkspaceBranch, mode: FeatureWorkspaceMode
+    ) async throws -> FeatureWorkspaceBranch
     func renameThread(id: String, title: String) async throws
     func regenerateThreadTitle(id: String) async throws
     func setThreadArchived(id: String, archived: Bool) async throws
@@ -99,6 +102,11 @@ public protocol FeatureClient: AnyObject {
     func cancelTurn(threadID: String) async throws
     func resolveApproval(id: String, decision: FeatureApprovalDecision) async throws
     func resolveUserInput(id: String, answers: [String: FeatureInputAnswer]) async throws
+    func resolveUserInput(
+        id: String, answers: [String: FeatureInputAnswer],
+        attachmentsByQuestionID: [String: [FeatureUploadAttachment]]
+    ) async throws
+    func dismissUserInput(id: String) async throws
 
     func saveSettings(_ settings: FeatureSettings) async throws
     func serverPreferences(environmentID: String) async throws -> ServerSettingsSnapshot
@@ -124,7 +132,7 @@ public protocol FeatureClient: AnyObject {
     func refreshUsageLimits() async throws -> [FeatureEnvironmentUsageLimits]
     func consumeResetCredit(
         environmentID: String,
-        instanceID: String
+        input: ProviderConsumeResetCreditInput
     ) async throws -> ProviderConsumeResetCreditResult
     func pullRequestLists(_ input: PullRequestListInput) async throws
         -> [FeaturePullRequestEnvironmentList]
@@ -282,6 +290,13 @@ public extension FeatureClient {
         environmentID: String,
         instanceID: String
     ) async throws -> ProviderConsumeResetCreditResult {
+        try await consumeResetCredit(environmentID: environmentID, input: .provider(instanceID: instanceID))
+    }
+
+    func consumeResetCredit(
+        environmentID: String,
+        input: ProviderConsumeResetCreditInput
+    ) async throws -> ProviderConsumeResetCreditResult {
         throw FeatureCapabilityUnavailable("Usage reset credits")
     }
 
@@ -428,6 +443,20 @@ public extension FeatureClient {
     func releaseThread(id: String) {}
     func resolveUserInput(id: String, answers: [String: FeatureInputAnswer]) async throws {}
 
+    func resolveUserInput(
+        id: String, answers: [String: FeatureInputAnswer],
+        attachmentsByQuestionID: [String: [FeatureUploadAttachment]]
+    ) async throws {
+        guard attachmentsByQuestionID.values.allSatisfy(\.isEmpty) else {
+            throw FeatureCapabilityUnavailable("Question attachments")
+        }
+        try await resolveUserInput(id: id, answers: answers)
+    }
+
+    func dismissUserInput(id: String) async throws {
+        throw FeatureCapabilityUnavailable("Question dismissal")
+    }
+
     /// Keeps simple text-only callers source-compatible while the typed API
     /// preserves multi-select answers as arrays.
     func resolveUserInput(id: String, answers: [String: String]) async throws {
@@ -453,6 +482,14 @@ public extension FeatureClient {
         refresh: Bool
     ) async throws -> [FeatureWorkspaceBranch] {
         []
+    }
+
+    func selectWorkspaceBranch(
+        projectID: String, branch: FeatureWorkspaceBranch, mode: FeatureWorkspaceMode
+    ) async throws -> FeatureWorkspaceBranch {
+        try await NewTaskWorkspaceDefaults.selectBranch(branch, mode: mode) { _ in
+            throw FeatureCapabilityUnavailable("Branch checkout")
+        }
     }
 
     /// Legacy clients still create in the current checkout. Native clients

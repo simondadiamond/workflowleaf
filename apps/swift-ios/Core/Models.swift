@@ -118,6 +118,7 @@ public struct EnvironmentDescriptor: Codable, Equatable, Sendable {
         public let serverSelfUpdateProgress: Bool?
         public var environmentIcon: Bool? = nil
         public var usageLimitSources: Bool? = nil
+        public var questionAttachments: Bool? = nil
 
         private enum CodingKeys: String, CodingKey {
             case repositoryIdentity
@@ -136,12 +137,14 @@ public struct EnvironmentDescriptor: Codable, Equatable, Sendable {
             case serverSelfUpdateProgress
             case environmentIcon
             case usageLimitSources
+            case questionAttachments
         }
 
         public init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             environmentIcon = try container.decodeIfPresent(Bool.self, forKey: .environmentIcon)
             usageLimitSources = try container.decodeIfPresent(Bool.self, forKey: .usageLimitSources)
+            questionAttachments = try container.decodeIfPresent(Bool.self, forKey: .questionAttachments)
             repositoryIdentity =
                 try container.decodeIfPresent(Bool.self, forKey: .repositoryIdentity) ?? false
             connectionProbe = try container.decodeIfPresent(Bool.self, forKey: .connectionProbe)
@@ -450,6 +453,13 @@ public struct ThreadLinkedPullRequest: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+/// Present on a thread while the server is generating a new title for it.
+/// Cleared by the server when the regeneration completes or the thread is renamed.
+public struct ThreadTitleRegeneration: Codable, Equatable, Sendable {
+    public let requestId: String
+    public let startedAt: String
+}
+
 public struct OrchestrationThreadShell: Codable, Identifiable, Equatable, Sendable {
     public let id: String
     public let projectId: String
@@ -472,6 +482,7 @@ public struct OrchestrationThreadShell: Codable, Identifiable, Equatable, Sendab
     public let snoozedUntil: String?
     public let snoozedAt: String?
     public let pinnedAt: String?
+    public var titleRegeneration: ThreadTitleRegeneration? = nil
     public let session: OrchestrationSession?
     public let latestUserMessageAt: String?
     public let hasPendingApprovals: Bool
@@ -549,6 +560,7 @@ public struct OrchestrationThread: Codable, Identifiable, Equatable, Sendable {
     public let snoozedUntil: String?
     public let snoozedAt: String?
     public let pinnedAt: String?
+    public var titleRegeneration: ThreadTitleRegeneration? = nil
     public let deletedAt: String?
     @ForwardCompatibleArray public var messages: [OrchestrationMessage]
     @ForwardCompatibleArray public var activities: [OrchestrationActivity]

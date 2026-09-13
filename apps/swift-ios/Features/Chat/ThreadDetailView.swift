@@ -399,8 +399,12 @@ public struct ThreadDetailView: View {
                     Button {
                         Task { await model.regenerateThreadTitle(thread.id) }
                     } label: {
-                        Label("Regenerate title", systemImage: "sparkles")
+                        Label(
+                            currentThread.isRegeneratingTitle ? "Regenerating title…" : "Regenerate title",
+                            systemImage: "sparkles"
+                        )
                     }
+                    .disabled(currentThread.isRegeneratingTitle)
                 }
                 Menu {
                     if !FeatureRuntimeMode.allCases.contains(currentThread.runtimeMode) {
@@ -727,8 +731,11 @@ public struct ThreadDetailView: View {
                     onApprovalDecision: { id, decision in
                         Task { await model.resolveApproval(id, decision: decision) }
                     },
-                    onUserInputSubmit: { id, answers in
-                        Task { await model.resolveUserInput(id, answers: answers) }
+                    onUserInputSubmit: { id, answers, attachments in
+                        await model.resolveUserInput(id, answers: answers, attachmentsByQuestionID: attachments)
+                    },
+                    onUserInputDismiss: { id in
+                        await model.dismissUserInput(id)
                     },
                     onRefreshModels: refreshThreadEnvironmentModels,
                     draftSaveError: draftSaveError,
