@@ -8,18 +8,21 @@ DNS, the API Worker, PlanetScale, Clerk, or observability resources. The
 canary has no wildcard hostname, so it addresses endpoints by path:
 `/u/<userKey>/e/<endpointKey>/...`.
 
-From `infra/relay`, provide a fresh random control token:
+From `infra/relay`, export a fresh random control token. Both the Worker and
+the harness read it from the environment:
 
-```text
-T3_RELAY_CANARY_CONTROL_TOKEN=random-secret
+```sh
+export T3_RELAY_CANARY_CONTROL_TOKEN=random-secret
 ```
 
 For a local run, no Cloudflare credentials are needed beyond placeholder
-values that satisfy the provider's environment check:
+values that satisfy the provider's environment check. `alchemy dev` stays in
+the foreground and hot-reloads, so run it in a second terminal or in the
+background:
 
 ```sh
 CLOUDFLARE_ACCOUNT_ID=00000000000000000000000000000000 CLOUDFLARE_API_TOKEN=local \
-  alchemy dev alchemy.edge-canary.run.ts --stage canary-local
+  alchemy dev alchemy.edge-canary.run.ts --stage canary-local &
 T3_RELAY_CANARY_URL=http://localhost:1337 T3_RELAY_CANARY_FAST=1 \
   bun scripts/test-edge-canary.mjs
 ```
