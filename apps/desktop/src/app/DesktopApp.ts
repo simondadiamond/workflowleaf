@@ -180,6 +180,8 @@ const bootstrap = Effect.gen(function* () {
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
 
+  yield* snapShot.initialize;
+
   if (!settings.localEnvironmentEnabled) {
     yield* logBootstrapInfo("bootstrap skipping local environment (disabled in settings)");
     if (!(yield* Ref.get(state.quitting))) {
@@ -231,7 +233,6 @@ const bootstrap = Effect.gen(function* () {
       "bootstrap fell back to local-only because no advertised network host was available",
     );
   }
-  yield* snapShot.initialize;
 
   if (!(yield* Ref.get(state.quitting))) {
     // The main window waits for the primary backend. In wsl-only mode that is

@@ -52,11 +52,13 @@ export interface SettingsSearchItem {
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
+  readonly localEnvironmentOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
 }
 
 export interface SettingsSearchAvailability {
+  readonly localEnvironmentDisabled?: boolean;
   readonly hasCloudPublicConfig: boolean;
   readonly hasEnvironment: boolean;
   readonly hasProviderSettingsEnvironment: boolean;
@@ -665,6 +667,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "t3-connect",
+    localEnvironmentOnly: true,
     title: "T3 Connect",
     to: "/settings/connections",
     targetId: "connections-environment",
@@ -674,6 +677,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "publish-agent-activity",
+    localEnvironmentOnly: true,
     title: "Publish agent activity",
     to: "/settings/connections",
     targetId: "connections-environment",
@@ -848,6 +852,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.environmentOnly || availability.hasEnvironment) &&
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
+      (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
   );

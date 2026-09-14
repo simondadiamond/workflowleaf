@@ -3242,11 +3242,17 @@ export function ConnectionsSettings() {
         <>
           <SettingsSection
             {...searchableSetting("connections-environment")}
-            title={primaryEnvironment?.label ?? "Primary environment"}
+            title={
+              primaryEnvironment?.label ?? (desktopBridge ? "This machine" : "Primary environment")
+            }
             icon={
               <EnvironmentMachineIcon
                 aria-hidden
-                kind={resolveEnvironmentMachineKind(primaryServerConfig)}
+                kind={
+                  primaryServerConfig
+                    ? resolveEnvironmentMachineKind(primaryServerConfig)
+                    : "desktop"
+                }
                 className="size-4"
               />
             }

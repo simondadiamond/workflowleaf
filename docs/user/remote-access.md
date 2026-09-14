@@ -191,7 +191,7 @@ devices. For server version warnings, follow [Updating T3 Code](./updating.md).
 ## Using the Desktop App as a Remote Only
 
 If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Connections → This environment** and switch off **Local
+desktop app, open **Settings → Connections** and switch off **Local
 environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
 history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
