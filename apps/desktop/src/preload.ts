@@ -208,6 +208,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.QUIT_SHORTCUT_CHANNEL, wrappedListener);
     };
   },
+  setWindowButtonVisibility: (visible) =>
+    ipcRenderer.invoke(IpcChannels.SET_WINDOW_BUTTON_VISIBILITY_CHANNEL, visible),
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
   onWindowFullscreenStateChange: (listener) => {

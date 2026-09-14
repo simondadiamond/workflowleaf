@@ -50,8 +50,6 @@ import {
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
-
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
   return () => window.removeEventListener("resize", onChange);
@@ -73,10 +71,31 @@ function readInitialThreadSidebarWidth(): number {
   }
 }
 
-function SidebarControl() {
+function SidebarControl({
+  nativeWindowButtons,
+  isWindowFullscreen,
+}: {
+  nativeWindowButtons: boolean;
+  isWindowFullscreen: boolean;
+}) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, state, isMobile } = useSidebar();
+  const compactSidebarEnabled = useCompactSidebarEnabled();
+  const compact = compactSidebarEnabled && state === "collapsed" && !isMobile;
+
+  useEffect(() => {
+    if (!nativeWindowButtons || isWindowFullscreen) return;
+    void window.desktopBridge?.setWindowButtonVisibility?.(!compact).catch(console.error);
+  }, [nativeWindowButtons, compact, isWindowFullscreen]);
+
+  useEffect(() => {
+    if (!nativeWindowButtons) return;
+    return () => {
+      void window.desktopBridge?.setWindowButtonVisibility?.(true).catch(console.error);
+    };
+  }, [nativeWindowButtons]);
   const isSidebarVisible = useSidebarVisibility();
+  const isControlOnSidebar = isSidebarVisible || (nativeWindowButtons && compact);
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
@@ -118,10 +137,10 @@ function SidebarControl() {
             <SidebarTrigger
               className={cn(
                 "pointer-events-auto",
-                isSidebarVisible &&
+                isControlOnSidebar &&
                   stageBackdropVariant &&
                   "focus-visible:ring-white/90 [&_svg]:stroke-white/90! [&_svg]:opacity-100! [&_svg]:hover:stroke-white! [:hover,[data-pressed]]:bg-white/15",
-                isSidebarVisible &&
+                isControlOnSidebar &&
                   stageBackdropVariant &&
                   resolveSidebarStageFocusRingOffsetClass(stageBackdropVariant),
               )}
@@ -158,6 +177,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
+  const nativeWindowButtons =
+    isMacosDesktop && typeof window.desktopBridge?.setWindowButtonVisibility === "function";
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
   // and a clamped drag ends with an unchanged width, which skips the re-render
@@ -181,9 +202,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarProviderStyle = {
     "--sidebar-width": `${sidebarWidth}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
-    ...(isMacosDesktop && !isWindowFullscreen
-      ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
-      : {}),
   } as CSSProperties;
 
   useEffect(() => {
@@ -226,7 +244,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   return (
     <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <SidebarProvider
-        className="h-dvh! min-h-0!"
+        className={cn(
+          "h-dvh! min-h-0!",
+          isMacosDesktop && !isWindowFullscreen && "[--workspace-controls-left:90px]",
+          nativeWindowButtons &&
+            "md:[&:has([data-side=left][data-collapsible=icon])]:[--workspace-controls-left:calc((var(--sidebar-width-icon)-var(--workspace-titlebar-control-size))/2-1px)]",
+        )}
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
         defaultOpen
         style={sidebarProviderStyle}
@@ -260,7 +283,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}
-        <SidebarControl />
+        <SidebarControl
+          nativeWindowButtons={nativeWindowButtons}
+          isWindowFullscreen={isWindowFullscreen}
+        />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );

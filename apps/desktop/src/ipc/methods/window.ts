@@ -14,6 +14,7 @@ import {
   type PickedThemeFile,
 } from "@t3tools/contracts";
 import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@t3tools/shared/filePreview";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { isCommandAvailable } from "@t3tools/shared/shell";
 import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
@@ -76,6 +77,19 @@ export const getSystemLocale = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getSystemLocale")(function* () {
     const electronApp = yield* ElectronApp.ElectronApp;
     return yield* electronApp.systemLocale;
+  }),
+});
+
+export const setWindowButtonVisibility = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_WINDOW_BUTTON_VISIBILITY_CHANNEL,
+  payload: Schema.Boolean,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setWindowButtonVisibility")(function* (visible, event) {
+    if ((yield* HostProcessPlatform) !== "darwin") return;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    if (Option.isNone(window) || window.value.webContents.id !== event?.sender.id) return;
+    window.value.setWindowButtonVisibility(visible);
   }),
 });
 

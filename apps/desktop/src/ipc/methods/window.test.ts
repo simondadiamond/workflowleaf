@@ -15,6 +15,7 @@ vi.mock("electron", () => ({
   BrowserWindow: { fromWebContents: ownerWindow },
 }));
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
@@ -22,6 +23,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import {
   getLocalEnvironmentBootstraps,
   getWindowFullscreenState,
+  setWindowButtonVisibility,
   pasteAsText,
   pickProjectFavicon,
 } from "./window.ts";
@@ -144,6 +146,60 @@ describe("getLocalEnvironmentBootstraps", () => {
       const result = yield* getLocalEnvironmentBootstraps.handler();
       assert.deepEqual(result, []);
     }).pipe(Effect.provide(DesktopBackendPool.layerTest([stoppedInstance])));
+  });
+});
+
+describe("setWindowButtonVisibility", () => {
+  it.effect("hides and restores the requesting main window's buttons on macOS", () => {
+    const setVisibility = vi.fn();
+    const window = {
+      webContents: { id: 42 },
+      setWindowButtonVisibility: setVisibility,
+    } as unknown as Electron.BrowserWindow;
+
+    return Effect.gen(function* () {
+      yield* setWindowButtonVisibility.handler(false, { sender: { id: 42 } });
+      yield* setWindowButtonVisibility.handler(true, { sender: { id: 42 } });
+      assert.deepEqual(setVisibility.mock.calls, [[false], [true]]);
+    }).pipe(
+      Effect.provideService(HostProcessPlatform, "darwin"),
+      Effect.provide(
+        Layer.mock(ElectronWindow.ElectronWindow)({
+          currentMainOrFirst: Effect.succeed(Option.some(window)),
+        }),
+      ),
+    );
+  });
+
+  for (const platform of ["linux", "win32"] as const) {
+    it.effect(`leaves native buttons alone on ${platform}`, () =>
+      setWindowButtonVisibility
+        .handler(false, { sender: { id: 42 } })
+        .pipe(
+          Effect.provideService(HostProcessPlatform, platform),
+          Effect.provide(Layer.mock(ElectronWindow.ElectronWindow)({})),
+        ),
+    );
+  }
+
+  it.effect("ignores requests from other windows and a missing main window", () => {
+    const setVisibility = vi.fn();
+    const window = {
+      webContents: { id: 42 },
+      setWindowButtonVisibility: setVisibility,
+    } as unknown as Electron.BrowserWindow;
+    return Effect.gen(function* () {
+      for (const currentWindow of [Option.some(window), Option.none()]) {
+        yield* setWindowButtonVisibility.handler(false, { sender: { id: 7 } }).pipe(
+          Effect.provide(
+            Layer.mock(ElectronWindow.ElectronWindow)({
+              currentMainOrFirst: Effect.succeed(currentWindow),
+            }),
+          ),
+        );
+      }
+      assert.deepEqual(setVisibility.mock.calls, []);
+    }).pipe(Effect.provideService(HostProcessPlatform, "darwin"));
   });
 });
 
