@@ -8,8 +8,9 @@
 //
 // Set T3_RELAY_CANARY_FAST=1 to skip the multi-minute idle and hibernation
 // checks, which only mean something against real Cloudflare infrastructure.
-// Set T3_RELAY_CANARY_SHARED_HUB=1 when the Worker runs with
-// RELAY_HUB_SHARD_COUNT=1, so both users are expected on one object.
+// Whether the two users share one hub object is read from the objects
+// themselves, so the run is valid for any RELAY_HUB_SHARD_COUNT. Set
+// T3_RELAY_CANARY_SHARED_HUB=1 to require that they share one.
 import * as NodeCrypto from "node:crypto";
 
 import { T3RelayConnectorSession } from "../../../apps/server/src/cloud/T3RelayConnector.ts";
@@ -17,7 +18,7 @@ import { T3RelayConnectorSession } from "../../../apps/server/src/cloud/T3RelayC
 const workerUrl = process.env.T3_RELAY_CANARY_URL;
 const controlToken = process.env.T3_RELAY_CANARY_CONTROL_TOKEN;
 const fast = process.env.T3_RELAY_CANARY_FAST === "1";
-const sharedHub = process.env.T3_RELAY_CANARY_SHARED_HUB === "1";
+const requireSharedHub = process.env.T3_RELAY_CANARY_SHARED_HUB === "1";
 
 if (!workerUrl || !controlToken) {
   throw new Error("T3_RELAY_CANARY_URL and T3_RELAY_CANARY_CONTROL_TOKEN are required.");
@@ -267,8 +268,12 @@ const results = {};
 try {
   // Hub objects keep storage across runs, so count configured endpoints
   // relative to what the objects already held.
-  const baselineA = (await a1.diagnostics()).hub.configuredEndpointCount;
-  const baselineB = (await b1.diagnostics()).hub.configuredEndpointCount;
+  const hubBeforeA = (await a1.diagnostics()).hub;
+  const hubBeforeB = (await b1.diagnostics()).hub;
+  const sharedHub = hubBeforeA.activationId === hubBeforeB.activationId;
+  assert(!requireSharedHub || sharedHub, "users A and B did not share one object.");
+  const baselineA = hubBeforeA.configuredEndpointCount;
+  const baselineB = hubBeforeB.configuredEndpointCount;
   for (const endpoint of endpoints) await endpoint.configure();
   for (const endpoint of endpoints) await endpoint.connect();
 
@@ -300,9 +305,7 @@ try {
     hubA.configuredEndpointCount === expectedConfiguredA,
     `hub A configured ${hubA.configuredEndpointCount}, expected ${expectedConfiguredA}.`,
   );
-  if (sharedHub) {
-    assert(hubA.activationId === hubB.activationId, "users A and B did not share one object.");
-  } else {
+  if (!sharedHub) {
     assert(hubA.endpoints[b1.endpointKey] === undefined, "b1 leaked into hub A.");
     assert(hubB.endpoints[a1.endpointKey] === undefined, "a1 leaked into hub B.");
     assert(hubB.configuredEndpointCount === baselineB + 1, "hub B configured count drifted.");
@@ -404,8 +407,31 @@ try {
   assert(staleRelease.revoked === false, "Stale lease revoked the relinked connector.");
   assert((await a2.diagnostics()).endpoint?.connectorConnected, "a2 dropped after stale release.");
   assert(held.socket.readyState === WebSocket.OPEN, "a1 client socket dropped during a2 relink.");
-  const heldEcho = await new Promise((resolve) => {
-    held.socket.addEventListener("message", (event) => resolve(event.data), { once: true });
+  const heldEcho = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Held WebSocket echo timed out.")), 15_000);
+    const settle = (callback) => (event) => {
+      clearTimeout(timeout);
+      callback(event);
+    };
+    held.socket.addEventListener(
+      "message",
+      settle((event) => resolve(event.data)),
+      { once: true },
+    );
+    held.socket.addEventListener(
+      "close",
+      settle(() => reject(new Error("Held WebSocket closed."))),
+      {
+        once: true,
+      },
+    );
+    held.socket.addEventListener(
+      "error",
+      settle(() => reject(new Error("Held WebSocket failed."))),
+      {
+        once: true,
+      },
+    );
     held.socket.send("still-here");
   });
   assert(heldEcho === "a1:still-here", "a1 client socket stopped forwarding after a2 relink.");

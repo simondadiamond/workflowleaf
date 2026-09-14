@@ -38,9 +38,11 @@ between objects, credential scoping, concurrent traffic, HTTP request bodies,
 a response larger than the initial flow-control window, text and fragmented
 binary WebSockets, edge-handled Effect RPC ping/pong, relinking one endpoint
 while a sibling's client stays connected, and revoking one endpoint without
-affecting the other. Start the Worker with `RELAY_HUB_SHARD_COUNT=1` and run
-the harness with `T3_RELAY_CANARY_SHARED_HUB=1` to check the same isolation
-when both users share one object. Without `T3_RELAY_CANARY_FAST` it also covers the slow
+affecting the other. The harness reads from the objects whether the two users
+landed on the same hub and adjusts its isolation checks, so it is valid for
+any `RELAY_HUB_SHARD_COUNT`. Start the Worker with `RELAY_HUB_SHARD_COUNT=1`
+and run the harness with `T3_RELAY_CANARY_SHARED_HUB=1` to require the
+shared-object case. Without `T3_RELAY_CANARY_FAST` it also covers the slow
 reader, abandoned download, and hibernation checks, which take several
 minutes and only mean something on real Cloudflare infrastructure. Destroy the
 exact stage even if validation fails:
