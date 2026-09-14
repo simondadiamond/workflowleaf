@@ -11,7 +11,7 @@
 // The script configures one endpoint on the user's hub object, starts the
 // host connector against the given loopback origin, and prints the public
 // URL prefix. Stop it with Ctrl-C.
-import { randomBytes } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import { T3RelayConnectorSession } from "../../../apps/server/src/cloud/T3RelayConnector.ts";
 
@@ -25,7 +25,7 @@ if (!workerUrl || !controlToken) {
   throw new Error("T3_RELAY_CANARY_URL and T3_RELAY_CANARY_CONTROL_TOKEN are required.");
 }
 
-const connectorToken = randomBytes(24).toString("base64url");
+const connectorToken = NodeCrypto.randomBytes(24).toString("base64url");
 const configureUrl = new URL("/__t3-relay-canary/configure", workerUrl);
 configureUrl.searchParams.set("userKey", userKey);
 configureUrl.searchParams.set("endpointKey", endpointKey);

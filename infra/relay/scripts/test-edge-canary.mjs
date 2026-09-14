@@ -10,7 +10,7 @@
 // checks, which only mean something against real Cloudflare infrastructure.
 // Set T3_RELAY_CANARY_SHARED_HUB=1 when the Worker runs with
 // RELAY_HUB_SHARD_COUNT=1, so both users are expected on one object.
-import { randomBytes } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import { T3RelayConnectorSession } from "../../../apps/server/src/cloud/T3RelayConnector.ts";
 
@@ -129,7 +129,7 @@ function makeOrigin(name) {
 }
 
 function hexKey() {
-  return randomBytes(8).toString("hex");
+  return NodeCrypto.randomBytes(8).toString("hex");
 }
 
 class Endpoint {
@@ -137,7 +137,7 @@ class Endpoint {
     this.name = name;
     this.userKey = userKey;
     this.endpointKey = hexKey();
-    this.connectorToken = randomBytes(24).toString("base64url");
+    this.connectorToken = NodeCrypto.randomBytes(24).toString("base64url");
     this.leaseId = `lease-${name}-1`;
     this.origin = makeOrigin(name);
     this.lifecycle = [];
@@ -390,7 +390,7 @@ try {
   // a release with a2's stale lease returns false and leaves the new one up.
   const held = await openWebSocket(a1.wsUrl("/ws"));
   const a2Disconnects = a2.lifecycle.filter((event) => event.type === "disconnected").length;
-  a2.connectorToken = randomBytes(24).toString("base64url");
+  a2.connectorToken = NodeCrypto.randomBytes(24).toString("base64url");
   await a2.configure("lease-a2-2");
   await waitFor(
     () => a2.lifecycle.filter((event) => event.type === "disconnected").length > a2Disconnects,
