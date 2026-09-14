@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -68,56 +68,53 @@ export function T3ConnectProfilePage() {
     readonly linkedAtById: ReadonlyMap<EnvironmentId, string>;
   }>({ accountId: null, linkedAtById: new Map() });
 
-  const handleDeregister = useCallback(
-    async (environment: RelayClientEnvironmentRecord) => {
-      const accountId = environmentsState.accountId;
-      if (!accountId || mutationPendingRef.current) return;
+  const handleDeregister = async (environment: RelayClientEnvironmentRecord) => {
+    const accountId = environmentsState.accountId;
+    if (!accountId || mutationPendingRef.current) return;
 
-      mutationPendingRef.current = true;
-      setDeregisteringEnvironmentId(environment.environmentId);
-      const result = await deregisterEnvironment({
-        accountId,
-        environmentId: environment.environmentId,
+    mutationPendingRef.current = true;
+    setDeregisteringEnvironmentId(environment.environmentId);
+    const result = await deregisterEnvironment({
+      accountId,
+      environmentId: environment.environmentId,
+    });
+    mutationPendingRef.current = false;
+    setDeregisteringEnvironmentId(null);
+
+    if (result._tag === "Success") {
+      setRemovedEnvironments((current) => {
+        const linkedAtById = new Map(current.accountId === accountId ? current.linkedAtById : []);
+        linkedAtById.set(environment.environmentId, environment.linkedAt);
+        return { accountId, linkedAtById };
       });
-      mutationPendingRef.current = false;
-      setDeregisteringEnvironmentId(null);
+      environmentsState.refresh();
+      return;
+    }
+    if (isAtomCommandInterrupted(result)) return;
 
-      if (result._tag === "Success") {
-        setRemovedEnvironments((current) => {
-          const linkedAtById = new Map(current.accountId === accountId ? current.linkedAtById : []);
-          linkedAtById.set(environment.environmentId, environment.linkedAt);
-          return { accountId, linkedAtById };
-        });
-        environmentsState.refresh();
-        return;
-      }
-      if (isAtomCommandInterrupted(result)) return;
-
-      const cause = squashAtomCommandFailure(result);
-      const message = cause instanceof Error ? cause.message : "Could not deregister the server.";
-      const traceId = findErrorTraceId(cause);
-      console.error("[t3-connect] Could not deregister environment", {
-        environmentId: environment.environmentId,
-        message,
-        traceId,
-        cause,
-      });
-      Alert.alert(
-        "Could not deregister server",
-        traceId ? `${message}\n\nTrace ID: ${traceId}` : message,
-        traceId
-          ? [
-              {
-                text: "Copy trace ID",
-                onPress: () => copyTextWithHaptic(traceId, { target: "connection-trace-id" }),
-              },
-              { text: "OK", style: "cancel" },
-            ]
-          : undefined,
-      );
-    },
-    [deregisterEnvironment, environmentsState],
-  );
+    const cause = squashAtomCommandFailure(result);
+    const message = cause instanceof Error ? cause.message : "Could not deregister the server.";
+    const traceId = findErrorTraceId(cause);
+    console.error("[t3-connect] Could not deregister environment", {
+      environmentId: environment.environmentId,
+      message,
+      traceId,
+      cause,
+    });
+    Alert.alert(
+      "Could not deregister server",
+      traceId ? `${message}\n\nTrace ID: ${traceId}` : message,
+      traceId
+        ? [
+            {
+              text: "Copy trace ID",
+              onPress: () => copyTextWithHaptic(traceId, { target: "connection-trace-id" }),
+            },
+            { text: "OK", style: "cancel" },
+          ]
+        : undefined,
+    );
+  };
 
   const removedEnvironmentLinkedAt =
     removedEnvironments.accountId === environmentsState.accountId
