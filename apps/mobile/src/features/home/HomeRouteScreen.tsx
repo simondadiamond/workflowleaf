@@ -49,6 +49,7 @@ export function HomeRouteScreen() {
     unsnoozeThread,
     pinThread,
     unpinThread,
+    toggleThreadAutoSettle,
     moveThread,
     regenerateThreadTitle,
     unsettleThread,
@@ -199,6 +200,7 @@ export function HomeRouteScreen() {
           onUnsettleThread={unsettleThread}
           onPinThread={pinThread}
           onUnpinThread={unpinThread}
+          onToggleThreadAutoSettle={toggleThreadAutoSettle}
           onMoveThread={moveThread}
           onRegenerateThreadTitle={regenerateThreadTitle}
           onEnvironmentChange={setSelectedEnvironmentId}

@@ -58,6 +58,15 @@ function environmentSupportsPinReorder(environmentId: EnvironmentThreadShell["en
   );
 }
 
+function environmentSupportsAutoSettleOptOut(
+  environmentId: EnvironmentThreadShell["environmentId"],
+) {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadAutoSettleOptOut === true
+  );
+}
+
 function environmentSupportsTitleRegeneration(
   environmentId: EnvironmentThreadShell["environmentId"],
 ) {
@@ -236,6 +245,8 @@ export function useThreadListActions(): {
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly pinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unpinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  /** Flips per-thread automatic settlement. */
+  readonly toggleThreadAutoSettle: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly moveThread: (
     thread: EnvironmentThreadShell,
     direction: ThreadMoveDestination,
@@ -247,6 +258,9 @@ export function useThreadListActions(): {
   const unsnoozeMutation = useAtomCommand(threadEnvironment.unsnooze, { reportFailure: false });
   const pinMutation = useAtomCommand(threadEnvironment.pin, { reportFailure: false });
   const unpinMutation = useAtomCommand(threadEnvironment.unpin, { reportFailure: false });
+  const setAutoSettleMutation = useAtomCommand(threadEnvironment.setAutoSettle, {
+    reportFailure: false,
+  });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -432,6 +446,34 @@ export function useThreadListActions(): {
       return true;
     },
     [unpinMutation],
+  );
+  const toggleThreadAutoSettle = useCallback(
+    async (thread: EnvironmentThreadShell) => {
+      if (!environmentSupportsAutoSettleOptOut(thread.environmentId)) {
+        Alert.alert(
+          "Could not update auto-settle",
+          "This environment's server does not support turning auto-settle off per thread yet. Update the server to use it.",
+        );
+        return false;
+      }
+      selectionHaptic();
+      const result = await setAutoSettleMutation({
+        environmentId: thread.environmentId,
+        input: { threadId: thread.id, enabled: thread.autoSettleDisabledAt != null },
+      });
+      if (result._tag === "Failure") {
+        const error = Cause.squash(result.cause);
+        Alert.alert(
+          "Could not update auto-settle",
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : "The auto-settle setting could not be changed.",
+        );
+        return false;
+      }
+      return true;
+    },
+    [setAutoSettleMutation],
   );
   const regenerateThreadTitle = useCallback(
     async (thread: EnvironmentThreadShell) => {
@@ -652,6 +694,7 @@ export function useThreadListActions(): {
     unsettleThread,
     pinThread,
     unpinThread,
+    toggleThreadAutoSettle,
     moveThread,
     regenerateThreadTitle,
   };
