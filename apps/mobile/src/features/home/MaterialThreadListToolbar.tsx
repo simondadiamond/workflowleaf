@@ -1,0 +1,165 @@
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import {
+  BackHandler,
+  Keyboard,
+  Pressable,
+  TextInput,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { MenuAction } from "@react-native-menu/menu";
+
+import { AndroidHeaderIconButton } from "../../components/AndroidScreenHeader";
+import { CompactBrandTitle } from "../../components/CompactBrandTitle";
+import { ControlPillMenu } from "../../components/ControlPill";
+import { SymbolView } from "../../components/AppSymbol";
+import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
+import { WorkspaceConnectionTitle } from "./WorkspaceConnectionTitle";
+
+/** One toolbar height for the compact list and expanded sidebar, including search. */
+export function MaterialThreadListToolbar(props: {
+  readonly searchQuery: string;
+  readonly onSearchQueryChange: (query: string) => void;
+  readonly filterActions: MenuAction[];
+  readonly filterCustomized: boolean;
+  readonly onFilterAction: NonNullable<ComponentProps<typeof ControlPillMenu>["onPressAction"]>;
+  readonly onOpenSettings: () => void;
+  readonly onOpenEnvironments: () => void;
+  readonly sidebar?: boolean;
+  readonly onLayout?: (event: LayoutChangeEvent) => void;
+  readonly onRequestVisibility?: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { onRequestVisibility, onSearchQueryChange } = props;
+  const searchRef = useRef<TextInput>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searching = searchOpen || props.searchQuery.length > 0;
+  const openSearch = useCallback(() => {
+    onRequestVisibility?.();
+    setSearchOpen(true);
+    searchRef.current?.focus();
+    return true;
+  }, [onRequestVisibility]);
+  useHardwareKeyboardCommand("focusSearch", openSearch);
+
+  const closeSearch = useCallback(() => {
+    onSearchQueryChange("");
+    setSearchOpen(false);
+    Keyboard.dismiss();
+  }, [onSearchQueryChange]);
+
+  useEffect(() => {
+    if (!searching) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      closeSearch();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [closeSearch, searching]);
+
+  const filterIcon = props.filterCustomized
+    ? "line.3.horizontal.decrease.circle.fill"
+    : "line.3.horizontal.decrease.circle";
+  const searchField = (
+    <View className="h-12 min-w-0 flex-1 flex-row items-center gap-2 rounded-full border border-input-border bg-input px-3">
+      <SymbolView name="magnifyingglass" size={18} tintColorClassName="accent-foreground-muted" />
+      <TextInput
+        ref={searchRef}
+        accessibilityLabel="Search threads"
+        autoFocus={true}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+        placeholder="Search"
+        placeholderTextColorClassName="accent-placeholder"
+        className="min-w-0 flex-1 py-2 font-sans text-base text-foreground"
+        value={props.searchQuery}
+        onChangeText={onSearchQueryChange}
+      />
+      {props.searchQuery.length > 0 ? (
+        <Pressable
+          accessibilityLabel="Clear search"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={() => {
+            props.onSearchQueryChange("");
+            searchRef.current?.focus();
+          }}
+        >
+          <SymbolView
+            name="xmark.circle.fill"
+            size={18}
+            tintColorClassName="accent-foreground-muted"
+          />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <>
+      <View
+        onLayout={props.onLayout}
+        className={
+          props.sidebar
+            ? "absolute inset-x-0 top-0 z-[4] bg-header px-3 pb-2.5"
+            : "bg-header px-3 pb-2.5"
+        }
+        style={{ paddingTop: Math.max(insets.top, 12) }}
+      >
+        <View className="h-12 flex-row items-center gap-2">
+          {searching ? (
+            <>
+              <AndroidHeaderIconButton
+                accessibilityLabel="Close search"
+                icon="chevron.left"
+                onPress={closeSearch}
+              />
+              {searchField}
+            </>
+          ) : (
+            <>
+              <WorkspaceConnectionTitle
+                grow
+                onPress={props.onOpenEnvironments}
+                brand={<CompactBrandTitle allowFontScaling={false} />}
+              />
+              <ControlPillMenu
+                actions={props.filterActions}
+                onPressAction={props.onFilterAction}
+                isAnchoredToRight
+              >
+                <AndroidHeaderIconButton
+                  accessibilityLabel="Filter and sort threads"
+                  icon={filterIcon}
+                />
+              </ControlPillMenu>
+              <AndroidHeaderIconButton
+                accessibilityLabel="Open settings"
+                icon="gearshape"
+                onPress={props.onOpenSettings}
+              />
+            </>
+          )}
+        </View>
+      </View>
+      <View className="absolute right-6 z-[5]" style={{ bottom: Math.max(insets.bottom, 16) + 84 }}>
+        {!searching ? (
+          <Pressable
+            accessibilityLabel="Search threads"
+            accessibilityRole="button"
+            onPress={openSearch}
+            className="size-12 items-center justify-center rounded-full bg-thread-selected"
+          >
+            <SymbolView
+              name="magnifyingglass"
+              size={22}
+              tintColorClassName="accent-thread-selected-foreground"
+            />
+          </Pressable>
+        ) : null}
+      </View>
+    </>
+  );
+}

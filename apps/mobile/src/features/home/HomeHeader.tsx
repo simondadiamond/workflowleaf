@@ -23,6 +23,7 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import type { HomeProjectSortOrder } from "./homeThreadList";
 import { WorkspaceConnectionTitle } from "./WorkspaceConnectionTitle";
+import { MaterialThreadListToolbar } from "./MaterialThreadListToolbar";
 import {
   buildHomeListFilterMenu,
   type HomeListFilterMenuEnvironment,
@@ -196,6 +197,23 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     },
     [props],
   );
+
+  if (materialYouStyleLayoutActive) {
+    return (
+      <>
+        <NativeStackScreenOptions options={{ headerShown: false }} />
+        <MaterialThreadListToolbar
+          searchQuery={props.searchQuery}
+          onSearchQueryChange={props.onSearchQueryChange}
+          filterActions={menuActions}
+          filterCustomized={hasCustomListOptions}
+          onFilterAction={handleMenuAction}
+          onOpenSettings={props.onOpenSettings}
+          onOpenEnvironments={props.onOpenEnvironments}
+        />
+      </>
+    );
+  }
 
   return (
     <>

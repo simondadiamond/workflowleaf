@@ -674,7 +674,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           materialYouStyleLayoutActive
             ? {
                 backgroundColor: visuallySelected ? effectiveSelectedBackground : backgroundColor,
-                borderRadius: SIDEBAR_ROW_RADIUS,
+                borderRadius: 28,
               }
             : undefined
         }
@@ -684,7 +684,12 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
         }}
       >
         <View className="pr-[18px] pt-[10px]" style={{ paddingLeft: THREAD_LIST_COMPACT_INSET }}>
-          <View className={cn("gap-[3px] pb-[10px]", !props.isLast && "border-b border-separator")}>
+          <View
+            className={cn(
+              "gap-[3px] pb-[10px]",
+              !materialYouStyleLayoutActive && !props.isLast && "border-b border-separator",
+            )}
+          >
             <View className="flex-row items-center justify-between gap-2">
               <Text
                 className={cn(
@@ -754,7 +759,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
             : pressed || hovered
               ? effectivePressedBackground
               : backgroundColor,
-          borderRadius: SIDEBAR_ROW_RADIUS,
+          borderRadius: materialYouStyleLayoutActive ? 28 : SIDEBAR_ROW_RADIUS,
           cursor: "pointer",
           minHeight: 64,
           justifyContent: "center",
@@ -814,9 +819,11 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       threadKey={`${thread.environmentId}:${thread.id}`}
       backgroundColor={backgroundColor}
       containerStyle={
-        compact && !materialYouStyleLayoutActive
-          ? undefined
-          : { borderRadius: SIDEBAR_ROW_RADIUS, overflow: "hidden" }
+        materialYouStyleLayoutActive
+          ? { borderRadius: 28, overflow: "hidden", marginHorizontal: 8, marginVertical: 2 }
+          : compact
+            ? undefined
+            : { borderRadius: SIDEBAR_ROW_RADIUS, overflow: "hidden" }
       }
       enableTrackpadSwipe
       fullSwipeWidth={props.fullSwipeWidth ?? windowWidth - 32}

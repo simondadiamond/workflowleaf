@@ -1251,7 +1251,7 @@ export function HomeScreen(props: HomeScreenProps) {
               paddingBottom:
                 Platform.OS === "ios"
                   ? Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance
-                  : Math.max(insets.bottom, 16) + 88,
+                  : Math.max(insets.bottom, 16) + (materialYouStyleLayoutActive ? 148 : 88),
             }}
             scrollIndicatorInsets={
               Platform.OS === "ios"

@@ -64,6 +64,7 @@ import {
   WorkspaceConnectionTitle,
 } from "../home/WorkspaceConnectionTitle";
 import { SidebarHeaderActions } from "./sidebar-header-actions";
+import { MaterialThreadListToolbar } from "../home/MaterialThreadListToolbar";
 import { SidebarFilterButton } from "./sidebar-filter-button";
 import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
@@ -149,7 +150,6 @@ function ThreadNavigationSidebarPane(
   const { materialYouStyleLayoutActive, themeVariables: materialTheme } =
     useAppearancePreferences();
   const screenColor = materialTheme["--color-screen"];
-  const mutedColor = materialTheme["--color-foreground-muted"];
 
   const insets = useSafeAreaInsets();
   const projects = useProjects();
@@ -748,7 +748,11 @@ function ThreadNavigationSidebarPane(
   // The sticky header (title row, search field, optional connection status)
   // is measured so the list inset always matches its real height — no
   // hardcoded per-variant constants.
-  const stickyHeaderHeight = measuredHeaderHeight ?? insets.top + SIDEBAR_STICKY_HEADER_HEIGHT;
+  const stickyHeaderHeight =
+    measuredHeaderHeight ??
+    (materialYouStyleLayoutActive
+      ? Math.max(insets.top, 12) + 58
+      : insets.top + SIDEBAR_STICKY_HEADER_HEIGHT);
   const topListInset = stickyHeaderHeight + 6;
   const handleStickyHeaderLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = Math.round(event.nativeEvent.layout.height);
@@ -847,6 +851,7 @@ function ThreadNavigationSidebarPane(
     [],
   );
   const focusSearch = useCallback(() => {
+    if (materialYouStyleLayoutActive) return false;
     const focus = () => {
       if (props.nativeChrome) {
         searchBarRef.current?.focus();
@@ -861,7 +866,7 @@ function ThreadNavigationSidebarPane(
       focus();
     }
     return true;
-  }, [props.nativeChrome, props.onRequestVisibility, props.visible]);
+  }, [materialYouStyleLayoutActive, props.nativeChrome, props.onRequestVisibility, props.visible]);
   useHardwareKeyboardCommand("focusSearch", focusSearch);
   const renderListItem = useCallback(
     ({ item }: { readonly item: SidebarListItem }) => {
@@ -1290,7 +1295,9 @@ function ThreadNavigationSidebarPane(
                 {
                   paddingBottom:
                     Platform.OS === "android"
-                      ? Math.max(insets.bottom, 16) + 88 - insets.bottom
+                      ? Math.max(insets.bottom, 16) +
+                        (materialYouStyleLayoutActive ? 148 : 88) -
+                        insets.bottom
                       : 16 + insets.bottom,
                   paddingTop: materialYouStyleLayoutActive ? 6 : topListInset,
                 },
@@ -1308,85 +1315,75 @@ function ThreadNavigationSidebarPane(
         </SwipeableScrollGateProvider>
       </View>
 
-      <View
-        className={
-          materialYouStyleLayoutActive
-            ? "absolute inset-x-0 top-0 z-[4] bg-header pb-3"
-            : "absolute inset-x-0 top-0 z-[4] bg-drawer"
-        }
-        collapsable={false}
-        onLayout={handleStickyHeaderLayout}
-        pointerEvents="auto"
-        style={{ paddingTop: insets.top }}
-      >
-        <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
-          {/* Title slot doubles as the connection status surface: while an
+      {materialYouStyleLayoutActive ? (
+        <MaterialThreadListToolbar
+          sidebar
+          onLayout={handleStickyHeaderLayout}
+          searchQuery={props.searchQuery}
+          onSearchQueryChange={props.onSearchQueryChange}
+          filterActions={listMenuActions}
+          filterCustomized={filterCustomized}
+          onFilterAction={handleListMenuAction}
+          onOpenSettings={props.onOpenSettings}
+          onOpenEnvironments={props.onOpenEnvironmentSettings}
+          onRequestVisibility={props.onRequestVisibility}
+        />
+      ) : (
+        <View
+          className="absolute inset-x-0 top-0 z-[4] bg-drawer"
+          collapsable={false}
+          onLayout={handleStickyHeaderLayout}
+          pointerEvents="auto"
+          style={{ paddingTop: insets.top }}
+        >
+          <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
+            {/* Title slot doubles as the connection status surface: while an
               environment reconnects, the brand fades to a status label in
               place (no layout shift in the list below). */}
-          <WorkspaceConnectionTitle
-            grow
-            onPress={props.onOpenEnvironmentSettings}
-            size="pageTitle"
-            brand={
-              <View className="h-11 flex-1 justify-center">
-                <CompactBrandTitle allowFontScaling={false} />
-              </View>
-            }
-          />
-          <View className="flex-row items-center gap-2.5">
-            <ControlPillMenu actions={listMenuActions} onPressAction={handleListMenuAction}>
-              <SidebarFilterButton accessibilityLabel="Filter and sort threads" icon={filterIcon} />
-            </ControlPillMenu>
-            <SidebarHeaderActions onOpenSettings={props.onOpenSettings} />
+            <WorkspaceConnectionTitle
+              grow
+              onPress={props.onOpenEnvironmentSettings}
+              size="pageTitle"
+              brand={
+                <View className="h-11 flex-1 justify-center">
+                  <CompactBrandTitle allowFontScaling={false} />
+                </View>
+              }
+            />
+            <View className="flex-row items-center gap-2.5">
+              <ControlPillMenu actions={listMenuActions} onPressAction={handleListMenuAction}>
+                <SidebarFilterButton
+                  accessibilityLabel="Filter and sort threads"
+                  icon={filterIcon}
+                />
+              </ControlPillMenu>
+              <SidebarHeaderActions onOpenSettings={props.onOpenSettings} />
+            </View>
+          </View>
+
+          <View className="mx-4 mt-[9px] h-[38px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]">
+            <SymbolView
+              name="magnifyingglass"
+              size={15}
+              tintColorClassName={"accent-foreground-muted"}
+              type="monochrome"
+            />
+            <TextInput
+              ref={searchInputRef}
+              accessibilityLabel="Search threads"
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+              onChangeText={props.onSearchQueryChange}
+              placeholder="Search"
+              placeholderTextColorClassName={"accent-placeholder"}
+              returnKeyType="search"
+              className="h-[34px] flex-1 px-0 py-0 font-sans text-base text-foreground"
+              value={props.searchQuery}
+            />
           </View>
         </View>
-
-        <View
-          className={
-            materialYouStyleLayoutActive
-              ? "mx-4 mt-[9px] min-h-12 flex-row items-center gap-2.5 rounded-full border border-input-border bg-input px-3.5"
-              : "mx-4 mt-[9px] h-[38px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]"
-          }
-        >
-          <SymbolView
-            name="magnifyingglass"
-            size={15}
-            tintColorClassName={"accent-foreground-muted"}
-            type="monochrome"
-          />
-          <TextInput
-            ref={searchInputRef}
-            accessibilityLabel="Search threads"
-            autoCapitalize="none"
-            autoCorrect={false}
-            clearButtonMode={materialYouStyleLayoutActive ? "never" : "while-editing"}
-            onChangeText={props.onSearchQueryChange}
-            placeholder="Search"
-            placeholderTextColorClassName={"accent-placeholder"}
-            returnKeyType="search"
-            className={
-              materialYouStyleLayoutActive
-                ? "flex-1 px-0 py-2.5 font-sans text-base text-foreground"
-                : "h-[34px] flex-1 px-0 py-0 font-sans text-base text-foreground"
-            }
-            value={props.searchQuery}
-          />
-          {materialYouStyleLayoutActive && props.searchQuery.length > 0 ? (
-            <Pressable
-              accessibilityLabel="Clear search"
-              hitSlop={10}
-              onPress={() => props.onSearchQueryChange("")}
-            >
-              <SymbolView
-                name="xmark.circle.fill"
-                size={17}
-                tintColor={mutedColor}
-                type="monochrome"
-              />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
+      )}
     </View>
   );
 }
