@@ -139,7 +139,11 @@ export function MaterialThreadListToolbar(props: {
           )}
         </View>
       </View>
-      <View className="absolute right-5 z-[5]" style={{ bottom: Math.max(insets.bottom, 16) + 84 }}>
+      {/* Match New thread's h-14, plus its 16dp bottom offset and an 8dp gap. */}
+      <View
+        className="absolute right-5 z-[5] mb-14"
+        style={{ bottom: Math.max(insets.bottom, 16) + 16 + 8 }}
+      >
         {!searching ? (
           <ControlPillMenu
             actions={props.filterActions}
