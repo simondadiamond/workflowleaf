@@ -3,6 +3,8 @@ import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
+import { AppText } from "../../components/AppText";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 /**
  * Android-only wrapper that overlays a bottom-right new-task FAB on a thread
@@ -24,14 +26,19 @@ function AndroidHomeFab(props: {
   readonly children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
     <View className="flex-1">
       {props.children}
       <Pressable
-        accessibilityLabel="New task"
+        accessibilityLabel={materialYouStyleLayoutActive ? "New thread" : "New task"}
         accessibilityRole="button"
         onPress={props.onStartNewTask}
-        className="absolute right-5 size-14 items-center justify-center rounded-full bg-primary shadow-lg"
+        className={
+          materialYouStyleLayoutActive
+            ? "absolute right-5 h-14 flex-row items-center justify-center gap-3 rounded-2xl bg-primary px-5 shadow-lg"
+            : "absolute right-5 size-14 items-center justify-center rounded-full bg-primary shadow-lg"
+        }
         style={{
           bottom: Math.max(insets.bottom, 16) + 16,
         }}
@@ -42,6 +49,9 @@ function AndroidHomeFab(props: {
           tintColorClassName={"accent-primary-foreground"}
           type="monochrome"
         />
+        {materialYouStyleLayoutActive ? (
+          <AppText className="text-base font-t3-medium text-primary-foreground">New thread</AppText>
+        ) : null}
       </Pressable>
     </View>
   );

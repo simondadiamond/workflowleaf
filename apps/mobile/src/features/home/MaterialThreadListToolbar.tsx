@@ -125,16 +125,11 @@ export function MaterialThreadListToolbar(props: {
                 onPress={props.onOpenEnvironments}
                 brand={<CompactBrandTitle allowFontScaling={false} />}
               />
-              <ControlPillMenu
-                actions={props.filterActions}
-                onPressAction={props.onFilterAction}
-                isAnchoredToRight
-              >
-                <AndroidHeaderIconButton
-                  accessibilityLabel="Filter and sort threads"
-                  icon={filterIcon}
-                />
-              </ControlPillMenu>
+              <AndroidHeaderIconButton
+                accessibilityLabel="Search threads"
+                icon="magnifyingglass"
+                onPress={openSearch}
+              />
               <AndroidHeaderIconButton
                 accessibilityLabel="Open settings"
                 icon="gearshape"
@@ -144,20 +139,25 @@ export function MaterialThreadListToolbar(props: {
           )}
         </View>
       </View>
-      <View className="absolute right-6 z-[5]" style={{ bottom: Math.max(insets.bottom, 16) + 84 }}>
+      <View className="absolute right-5 z-[5]" style={{ bottom: Math.max(insets.bottom, 16) + 84 }}>
         {!searching ? (
-          <Pressable
-            accessibilityLabel="Search threads"
-            accessibilityRole="button"
-            onPress={openSearch}
-            className="size-12 items-center justify-center rounded-full bg-thread-selected"
+          <ControlPillMenu
+            actions={props.filterActions}
+            onPressAction={props.onFilterAction}
+            isAnchoredToRight
           >
-            <SymbolView
-              name="magnifyingglass"
-              size={22}
-              tintColorClassName="accent-thread-selected-foreground"
-            />
-          </Pressable>
+            <Pressable
+              accessibilityLabel="Filter and sort threads"
+              accessibilityRole="button"
+              className="size-14 items-center justify-center rounded-2xl bg-thread-selected"
+            >
+              <SymbolView
+                name={filterIcon}
+                size={22}
+                tintColorClassName="accent-thread-selected-foreground"
+              />
+            </Pressable>
+          </ControlPillMenu>
         ) : null}
       </View>
     </>
