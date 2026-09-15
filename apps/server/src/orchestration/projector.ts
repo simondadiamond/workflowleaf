@@ -433,6 +433,7 @@ export function projectEvent(
             settledAt: null,
             unsettledAt: null,
             activeOrderKey: null,
+            lastVisitedAt: payload.createdAt,
             snoozedUntil: null,
             snoozedAt: null,
             deletedAt: null,
@@ -621,6 +622,9 @@ export function projectEvent(
                 : {}),
               ...(payload.branchPullRequest !== undefined
                 ? { branchPullRequest: payload.branchPullRequest }
+                : {}),
+              ...(payload.lastVisitedAt !== undefined
+                ? { lastVisitedAt: payload.lastVisitedAt }
                 : {}),
               ...legacyLinkPatch,
               updatedAt: payload.updatedAt,
