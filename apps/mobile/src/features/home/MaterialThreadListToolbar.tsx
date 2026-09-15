@@ -139,10 +139,10 @@ export function MaterialThreadListToolbar(props: {
           )}
         </View>
       </View>
-      {/* Match New thread's h-14, plus its 16dp bottom offset and an 8dp gap. */}
+      {/* Sit 8dp above the 56dp extended New thread FAB. */}
       <View
-        className="absolute right-5 z-[5] mb-14"
-        style={{ bottom: Math.max(insets.bottom, 16) + 16 + 8 }}
+        className="absolute right-5 z-[5]"
+        style={{ bottom: Math.max(insets.bottom, 16) + 16 + 56 + 8 }}
       >
         {!searching ? (
           <ControlPillMenu
@@ -153,11 +153,11 @@ export function MaterialThreadListToolbar(props: {
             <Pressable
               accessibilityLabel="Filter and sort threads"
               accessibilityRole="button"
-              className="size-14 items-center justify-center rounded-2xl bg-thread-selected"
+              className="size-[56px] items-center justify-center rounded-[16px] bg-thread-selected"
             >
               <SymbolView
                 name={filterIcon}
-                size={22}
+                size={24}
                 tintColorClassName="accent-thread-selected-foreground"
               />
             </Pressable>

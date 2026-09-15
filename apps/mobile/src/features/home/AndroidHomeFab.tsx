@@ -36,7 +36,7 @@ function AndroidHomeFab(props: {
         onPress={props.onStartNewTask}
         className={
           materialYouStyleLayoutActive
-            ? "absolute right-5 h-14 flex-row items-center justify-center gap-3 rounded-2xl bg-primary px-5 shadow-lg"
+            ? "absolute right-5 h-[56px] flex-row items-center justify-center gap-[8px] rounded-[16px] bg-primary px-[16px] shadow-lg"
             : "absolute right-5 size-14 items-center justify-center rounded-full bg-primary shadow-lg"
         }
         style={{
@@ -45,12 +45,14 @@ function AndroidHomeFab(props: {
       >
         <SymbolView
           name="square.and.pencil"
-          size={22}
+          size={materialYouStyleLayoutActive ? 24 : 22}
           tintColorClassName={"accent-primary-foreground"}
           type="monochrome"
         />
         {materialYouStyleLayoutActive ? (
-          <AppText className="text-base font-t3-medium text-primary-foreground">New thread</AppText>
+          <AppText className="text-[16px] font-t3-medium text-primary-foreground">
+            New thread
+          </AppText>
         ) : null}
       </Pressable>
     </View>
