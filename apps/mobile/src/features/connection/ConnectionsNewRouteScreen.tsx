@@ -7,7 +7,7 @@ import { Alert, Linking, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { ConnectionSheetButton } from "./ConnectionSheetButton";
@@ -181,33 +181,26 @@ export function ConnectionsNewRouteScreen({
   }, [connectAndClose, routePairingUrl, shouldAutoConnect]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SettingsScreen
+      title={showScanner ? "Scan QR Code" : "Add Environment"}
+      actions={[
+        {
+          accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
+          icon: showScanner ? "xmark" : "camera",
+          onPress: () => {
+            if (showScanner) {
+              closeScanner();
+            } else {
+              void openScanner();
+            }
+          },
+        },
+      ]}
+    >
       <NativeStackScreenOptions
-        options={{
-          // Android renders its own in-screen header below instead of the native bar.
-          ...(Platform.OS === "android" ? { headerShown: false } : null),
-          title: showScanner ? "Scan QR Code" : "Add Environment",
-        }}
+        options={{ title: showScanner ? "Scan QR Code" : "Add Environment" }}
       />
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          title={showScanner ? "Scan QR Code" : "Add Environment"}
-          onBack={() => navigation.goBack()}
-          actions={[
-            {
-              accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
-              icon: showScanner ? "xmark" : "camera",
-              onPress: () => {
-                if (showScanner) {
-                  closeScanner();
-                } else {
-                  void openScanner();
-                }
-              },
-            },
-          ]}
-        />
-      ) : (
+      {Platform.OS !== "android" ? (
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
             icon={showScanner ? "xmark" : "qrcode.viewfinder"}
@@ -222,7 +215,7 @@ export function ConnectionsNewRouteScreen({
             tintColor={headerIconColor}
           />
         </NativeHeaderToolbar>
-      )}
+      ) : null}
 
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -306,6 +299,6 @@ export function ConnectionsNewRouteScreen({
           )}
         </View>
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }

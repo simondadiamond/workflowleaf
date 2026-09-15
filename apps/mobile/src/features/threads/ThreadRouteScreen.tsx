@@ -849,7 +849,6 @@ function ThreadRouteContent(
             ? {
                 borderTopLeftRadius: 28,
                 borderTopRightRadius: 28,
-                marginRight: layout.usesSplitView ? 8 : 0,
                 overflow: "hidden",
               }
             : undefined
