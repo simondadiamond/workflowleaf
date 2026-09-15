@@ -1,6 +1,11 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import {
+  StackActions,
+  useNavigation,
+  useRoute,
+  type StaticScreenProps,
+} from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Linking, Platform, ScrollView, View } from "react-native";
@@ -30,6 +35,7 @@ export function ConnectionsNewRouteScreen({
     pairingConnectionError,
   } = useRemoteConnections();
   const navigation = useNavigation();
+  const routeName = useRoute().name;
   const params = route.params ?? {};
   // Deep-link prefill exists for development automation only. A production
   // link must not arrive with attacker-chosen host and token already filled.
@@ -182,6 +188,7 @@ export function ConnectionsNewRouteScreen({
 
   return (
     <SettingsScreen
+      formSheet={routeName === "ConnectionsNew"}
       title={showScanner ? "Scan QR Code" : "Add Environment"}
       actions={[
         {

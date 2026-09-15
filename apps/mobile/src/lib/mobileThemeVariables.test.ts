@@ -31,11 +31,29 @@ describe("mobile theme runtime variables", () => {
         const rounded = getMobileThemeRuntimeVariables(themeId, appearance, true);
         expect(rounded).toEqual({
           ...stock,
-          "--color-header": themeColorWithAlpha(stock["--color-drawer"], 1),
+          "--color-header": themeColorWithAlpha(
+            stock[
+              themeId === "t3-code" || themeId === "material-you"
+                ? "--color-card"
+                : "--color-drawer"
+            ],
+            1,
+          ),
         });
         expect(rounded["--color-header"]).toMatch(/^rgba\(\d+, \d+, \d+, 1\)$/);
         expect(getMobileThemeRuntimeVariables(themeId, appearance, false)).toEqual(stock);
       }
+    },
+  );
+
+  it.each(["t3-code", "material-you"] as const)(
+    "keeps the %s default dark frame distinct from the rounded settings body",
+    (themeId) => {
+      const variables = getMobileThemeRuntimeVariables(themeId, "dark", true);
+      expect(variables["--color-header"]).toBe("rgba(23, 23, 23, 1)");
+      expect(variables["--color-header"]).not.toBe(
+        themeColorWithAlpha(variables["--color-sheet-solid"], 1),
+      );
     },
   );
 });

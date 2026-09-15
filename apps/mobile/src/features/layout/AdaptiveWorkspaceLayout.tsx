@@ -512,11 +512,17 @@ function AdaptiveWorkspaceLayoutContent(
     ? Math.max(0, panes.contentPaneWidth - inspectorColumnTargetWidth)
     : null;
   const contentLeadingInset = materialYouStyleLayoutActive && panes.primarySidebarVisible ? 8 : 0;
+  const contentTrailingInset =
+    materialYouStyleLayoutActive && inspectorColumnTargetWidth > 0 ? 8 : 0;
   const renderedInspectorWidth = useSharedValue(inspectorColumnTargetWidth);
   const renderedContentWidth = useDerivedValue(() =>
     Math.max(
       0,
-      width - renderedSidebarWidth.value - renderedInspectorWidth.value - contentLeadingInset,
+      width -
+        renderedSidebarWidth.value -
+        renderedInspectorWidth.value -
+        contentLeadingInset -
+        contentTrailingInset,
     ),
   );
 
@@ -598,7 +604,11 @@ function AdaptiveWorkspaceLayoutContent(
                   ? {
                       flex: 1,
                       marginLeft: contentLeadingInset,
-                      width: Math.max(0, contentSettledWidth - contentLeadingInset),
+                      marginRight: contentTrailingInset,
+                      width: Math.max(
+                        0,
+                        contentSettledWidth - contentLeadingInset - contentTrailingInset,
+                      ),
                     }
                   : { flex: 1 }
               }

@@ -23,6 +23,8 @@ export function SettingsScreen(
     readonly children: ReactNode;
     /** Preserve this route's native Android header when Material You layout is off. */
     readonly nativeAndroidHeader?: boolean;
+    /** A native form sheet already owns its rounded outer frame. */
+    readonly formSheet?: boolean;
   },
 ) {
   const navigation = useNavigation();
@@ -40,12 +42,16 @@ export function SettingsScreen(
               actions={props.actions}
               trailing={props.trailing}
               onBack={() => navigation.goBack()}
-              hideBottomBorder={materialYouStyleLayoutActive}
+              hideBottomBorder={materialYouStyleLayoutActive && !props.formSheet}
             />
           ) : null}
         </>
       ) : null}
-      <SettingsScreenContent>{props.children}</SettingsScreenContent>
+      {props.formSheet ? (
+        props.children
+      ) : (
+        <SettingsScreenContent>{props.children}</SettingsScreenContent>
+      )}
     </View>
   );
 }

@@ -23,17 +23,20 @@ export function getMobileThemeRuntimeVariables(
   appearance: MobileThemeAppearance,
   materialYouStyleLayoutActive = false,
 ): MobileThemeVariables {
-  const variables =
-    themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you"
-      ? defaults[appearance]
-      : getMobileThemeVariables(themeId, appearance);
+  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you";
+  const variables = usesDefaultPalette
+    ? defaults[appearance]
+    : getMobileThemeVariables(themeId, appearance);
   if (!materialYouStyleLayoutActive) return variables;
 
-  // Rounded panes share one opaque frame. Reuse the stock theme's sidebar tone
-  // so nested headers cannot accumulate translucency or flatten its surfaces.
+  // Rounded panes share one opaque frame. The default dark drawer matches the
+  // settings body, so use its card tone to keep the rounded edge visible.
   // System colors replace this with their own surfaceContainerHigh afterwards.
   return {
     ...variables,
-    "--color-header": themeColorWithAlpha(variables["--color-drawer"], 1),
+    "--color-header": themeColorWithAlpha(
+      variables[usesDefaultPalette ? "--color-card" : "--color-drawer"],
+      1,
+    ),
   };
 }
