@@ -2,6 +2,7 @@ import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
 import { makeLocalFileTracer, makeTraceSink } from "@t3tools/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
 import * as OtlpExporter from "effect/unstable/observability/OtlpExporter";
@@ -14,11 +15,15 @@ import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttributio
 import { ServerLoggerLive } from "../../serverLogger.ts";
 import * as BrowserTraceCollector from "../BrowserTraceCollector.ts";
 
-const otlpSerializationLayer = OtlpSerialization.layerJson;
-
 export const ObservabilityLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    const otlpSerializationLayer =
+      config.otlpProtocol === "http/protobuf"
+        ? OtlpSerialization.layerProtobuf
+        : OtlpSerialization.layerJson;
+    const headers =
+      config.otlpHeaders === undefined ? undefined : Redacted.value(config.otlpHeaders);
     const attribution = yield* ResourceAttribution.ResourceAttribution;
 
     const traceReferencesLayer = Layer.mergeAll(
@@ -48,6 +53,7 @@ export const ObservabilityLive = Layer.unwrap(
             ? undefined
             : yield* OtlpTracer.make({
                 url: config.otlpTracesUrl,
+                headers,
                 exportInterval: `${config.otlpExportIntervalMs} millis`,
                 resource: {
                   serviceName: config.otlpServiceName,
@@ -79,6 +85,7 @@ export const ObservabilityLive = Layer.unwrap(
         ? Layer.empty
         : OtlpMetrics.layer({
             url: config.otlpMetricsUrl,
+            headers,
             exportInterval: `${config.otlpExportIntervalMs} millis`,
             resource: {
               serviceName: config.otlpServiceName,

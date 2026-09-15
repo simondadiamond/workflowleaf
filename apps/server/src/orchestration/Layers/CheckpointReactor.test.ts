@@ -31,6 +31,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 import { it as effectIt } from "@effect/vitest";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -290,6 +291,10 @@ describe("CheckpointReactor", () => {
   });
 
   async function createHarness(options?: {
+    readonly traceSpans?: Array<Tracer.NativeSpan>;
+    readonly captureCheckpoint?: (
+      original: CheckpointStore.CheckpointStore["Service"]["captureCheckpoint"],
+    ) => CheckpointStore.CheckpointStore["Service"]["captureCheckpoint"];
     readonly hasSession?: boolean;
     readonly seedFilesystemCheckpoints?: boolean;
     readonly initializeGit?: boolean;
@@ -362,6 +367,19 @@ describe("CheckpointReactor", () => {
       streamStatus: () => Stream.empty,
     });
 
+    const checkpointLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
+    const observedCheckpointLayer = options?.captureCheckpoint
+      ? Layer.effect(
+          CheckpointStore.CheckpointStore,
+          Effect.gen(function* () {
+            const store = yield* CheckpointStore.CheckpointStore;
+            return {
+              ...store,
+              captureCheckpoint: options.captureCheckpoint!(store.captureCheckpoint),
+            };
+          }),
+        ).pipe(Layer.provide(checkpointLayer))
+      : checkpointLayer;
     const layer = CheckpointReactorLive.pipe(
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
@@ -369,7 +387,7 @@ describe("CheckpointReactor", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(Layer.mock(PullRequestService)({ refreshAfterTurn })),
       Layer.provideMerge(vcsStatusBroadcasterLayer),
-      Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
+      Layer.provideMerge(observedCheckpointLayer),
       Layer.provideMerge(
         WorkspaceEntries.layer.pipe(
           Layer.provide(WorkspacePaths.layer),
@@ -380,6 +398,20 @@ describe("CheckpointReactor", () => {
       Layer.provideMerge(VcsProcess.layer),
       Layer.provideMerge(ServerConfigLayer),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provide(
+        options?.traceSpans
+          ? Layer.succeed(
+              Tracer.Tracer,
+              Tracer.make({
+                span(spanOptions) {
+                  const span = new Tracer.NativeSpan(spanOptions);
+                  options.traceSpans!.push(span);
+                  return span;
+                },
+              }),
+            )
+          : Layer.empty,
+      ),
     );
 
     runtime = ManagedRuntime.make(layer);
@@ -496,6 +528,128 @@ describe("CheckpointReactor", () => {
       pullRequestRefreshes,
     };
   }
+
+  effectIt.effect("reports a failed diff summary and allows a later turn to succeed", () =>
+    Effect.gen(function* () {
+      const traceSpans: Array<Tracer.NativeSpan> = [];
+      const harness = yield* Effect.promise(() =>
+        createHarness({ seedFilesystemCheckpoints: false, traceSpans }),
+      );
+      for (const [index, expectedStatus] of [
+        [1, "error"],
+        [2, "ready"],
+      ] as const) {
+        const turnId = asTurnId(`diff-config-turn-${index}`);
+        if (index === 1) {
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make(`diff-config-start-${index}`),
+            provider: ProviderDriverKind.make("codex"),
+            createdAt: "2026-01-01T00:00:00.000Z",
+            threadId: ThreadId.make("thread-1"),
+            turnId,
+          });
+          expect(yield* harness.nextReceipt).toMatchObject({
+            type: "checkpoint.baseline.captured",
+          });
+        }
+        NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), `version ${index}\n`);
+        runGit(harness.cwd, [
+          "config",
+          "diff.algorithm",
+          index === 1 ? "invalid-algorithm" : "myers",
+        ]);
+        harness.provider.emit({
+          type: "turn.completed",
+          eventId: EventId.make(`diff-config-complete-${index}`),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:01.000Z",
+          threadId: ThreadId.make("thread-1"),
+          turnId,
+          payload: { state: "completed" },
+        });
+        expect(yield* harness.nextReceipt).toMatchObject({
+          type: "checkpoint.diff.finalized",
+          turnId,
+          status: expectedStatus,
+        });
+        expect(yield* harness.nextReceipt).toMatchObject({
+          type: "turn.processing.quiesced",
+          turnId,
+        });
+        yield* Effect.promise(harness.drain);
+        const thread = (yield* Effect.promise(harness.readModel)).threads.find(
+          (entry) => entry.id === "thread-1",
+        );
+        const checkpoint = thread?.checkpoints.find((entry) => entry.turnId === turnId);
+        expect(checkpoint?.status).toBe(expectedStatus);
+        const stages = traceSpans.filter(
+          (span) =>
+            span.name === "orchestration.checkpoint.stage" &&
+            span.attributes.get("orchestration.turn_id") === turnId,
+        );
+        expect(stages.at(-1)?.attributes.get("orchestration.pending_stage")).toBe("none");
+        expect(stages.at(-1)?.attributes.get("orchestration.outcome")).toBe(expectedStatus);
+        expect(new Set(stages.map((span) => span.traceId)).size).toBe(1);
+        if (index === 1)
+          expect(stages.at(-1)?.attributes.get("error.type")).toBe("VcsProcessExitError");
+        expect(
+          gitRefExists(harness.cwd, checkpointRefForThreadTurn(ThreadId.make("thread-1"), index)),
+        ).toBe(true);
+        if (index === 1) {
+          expect(checkpoint?.files).toEqual([]);
+          expect(
+            thread?.activities.some((entry) => entry.kind === "checkpoint.capture.failed"),
+          ).toBe(true);
+        } else {
+          expect(checkpoint?.files).toEqual([
+            { path: "README.md", kind: "modified", additions: 1, deletions: 1 },
+          ]);
+        }
+      }
+    }),
+  );
+
+  effectIt.effect("ends the pending checkpoint stage when capture is cancelled", () =>
+    Effect.gen(function* () {
+      const attempted = yield* Deferred.make<void>();
+      const traceSpans: Array<Tracer.NativeSpan> = [];
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          seedFilesystemCheckpoints: false,
+          traceSpans,
+          captureCheckpoint: (original) => (input) =>
+            input.checkpointRef.endsWith("/turn/1")
+              ? Deferred.succeed(attempted, undefined).pipe(Effect.andThen(Effect.interrupt))
+              : original(input),
+        }),
+      );
+      harness.provider.emit({
+        type: "turn.started",
+        eventId: EventId.make("cancel-start"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId: ThreadId.make("thread-1"),
+        turnId: asTurnId("cancel-turn"),
+      });
+      expect(yield* harness.nextReceipt).toMatchObject({ type: "checkpoint.baseline.captured" });
+      harness.provider.emit({
+        type: "turn.completed",
+        eventId: EventId.make("cancel-complete"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        threadId: ThreadId.make("thread-1"),
+        turnId: asTurnId("cancel-turn"),
+        payload: { state: "completed" },
+      });
+      yield* Deferred.await(attempted);
+      yield* Effect.promise(harness.drain);
+      const last = traceSpans.findLast((span) => span.name === "orchestration.checkpoint.stage");
+      expect(last?.attributes.get("orchestration.pending_stage")).toBe("none");
+      expect(last?.attributes.get("orchestration.outcome")).toBe("cancelled");
+      expect(last?.attributes.get("orchestration.last_completed_stage")).toBe("provider.terminal");
+    }),
+  );
 
   effectIt.effect("captures baseline and large turn summaries before completion receipts", () =>
     Effect.gen(function* () {

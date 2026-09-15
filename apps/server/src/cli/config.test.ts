@@ -50,6 +50,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
+    otlpProtocol: "http/json",
+    otlpHeaders: undefined,
     devAllowedOrigins: [],
   } as const;
 

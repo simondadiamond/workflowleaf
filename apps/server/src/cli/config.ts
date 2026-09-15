@@ -13,6 +13,7 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { Argument, Flag } from "effect/unstable/cli";
 
+import { otlpHeaders, otlpProtocol } from "../observability/otlpConfig.ts";
 import { readBootstrapEnvelope } from "../bootstrap.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
@@ -76,6 +77,8 @@ const tailscaleServePortFlag = Flag.integer("tailscale-serve-port").pipe(
 );
 
 const EnvServerConfig = Config.all({
+  otlpHeaders,
+  otlpProtocol,
   logLevel: Config.logLevel("T3CODE_LOG_LEVEL").pipe(Config.withDefault("Info")),
   traceMinLevel: Config.logLevel("T3CODE_TRACE_MIN_LEVEL").pipe(Config.withDefault("Info")),
   traceTimingEnabled: Config.boolean("T3CODE_TRACE_TIMING_ENABLED").pipe(Config.withDefault(true)),
@@ -364,6 +367,8 @@ export const resolveServerConfig = (
         persistedObservabilitySettings.otlpMetricsUrl,
       otlpExportIntervalMs: env.otlpExportIntervalMs,
       otlpServiceName: env.otlpServiceName,
+      otlpHeaders: env.otlpHeaders,
+      otlpProtocol: env.otlpProtocol,
       mode,
       port,
       cwd,

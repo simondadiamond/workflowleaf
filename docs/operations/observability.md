@@ -528,8 +528,61 @@ OTLP export:
 - `T3CODE_OTLP_METRICS_URL`: OTLP metric endpoint
 - `T3CODE_OTLP_EXPORT_INTERVAL_MS`: export interval, default `10000`
 - `T3CODE_OTLP_SERVICE_NAME`: service name, default `t3-server`
+- `T3CODE_OTLP_PROTOCOL`: `http/json` by default, or `http/protobuf`
+- `T3CODE_OTLP_HEADERS`: comma-separated `name=URL-encoded-value` headers, shared by the trace and metric exporters. Values remain redacted in server configuration. Keep tokens in local configuration, outside version control.
 
 If the OTLP URLs are unset, local tracing still works and metrics stay in-process only.
+
+### Logfire
+
+For a US development project, set the trace endpoint to
+`https://logfire-us.pydantic.dev/v1/traces`, the metric endpoint to
+`https://logfire-us.pydantic.dev/v1/metrics`, and `T3CODE_OTLP_PROTOCOL=http/protobuf`.
+Use the EU host for an EU project. Supply the project's ingest credential as the
+`Authorization` value in `T3CODE_OTLP_HEADERS`. Restart the development server with
+its own `--base-dir`; do not point it at an installation's active database.
+
+The checkpoint reactor emits `orchestration.checkpoint.stage` spans with thread,
+turn, and operation identifiers. Each stage records its last completed step,
+pending step, and outcome. A recovered diff-summary failure retains the captured
+Git checkpoint but persists an `error` status and a sanitized error type. A later
+turn can capture another checkpoint normally.
+
+To inspect the latest checkpoint stage per operation in Logfire:
+
+```sql
+WITH stages AS (
+  SELECT start_timestamp, trace_id, attributes,
+    row_number() OVER (
+      PARTITION BY trace_id, attributes->>'orchestration.operation_id'
+      ORDER BY start_timestamp DESC
+    ) AS position
+  FROM records
+  WHERE service_name = 't3-orchestrator-v2-demo'
+    AND span_name = 'orchestration.checkpoint.stage'
+    AND start_timestamp > now() - interval '1 hour'
+)
+SELECT start_timestamp, trace_id,
+  attributes->>'orchestration.thread_id' AS thread_id,
+  attributes->>'orchestration.turn_id' AS turn_id,
+  attributes->>'orchestration.last_completed_stage' AS completed,
+  attributes->>'orchestration.pending_stage' AS pending,
+  attributes->>'orchestration.outcome' AS outcome
+FROM stages WHERE position = 1
+ORDER BY start_timestamp DESC LIMIT 50
+```
+
+A nonterminal checkpoint stage older than five minutes warrants investigation.
+This is a diagnostic threshold, not an automatic timeout: capture can run several
+Git commands, each with its own process deadline. These spans begin after a
+provider terminal event, so approval waits and long model calls do not count as
+stalled checkpoint work. Exporter outages and abrupt server exits can leave a
+stale pending record; confirm against server state before declaring a stall.
+
+Configure the Logfire MCP server in the home used by the provider instance, then
+query a known trace from that provider. A successful terminal query alone does
+not establish that the provider loaded the server. See the
+[Logfire MCP setup guide](https://pydantic.dev/docs/logfire/guides/mcp-server/).
 
 ### What Is Instrumented Today
 

@@ -19,6 +19,7 @@ import * as Option from "effect/Option";
 import type * as PlatformError from "effect/PlatformError";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { errorTag } from "@t3tools/shared/observability";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
@@ -233,14 +234,49 @@ const make = Effect.gen(function* () {
     readonly assistantMessageId: MessageId | undefined;
     readonly createdAt: string;
   }) {
+    const attributes = {
+      "orchestration.thread_id": input.threadId,
+      "orchestration.turn_id": input.turnId,
+      "orchestration.operation_id": `${input.threadId}:${input.turnId}:checkpoint`,
+      "checkpoint.turn_count": input.turnCount,
+    };
+    yield* Effect.annotateCurrentSpan(attributes);
+    let status = input.status;
+    let summaryErrorType: string | undefined;
+    let lastCompletedStage = "provider.terminal";
+    const recordStage = (completed: string, pending: string, outcome = "pending") =>
+      Effect.sync(() => {
+        lastCompletedStage = completed;
+      }).pipe(
+        Effect.withSpan("orchestration.checkpoint.stage", {
+          attributes: {
+            ...attributes,
+            ...(summaryErrorType ? { "error.type": summaryErrorType } : {}),
+            "orchestration.last_completed_stage": completed,
+            "orchestration.pending_stage": pending,
+            "orchestration.outcome": outcome,
+          },
+        }),
+      );
+    const observeFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.onError(effect, (cause) =>
+        recordStage(
+          lastCompletedStage,
+          "none",
+          Cause.hasInterruptsOnly(cause) ? "cancelled" : "error",
+        ),
+      );
+    yield* recordStage("provider.terminal", "checkpoint.capture");
     const fromTurnCount = Math.max(0, input.turnCount - 1);
     const fromCheckpointRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
     const targetCheckpointRef = checkpointRefForThreadTurn(input.threadId, input.turnCount);
 
-    const fromCheckpointExists = yield* checkpointStore.hasCheckpointRef({
-      cwd: input.cwd,
-      checkpointRef: fromCheckpointRef,
-    });
+    const fromCheckpointExists = yield* checkpointStore
+      .hasCheckpointRef({
+        cwd: input.cwd,
+        checkpointRef: fromCheckpointRef,
+      })
+      .pipe(observeFailure);
     if (!fromCheckpointExists) {
       yield* Effect.logWarning("checkpoint capture missing pre-turn baseline", {
         threadId: input.threadId,
@@ -249,14 +285,18 @@ const make = Effect.gen(function* () {
       });
     }
 
-    yield* checkpointStore.captureCheckpoint({
-      cwd: input.cwd,
-      checkpointRef: targetCheckpointRef,
-    });
+    yield* checkpointStore
+      .captureCheckpoint({
+        cwd: input.cwd,
+        checkpointRef: targetCheckpointRef,
+      })
+      .pipe(observeFailure);
+
+    yield* recordStage("checkpoint.capture", "checkpoint.summary");
 
     // Refresh the workspace entry index so the @-mention file picker
     // reflects files created or deleted during this turn.
-    yield* workspaceEntries.refresh(input.cwd);
+    yield* workspaceEntries.refresh(input.cwd).pipe(observeFailure);
 
     // Git may have been initialized during this turn, leaving no pre-turn
     // snapshot. Keep the completion checkpoint for future turns, but do not
@@ -282,11 +322,16 @@ const make = Effect.gen(function* () {
         })),
       ),
       Effect.tapError((error) =>
-        appendCaptureFailureActivity({
-          threadId: input.threadId,
-          turnId: input.turnId,
-          detail: `Checkpoint captured, but turn diff summary is unavailable: ${error.message}`,
-          createdAt: input.createdAt,
+        Effect.gen(function* () {
+          status = "error";
+          summaryErrorType = errorTag(error);
+          yield* Effect.annotateCurrentSpan({ "checkpoint.summary_error_type": summaryErrorType });
+          yield* appendCaptureFailureActivity({
+            threadId: input.threadId,
+            turnId: input.turnId,
+            detail: `Checkpoint captured, but turn diff summary is unavailable: ${error.message}`,
+            createdAt: input.createdAt,
+          });
         }),
       ),
       Effect.catch((error) =>
@@ -297,8 +342,18 @@ const make = Effect.gen(function* () {
           detail: error.message,
         }).pipe(Effect.as([])),
       ),
+      observeFailure,
     );
 
+    yield* recordStage(
+      summaryErrorType ? "checkpoint.capture" : "checkpoint.summary",
+      "checkpoint.persist",
+      summaryErrorType ? "error" : "pending",
+    );
+    yield* Effect.annotateCurrentSpan({
+      "checkpoint.status": status,
+      "checkpoint.ref": targetCheckpointRef,
+    });
     const assistantMessageId =
       input.assistantMessageId ??
       input.thread.messages
@@ -306,26 +361,33 @@ const make = Effect.gen(function* () {
         .find((entry) => entry.role === "assistant" && entry.turnId === input.turnId)?.id ??
       MessageId.make(`assistant:${input.turnId}`);
 
-    yield* orchestrationEngine.dispatch({
-      type: "thread.turn.diff.complete",
-      commandId: yield* serverCommandId("checkpoint-turn-diff-complete"),
-      threadId: input.threadId,
-      turnId: input.turnId,
-      completedAt: input.createdAt,
-      checkpointRef: targetCheckpointRef,
-      status: input.status,
-      files,
-      assistantMessageId,
-      checkpointTurnCount: input.turnCount,
-      createdAt: input.createdAt,
-    });
+    yield* orchestrationEngine
+      .dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: yield* serverCommandId("checkpoint-turn-diff-complete"),
+        threadId: input.threadId,
+        turnId: input.turnId,
+        completedAt: input.createdAt,
+        checkpointRef: targetCheckpointRef,
+        status,
+        files,
+        assistantMessageId,
+        checkpointTurnCount: input.turnCount,
+        createdAt: input.createdAt,
+      })
+      .pipe(observeFailure);
+    yield* recordStage(
+      "checkpoint.persist",
+      "checkpoint.receipts",
+      status === "error" ? "error" : "pending",
+    );
     yield* receiptBus.publish({
       type: "checkpoint.diff.finalized",
       threadId: input.threadId,
       turnId: input.turnId,
       checkpointTurnCount: input.turnCount,
       checkpointRef: targetCheckpointRef,
-      status: input.status,
+      status,
       createdAt: input.createdAt,
     });
     yield* receiptBus.publish({
@@ -335,6 +397,8 @@ const make = Effect.gen(function* () {
       checkpointTurnCount: input.turnCount,
       createdAt: input.createdAt,
     });
+
+    yield* recordStage("checkpoint.receipts", "none", status);
 
     yield* orchestrationEngine.dispatch({
       type: "thread.activity.append",
@@ -347,7 +411,7 @@ const make = Effect.gen(function* () {
         summary: "Checkpoint captured",
         payload: {
           turnCount: input.turnCount,
-          status: input.status,
+          status,
         },
         turnId: input.turnId,
         createdAt: input.createdAt,
