@@ -169,7 +169,7 @@ function ThreadNavigationSidebarPane(
     unsettleThread,
     pinThread,
     unpinThread,
-    toggleThreadAutoSettle,
+    setThreadAutoSettle,
     moveThread,
     regenerateThreadTitle,
   } = useThreadListActions();
@@ -959,7 +959,7 @@ function ThreadNavigationSidebarPane(
               onUnsettleThread={unsettleThread}
               onPinThread={pinThread}
               onUnpinThread={unpinThread}
-              onToggleThreadAutoSettle={toggleThreadAutoSettle}
+              onSetThreadAutoSettle={setThreadAutoSettle}
               onMoveThread={moveThread}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -1099,7 +1099,7 @@ function ThreadNavigationSidebarPane(
       pinThread,
       pinningEnvironmentIds,
       autoSettleOptOutEnvironmentIds,
-      toggleThreadAutoSettle,
+      setThreadAutoSettle,
       projectByKey,
       projectTitleByProjectKey,
       regenerateThreadTitle,
