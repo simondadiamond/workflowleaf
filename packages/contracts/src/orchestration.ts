@@ -1097,7 +1097,7 @@ const ThreadUnsettleCommand = Schema.Struct({
   reason: Schema.Literal("user"),
 });
 
-const ThreadViewCommand = Schema.Struct({
+const ThreadVisitCommand = Schema.Struct({
   type: Schema.Literal("thread.visit"),
   commandId: CommandId,
   threadId: ThreadId,
@@ -1365,7 +1365,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUnarchiveCommand,
   ThreadSettleCommand,
   ThreadUnsettleCommand,
-  ThreadViewCommand,
+  ThreadVisitCommand,
   ThreadMarkUnreadCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
@@ -1400,7 +1400,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUnarchiveCommand,
   ThreadSettleCommand,
   ThreadUnsettleCommand,
-  ThreadViewCommand,
+  ThreadVisitCommand,
   ThreadMarkUnreadCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
