@@ -19,6 +19,7 @@ export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
   const inputState = useNativeState(props.inputInitialValue ?? "");
   const inputSelection = useNativeState({ start: 0, end: props.inputInitialValue?.length ?? 0 });
   const confirm = () => {
+    if (props.confirmDisabled) return;
     const value = props.inputInitialValue === undefined ? undefined : inputState.get();
     if (value !== undefined && !value.trim()) return;
     props.onConfirm(value);
@@ -52,9 +53,7 @@ export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
               textStyle={inputTypography}
               keyboardOptions={{ imeAction: "done" }}
               keyboardActions={{
-                onDone: (value) => {
-                  if (value.trim()) props.onConfirm(value);
-                },
+                onDone: confirm,
               }}
               colors={{
                 focusedTextColor: colors["--color-foreground"],
@@ -85,7 +84,7 @@ export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
             enabled={!props.confirmDisabled}
             colors={{
               contentColor:
-                colors[props.request.destructive ? "--color-danger-foreground" : "--color-primary"],
+                colors[props.request.destructive ? "--color-danger" : "--color-primary"],
             }}
           >
             <Text style={bodyTypography}>{props.request.confirmText}</Text>

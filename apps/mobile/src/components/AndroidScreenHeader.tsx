@@ -157,7 +157,10 @@ export function AndroidScreenHeader(props: {
             actions={overflowActions.map((action, index) => ({
               id: String(index),
               title: action.accessibilityLabel,
-              attributes: { disabled: Boolean(action.disabled) },
+              attributes: {
+                disabled: Boolean(action.disabled),
+                state: action.selected ? "on" : undefined,
+              },
             }))}
             onPressAction={({ nativeEvent }) =>
               overflowActions[Number(nativeEvent.event)]?.onPress()
