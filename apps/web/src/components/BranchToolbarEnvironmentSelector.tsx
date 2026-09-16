@@ -8,6 +8,7 @@ import { ServerUpdateAction, useServerUpdateTrigger } from "./ServerUpdateAction
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import type { ServerUpdateAvailability } from "./serverUpdateAvailability";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { cn } from "~/lib/utils";
 import {
   Select,
   SelectGroup,
@@ -74,11 +75,14 @@ interface BranchToolbarEnvironmentSelectorProps {
  * a fixed strip height, so a shorter label would drag the seam out of line
  * whenever this label is the only thing in the strip.
  */
-function StaticChip(props: ComponentProps<"span">) {
+function StaticChip({ className, ...props }: ComponentProps<"span">) {
   return (
     <span
       {...props}
-      className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6"
+      className={cn(
+        "inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6",
+        className,
+      )}
     />
   );
 }
