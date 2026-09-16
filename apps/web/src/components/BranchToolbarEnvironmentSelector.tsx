@@ -284,7 +284,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             </SelectItem>
           ))}
         </SelectGroup>
-        {serverUpdate ? (
+        {serverUpdate && serverUpdateTrigger.actionable ? (
           <>
             <SelectSeparator />
             <ServerUpdateSelectItem

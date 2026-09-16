@@ -67,7 +67,12 @@ export function useServerUpdateTrigger(
   });
   const manualCommand =
     target.selfUpdate === null ? manualServerUpdateCommand(target.targetVersion) : null;
+  // An old desktop-managed server cannot be told to update over RPC. The
+  // component shows an instruction for that case; the hook reports it and does
+  // nothing on trigger.
+  const actionable = !(target.selfUpdate === "desktop-managed" && !target.desktopAppUpdate);
   const trigger = async () => {
+    if (!actionable) return;
     if (manualCommand !== null) {
       copyToClipboard(manualCommand, { command: manualCommand });
       return;
@@ -83,6 +88,7 @@ export function useServerUpdateTrigger(
     await update({ ...target, continueThreadsAfterServerUpdate });
   };
   return {
+    actionable,
     label: manualCommand !== null ? "Copy update command" : "Update",
     trigger,
   };
