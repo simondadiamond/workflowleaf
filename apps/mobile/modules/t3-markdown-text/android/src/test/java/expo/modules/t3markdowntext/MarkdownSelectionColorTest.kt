@@ -52,8 +52,12 @@ class MarkdownSelectionColorTest {
   @Test
   fun doesNotTintOtherTextViewsSharingDrawableState() {
     val original = ColorDrawable(Color.WHITE)
-    val first = textView().apply { setTextSelectHandleLeft(original.constantState!!.newDrawable()) }
-    val second = textView().apply { setTextSelectHandleLeft(original.constantState!!.newDrawable()) }
+    val first = textView().apply {
+      setTextSelectHandleLeft(original.constantState!!.newDrawable())
+    }
+    val second = textView().apply {
+      setTextSelectHandleLeft(original.constantState!!.newDrawable())
+    }
 
     applySelectionHandleColor(first, Color.MAGENTA)
 

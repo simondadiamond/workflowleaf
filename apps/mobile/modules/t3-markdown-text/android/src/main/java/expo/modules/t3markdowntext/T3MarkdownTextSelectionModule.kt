@@ -168,8 +168,12 @@ private class SanitizingSelectionActionModeCallback(
 internal fun applySelectionHandleColor(textView: TextView, color: Int) {
   if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
   textView.textSelectHandle?.mutate()?.apply { setTint(color) }?.let(textView::setTextSelectHandle)
-  textView.textSelectHandleLeft?.mutate()?.apply { setTint(color) }?.let(textView::setTextSelectHandleLeft)
-  textView.textSelectHandleRight?.mutate()?.apply { setTint(color) }?.let(textView::setTextSelectHandleRight)
+  textView.textSelectHandleLeft?.mutate()?.apply {
+    setTint(color)
+  }?.let(textView::setTextSelectHandleLeft)
+  textView.textSelectHandleRight?.mutate()?.apply {
+    setTint(color)
+  }?.let(textView::setTextSelectHandleRight)
 }
 
 class T3MarkdownTextSelectionModule : Module() {
