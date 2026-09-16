@@ -522,6 +522,12 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     isVisible: state.isVisible,
   }));
   const isAccessoryVisible = keyboardState.isVisible && !isAccessoryDismissed;
+  // Android's terminal owns an EditText; turning off autoFocus also clears its native focus.
+  const terminalAutoFocus =
+    Platform.OS === "android"
+      ? !isAccessoryDismissed &&
+        (!SHOWCASE_ENABLED || keyboardFocusRequest > 0 || keyboardState.isVisible)
+      : !SHOWCASE_ENABLED;
   const terminalBottomInset =
     (keyboardState.isVisible ? keyboardState.height : 0) +
     (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT : 0);
@@ -1110,6 +1116,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   }, []);
 
   const handleShowKeyboard = useCallback(() => {
+    setIsAccessoryDismissed(false);
     setKeyboardFocusRequest((current) => current + 1);
   }, []);
   const handleRetryEnvironment = useCallback(() => {
@@ -1333,7 +1340,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                   }}
                 />
                 <TerminalSurface
-                  autoFocus={!SHOWCASE_ENABLED}
+                  autoFocus={terminalAutoFocus}
                   buffer={terminalSurfaceBuffer}
                   fontSize={fontSize}
                   isRunning={isRunning}
