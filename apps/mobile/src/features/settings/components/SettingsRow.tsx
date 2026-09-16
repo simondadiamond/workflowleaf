@@ -6,6 +6,8 @@ import { SymbolView } from "../../../components/AppSymbol";
 
 import { AppText as Text } from "../../../components/AppText";
 import type { SettingsLegalDocumentTarget, SettingsSheetTarget } from "./settings-sheet-targets";
+import { useAppearancePreferences } from "../appearance/AppearancePreferencesProvider";
+import { cn } from "../../../lib/cn";
 
 type SymbolName = ComponentProps<typeof SymbolView>["name"];
 
@@ -19,35 +21,50 @@ export function SettingsRow(props: {
   readonly onPress?: () => void;
 }) {
   const navigation = useNavigation();
+  const { materialYouStyleLayoutActive, themeVariables } = useAppearancePreferences();
+  const ripple = materialYouStyleLayoutActive
+    ? { color: themeVariables["--color-subtle-strong"] }
+    : undefined;
   const content = (
     <View
-      className={
-        props.disabled
-          ? "flex-row items-center gap-4 p-4 opacity-[0.45]"
-          : "flex-row items-center gap-4 p-4"
-      }
+      className={cn(
+        "flex-row items-center gap-4 p-4",
+        materialYouStyleLayoutActive && "min-h-18",
+        props.disabled && "opacity-[0.45]",
+      )}
     >
       <SymbolView
         name={props.icon}
-        size={22}
+        size={materialYouStyleLayoutActive ? 24 : 22}
         tintColorClassName={"accent-icon"}
         type="monochrome"
         weight="regular"
       />
-      <Text className="shrink-0 text-lg text-foreground" numberOfLines={1}>
-        {props.label}
-      </Text>
-      <View className="min-w-0 flex-1 items-end">
-        {props.value ? (
-          <Text
-            className="max-w-[180px] text-right text-base text-foreground-muted"
-            ellipsizeMode="middle"
-            numberOfLines={1}
-          >
-            {props.value}
+      {materialYouStyleLayoutActive ? (
+        <View className="min-w-0 flex-1 gap-1">
+          <Text className="text-base text-foreground">{props.label}</Text>
+          {props.value ? (
+            <Text className="text-sm text-foreground-muted">{props.value}</Text>
+          ) : null}
+        </View>
+      ) : (
+        <>
+          <Text className="shrink-0 text-lg text-foreground" numberOfLines={1}>
+            {props.label}
           </Text>
-        ) : null}
-      </View>
+          <View className="min-w-0 flex-1 items-end">
+            {props.value ? (
+              <Text
+                className="max-w-[180px] text-right text-base text-foreground-muted"
+                ellipsizeMode="middle"
+                numberOfLines={1}
+              >
+                {props.value}
+              </Text>
+            ) : null}
+          </View>
+        </>
+      )}
       <SymbolView
         name="chevron.right"
         size={16}
@@ -62,6 +79,7 @@ export function SettingsRow(props: {
   if (target) {
     return (
       <Pressable
+        android_ripple={ripple}
         accessibilityLabel={props.label}
         accessibilityRole="button"
         disabled={props.disabled}
@@ -81,6 +99,7 @@ export function SettingsRow(props: {
   if (fullScreenTarget) {
     return (
       <Pressable
+        android_ripple={ripple}
         accessibilityLabel={props.label}
         accessibilityRole="button"
         disabled={props.disabled}
@@ -92,7 +111,13 @@ export function SettingsRow(props: {
   }
 
   return (
-    <Pressable accessibilityRole="button" disabled={props.disabled} onPress={props.onPress}>
+    <Pressable
+      accessibilityLabel={props.label}
+      accessibilityRole="button"
+      android_ripple={ripple}
+      disabled={props.disabled}
+      onPress={props.onPress}
+    >
       {content}
     </Pressable>
   );

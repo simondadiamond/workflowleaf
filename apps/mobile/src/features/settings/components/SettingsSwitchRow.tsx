@@ -4,6 +4,7 @@ import { View } from "react-native";
 import { SymbolView } from "../../../components/AppSymbol";
 import { AppText as Text } from "../../../components/AppText";
 import { ThemedSwitch } from "../../../components/ThemedSwitch";
+import { useAppearancePreferences } from "../appearance/AppearancePreferencesProvider";
 
 type SymbolName = ComponentProps<typeof SymbolView>["name"];
 
@@ -15,6 +16,7 @@ export function SettingsSwitchRow(props: {
   readonly value: boolean;
   readonly onValueChange: (value: boolean) => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
     <View
       className={
@@ -31,7 +33,13 @@ export function SettingsSwitchRow(props: {
         weight="regular"
       />
       <View className="min-w-0 flex-1">
-        <Text className="text-lg text-foreground">{props.label}</Text>
+        <Text
+          className={
+            materialYouStyleLayoutActive ? "text-base text-foreground" : "text-lg text-foreground"
+          }
+        >
+          {props.label}
+        </Text>
         {props.subtitle ? (
           <Text className="text-sm text-foreground-muted">{props.subtitle}</Text>
         ) : null}

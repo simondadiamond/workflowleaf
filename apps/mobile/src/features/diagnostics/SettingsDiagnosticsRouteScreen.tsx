@@ -1,7 +1,8 @@
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
