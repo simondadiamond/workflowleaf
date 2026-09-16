@@ -751,7 +751,7 @@ function ThreadRouteContent(
         accessibilityLabel: filesVisible ? "Close files" : "Open files",
         selected: filesVisible,
         icon: "folder",
-        onPress: handleOpenFilesInspector,
+        onPress: filesVisible ? toggleAuxiliaryPane : handleOpenFilesInspector,
       });
     }
     if (selectedThreadProject?.workspaceRoot) {
@@ -782,6 +782,7 @@ function ThreadRouteContent(
     handleOpenTerminal,
     handleOpenGitInspector,
     handleToggleInspector,
+    toggleAuxiliaryPane,
     props.onReturnToThread,
     selectedThreadCwd,
     selectedThreadProject?.workspaceRoot,
