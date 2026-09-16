@@ -11,6 +11,7 @@ import { SymbolView } from "../../components/AppSymbol";
 export function AndroidHomeFabLayout(props: {
   readonly onStartNewTask: () => void;
   readonly children: ReactNode;
+  readonly sidebar?: boolean;
 }) {
   if (Platform.OS !== "android") {
     return <>{props.children}</>;
@@ -22,6 +23,7 @@ export function AndroidHomeFabLayout(props: {
 function AndroidHomeFab(props: {
   readonly onStartNewTask: () => void;
   readonly children: ReactNode;
+  readonly sidebar?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   return (

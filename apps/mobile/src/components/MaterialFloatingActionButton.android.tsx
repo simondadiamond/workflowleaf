@@ -1,0 +1,76 @@
+import {
+  Box,
+  ExtendedFloatingActionButton,
+  FloatingActionButton,
+  Host,
+  LargeFloatingActionButton,
+  Text,
+} from "@expo/ui/jetpack-compose";
+import { size } from "@expo/ui/jetpack-compose/modifiers";
+import { View, type StyleProp, type ViewStyle } from "react-native";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
+import { useScaledTextRole } from "../features/settings/appearance/useScaledTextRole";
+import { SymbolView, type AppSymbolName } from "./AppSymbol";
+
+export function MaterialFloatingActionButton(props: {
+  readonly onPress: () => void;
+  readonly label: string;
+  readonly icon: AppSymbolName;
+  readonly variant?: "extended" | "large";
+  readonly className?: string;
+  readonly style?: StyleProp<ViewStyle>;
+}) {
+  const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
+  const typography = useScaledTextRole("footnote");
+  const Component =
+    props.variant === "extended"
+      ? ExtendedFloatingActionButton
+      : props.variant === "large"
+        ? LargeFloatingActionButton
+        : FloatingActionButton;
+  const iconSize = props.variant === "large" ? 36 : 24;
+  return (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      accessibilityActions={[{ name: "activate" }]}
+      onAccessibilityAction={props.onPress}
+      className={props.className}
+      style={props.style}
+    >
+      <View importantForAccessibility="no-hide-descendants">
+        <Host matchContents colorScheme={themeAppearance} ignoreSafeAreaKeyboardInsets>
+          <Component containerColor={colors["--color-secondary"]} onClick={props.onPress}>
+            <Component.Icon>
+              <Box modifiers={[size(iconSize, iconSize)]} />
+            </Component.Icon>
+            {props.variant === "extended" ? (
+              <ExtendedFloatingActionButton.Text>
+                <Text
+                  color={colors["--color-secondary-foreground"]}
+                  style={{ ...typography, fontWeight: "500" }}
+                >
+                  {props.label}
+                </Text>
+              </ExtendedFloatingActionButton.Text>
+            ) : null}
+          </Component>
+        </Host>
+      </View>
+      <View
+        pointerEvents="none"
+        className="absolute inset-y-0 justify-center"
+        style={
+          props.variant === "extended" ? { start: 20 } : { left: 0, right: 0, alignItems: "center" }
+        }
+      >
+        <SymbolView
+          name={props.icon}
+          size={iconSize}
+          tintColorClassName="accent-secondary-foreground"
+        />
+      </View>
+    </View>
+  );
+}

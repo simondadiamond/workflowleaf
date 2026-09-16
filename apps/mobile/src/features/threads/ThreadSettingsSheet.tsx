@@ -53,6 +53,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { MaterialScreenContent } from "../../components/MaterialScreenContent";
 import {
   createProviderCatalogRefreshRunner,
   providerCatalogRefreshError,
@@ -790,6 +791,7 @@ function ThreadSettingsOptionsItem(props: {
 function ThreadSettingsMainContent(props: {
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const session = useThreadSettingsSession();
   const catalogItems = useThreadSettingsCatalogItems(session);
   const [animationsReady, setAnimationsReady] = useState(false);
@@ -873,10 +875,22 @@ function ThreadSettingsMainContent(props: {
                 accessibilityLabel="Find a model"
                 autoCapitalize="none"
                 autoCorrect={false}
-                className="h-11 rounded-xl bg-card px-4 text-base text-foreground"
+                className={
+                  materialYouStyleLayoutActive
+                    ? "h-12 min-h-12 rounded-full border border-input-border bg-input px-4 py-0 text-base text-foreground"
+                    : "h-11 rounded-xl bg-card px-4 text-base text-foreground"
+                }
+                style={
+                  materialYouStyleLayoutActive
+                    ? { includeFontPadding: false, textAlignVertical: "center" }
+                    : undefined
+                }
                 onChangeText={session.setSearchQuery}
                 placeholder="Find a model"
                 placeholderTextColorClassName="accent-placeholder"
+                selectionColorClassName="accent-primary/32"
+                cursorColorClassName="accent-primary"
+                selectionHandleColorClassName="accent-primary"
                 value={session.searchQuery}
               />
             </View>
@@ -993,6 +1007,7 @@ function useThreadSettingsPickerPresentation() {
 }
 
 function ThreadSettingsModelsScreen() {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const session = useThreadSettingsSession();
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
@@ -1076,6 +1091,7 @@ function ThreadSettingsModelsScreen() {
           ]}
           onBack={presentation.onClose}
           title="Thread settings"
+          hideBottomBorder={materialYouStyleLayoutActive}
         />
       ) : null}
       <NativeStackScreenOptions
@@ -1114,17 +1130,19 @@ function ThreadSettingsModelsScreen() {
               : undefined,
         }}
       />
-      <ThreadSettingsMainContent
-        onOpenSubmenu={(submenu) => {
-          const title =
-            submenu.kind === "runtime"
-              ? "Runtime"
-              : (session.displayedDescriptors.find(
-                  (descriptor) => descriptor.type === "select" && descriptor.id === submenu.id,
-                )?.label ?? "Option");
-          navigation.navigate("ThreadSettingsChoice", { ...submenu, title });
-        }}
-      />
+      <MaterialScreenContent>
+        <ThreadSettingsMainContent
+          onOpenSubmenu={(submenu) => {
+            const title =
+              submenu.kind === "runtime"
+                ? "Runtime"
+                : (session.displayedDescriptors.find(
+                    (descriptor) => descriptor.type === "select" && descriptor.id === submenu.id,
+                  )?.label ?? "Option");
+            navigation.navigate("ThreadSettingsChoice", { ...submenu, title });
+          }}
+        />
+      </MaterialScreenContent>
       <NativeHeaderToolbar placement="left">
         <NativeHeaderToolbar.Button
           accessibilityLabel="Cancel thread settings"
@@ -1192,6 +1210,7 @@ function ThreadSettingsModelsScreen() {
 }
 
 function ThreadSettingsChoiceScreen() {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const route = useRoute<RouteProp<ThreadSettingsPickerStackParams, "ThreadSettingsChoice">>();
 
@@ -1199,9 +1218,18 @@ function ThreadSettingsChoiceScreen() {
     <>
       <NativeStackScreenOptions options={{ headerShown: Platform.OS !== "android" }} />
       {Platform.OS === "android" ? (
-        <AndroidScreenHeader title={route.params.title} onBack={() => navigation.goBack()} />
+        <AndroidScreenHeader
+          title={route.params.title}
+          onBack={() => navigation.goBack()}
+          hideBottomBorder={materialYouStyleLayoutActive}
+        />
       ) : null}
-      <ThreadSettingsChoiceContent submenu={route.params} onSelected={() => navigation.goBack()} />
+      <MaterialScreenContent>
+        <ThreadSettingsChoiceContent
+          submenu={route.params}
+          onSelected={() => navigation.goBack()}
+        />
+      </MaterialScreenContent>
     </>
   );
 }

@@ -3,15 +3,13 @@ import type { EnvironmentId, SidebarThreadSortOrder } from "@t3tools/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import Constants from "expo-constants";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Keyboard, Platform, Pressable, Text as RNText, TextInput, View } from "react-native";
+import { useCallback, useMemo, useRef } from "react";
+import { Platform, Pressable, Text as RNText, TextInput, View } from "react-native";
 import type { SearchBarCommands } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
-import { MaterialIconButton } from "../../components/MaterialIconButton";
-import { AndroidAnchoredMenu } from "../../components/AndroidAnchoredMenu";
 import { T3Wordmark } from "../../components/T3Wordmark";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../../lib/mobileBranding";
@@ -25,6 +23,7 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import type { HomeProjectSortOrder } from "./homeThreadList";
 import { WorkspaceConnectionTitle } from "./WorkspaceConnectionTitle";
+import { MaterialThreadListToolbar } from "./MaterialThreadListToolbar";
 import {
   buildHomeListFilterMenu,
   type HomeListFilterMenuEnvironment,
@@ -70,14 +69,6 @@ function checkedMenuState(checked: boolean) {
 
 function AndroidHomeHeader(props: HomeHeaderProps) {
   const { materialYouStyleLayoutActive } = useAppearancePreferences();
-  const [searchExpanded, setSearchExpanded] = useState(false);
-  const searchInputRef = useRef<TextInput>(null);
-  const focusSearch = useCallback(() => {
-    setSearchExpanded(true);
-    searchInputRef.current?.focus();
-    return true;
-  }, []);
-  useHardwareKeyboardCommand("focusSearch", focusSearch);
   const insets = useSafeAreaInsets();
   const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
   // Thread List v2 lays the list out in fixed creation order, so the
@@ -161,10 +152,6 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
   const handleMenuAction = useCallback(
     (event: { nativeEvent: { event: string } }) => {
       const id = event.nativeEvent.event;
-      if (id === "settings") {
-        props.onOpenSettings();
-        return;
-      }
       if (id === "environment:all") {
         props.onEnvironmentChange(null);
         return;
@@ -211,13 +198,30 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     [props],
   );
 
+  if (materialYouStyleLayoutActive) {
+    return (
+      <>
+        <NativeStackScreenOptions options={{ headerShown: false }} />
+        <MaterialThreadListToolbar
+          searchQuery={props.searchQuery}
+          onSearchQueryChange={props.onSearchQueryChange}
+          filterActions={menuActions}
+          filterCustomized={hasCustomListOptions}
+          onFilterAction={handleMenuAction}
+          onOpenSettings={props.onOpenSettings}
+          onOpenEnvironments={props.onOpenEnvironments}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <NativeStackScreenOptions options={{ headerShown: false }} />
       <View
         className={
           materialYouStyleLayoutActive
-            ? "bg-header pb-2"
+            ? "bg-header pb-3"
             : "border-b border-header-border bg-header pb-3"
         }
         style={{
@@ -226,13 +230,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
         }}
       >
         <View className="w-full max-w-[720px] self-center gap-3">
-          <View
-            className={
-              materialYouStyleLayoutActive
-                ? "min-h-14 flex-row items-center"
-                : "flex-row items-center gap-2.5"
-            }
-          >
+          <View className="flex-row items-center gap-2.5">
             {/* Brand slot doubles as the connection status surface: while an
                 environment reconnects, the lockup fades to a status label in
                 place (no layout shift in the list below). */}
@@ -255,125 +253,88 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               }
             />
 
-            {materialYouStyleLayoutActive ? (
-              <>
-                <MaterialIconButton
-                  accessibilityLabel="Search threads"
-                  icon="magnifyingglass"
-                  onPress={focusSearch}
+            <ControlPillMenu
+              actions={menuActions}
+              isAnchoredToRight
+              onPressAction={handleMenuAction}
+            >
+              <Pressable
+                accessibilityLabel="Filter and sort threads"
+                accessibilityRole="button"
+                className="size-11 items-center justify-center rounded-full bg-subtle"
+              >
+                <SymbolView
+                  name={
+                    hasCustomListOptions
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle"
+                  }
+                  size={16}
+                  tintColorClassName={"accent-icon"}
+                  type="monochrome"
                 />
-                <AndroidAnchoredMenu
-                  actions={[
-                    ...menuActions,
-                    { id: "settings", title: "Settings", image: "gearshape" },
-                  ]}
-                  onPressAction={handleMenuAction}
-                >
-                  {(open) => (
-                    <MaterialIconButton
-                      accessibilityLabel="Thread list options"
-                      icon="ellipsis"
-                      variant={hasCustomListOptions ? "tonal" : "standard"}
-                      onPress={open}
-                    />
-                  )}
-                </AndroidAnchoredMenu>
-              </>
-            ) : (
-              <>
-                <ControlPillMenu
-                  actions={menuActions}
-                  isAnchoredToRight
-                  onPressAction={handleMenuAction}
-                >
-                  <Pressable
-                    accessibilityLabel="Filter and sort threads"
-                    accessibilityRole="button"
-                    className="size-11 items-center justify-center rounded-full bg-subtle"
-                  >
-                    <SymbolView
-                      name={
-                        hasCustomListOptions
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle"
-                      }
-                      size={16}
-                      tintColorClassName={"accent-icon"}
-                      type="monochrome"
-                    />
-                  </Pressable>
-                </ControlPillMenu>
-                {/* Built identically to the filter button so the two circles
+              </Pressable>
+            </ControlPillMenu>
+            {/* Built identically to the filter button so the two circles
                 match exactly (ControlPill sizes via Tailwind classes and
                 resolves to a different box). */}
-                <Pressable
-                  accessibilityLabel="Open settings"
-                  accessibilityRole="button"
-                  onPress={props.onOpenSettings}
-                  className="size-11 items-center justify-center rounded-full bg-subtle"
-                >
-                  <SymbolView
-                    name="gearshape"
-                    size={18}
-                    tintColorClassName={"accent-icon"}
-                    type="monochrome"
-                  />
-                </Pressable>
-              </>
-            )}
-          </View>
-
-          {!materialYouStyleLayoutActive || searchExpanded || props.searchQuery.length > 0 ? (
-            <View
-              className={
-                materialYouStyleLayoutActive
-                  ? "min-h-14 flex-row items-center gap-3 rounded-full bg-sidebar-search px-4"
-                  : "min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5"
-              }
+            <Pressable
+              accessibilityLabel="Open settings"
+              accessibilityRole="button"
+              onPress={props.onOpenSettings}
+              className="size-11 items-center justify-center rounded-full bg-subtle"
             >
               <SymbolView
-                name="magnifyingglass"
-                size={17}
-                tintColorClassName={"accent-foreground-muted"}
+                name="gearshape"
+                size={18}
+                tintColorClassName={"accent-icon"}
                 type="monochrome"
               />
-              <TextInput
-                ref={searchInputRef}
-                accessibilityLabel="Search threads"
-                autoFocus={materialYouStyleLayoutActive && searchExpanded}
-                autoCapitalize="none"
-                onChangeText={props.onSearchQueryChange}
-                placeholder="Search threads"
-                placeholderTextColorClassName="accent-placeholder"
-                className="flex-1 py-2.5 text-base font-sans text-foreground"
-                value={props.searchQuery}
-              />
-              {materialYouStyleLayoutActive ? (
-                <MaterialIconButton
-                  accessibilityLabel="Close search"
-                  icon="xmark"
-                  onPress={() => {
-                    props.onSearchQueryChange("");
-                    setSearchExpanded(false);
-                    Keyboard.dismiss();
-                  }}
+            </Pressable>
+          </View>
+
+          <View
+            className={
+              materialYouStyleLayoutActive
+                ? "min-h-12 flex-row items-center gap-2.5 rounded-full border border-input-border bg-input px-3.5"
+                : "min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5"
+            }
+          >
+            <SymbolView
+              name="magnifyingglass"
+              size={17}
+              tintColorClassName={"accent-foreground-muted"}
+              type="monochrome"
+            />
+            <TextInput
+              accessibilityLabel="Search threads"
+              autoCapitalize="none"
+              onChangeText={props.onSearchQueryChange}
+              placeholder="Search threads"
+              placeholderTextColorClassName="accent-placeholder"
+              selectionColorClassName={Platform.OS === "android" ? "accent-primary/32" : undefined}
+              cursorColorClassName={Platform.OS === "android" ? "accent-primary" : undefined}
+              selectionHandleColorClassName={
+                Platform.OS === "android" ? "accent-primary" : undefined
+              }
+              className="flex-1 py-2.5 text-base font-sans text-foreground"
+              value={props.searchQuery}
+            />
+            {props.searchQuery.length > 0 ? (
+              <Pressable
+                accessibilityLabel="Clear search"
+                hitSlop={10}
+                onPress={() => props.onSearchQueryChange("")}
+              >
+                <SymbolView
+                  name="xmark.circle.fill"
+                  size={17}
+                  tintColorClassName={"accent-foreground-muted"}
+                  type="monochrome"
                 />
-              ) : props.searchQuery.length > 0 ? (
-                <Pressable
-                  accessibilityLabel="Clear search"
-                  hitSlop={10}
-                  onPress={() => props.onSearchQueryChange("")}
-                >
-                  <SymbolView
-                    name="xmark.circle.fill"
-                    size={17}
-                    tintColorClassName={"accent-foreground-muted"}
-                    type="monochrome"
-                  />
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       </View>
     </>

@@ -11,12 +11,13 @@ export function GlassBackdrop(props: {
   readonly fallbackColor?: ColorValue;
   readonly blurTarget?: RefObject<View | null>;
 }) {
-  const { themeAppearance } = useAppearancePreferences();
+  const { themeAppearance, materialYouStyleLayoutActive } = useAppearancePreferences();
   const inheritedBlurTarget = useContext(GlassBlurTargetContext);
   const target = props.blurTarget ?? inheritedBlurTarget;
   const supportsBlur =
-    Platform.OS === "ios" ||
-    (Platform.OS === "android" && Platform.Version >= 31 && target !== undefined);
+    !materialYouStyleLayoutActive &&
+    (Platform.OS === "ios" ||
+      (Platform.OS === "android" && Platform.Version >= 31 && target !== undefined));
   const colorStyle =
     props.fallbackColor === undefined
       ? undefined

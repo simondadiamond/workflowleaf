@@ -963,10 +963,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             ? {
                 backgroundColor: selected
                   ? selectedBackgroundColor
-                  : sidebarPane
+                  : sidebarPane && !materialYouStyleLayoutActive
                     ? drawerColor
                     : screenColor,
-                borderRadius: SIDEBAR_V2_ROW_RADIUS,
+                borderRadius: materialYouStyleLayoutActive ? 20 : SIDEBAR_V2_ROW_RADIUS,
                 ...(sidebarPane ? { paddingHorizontal: 12, paddingVertical: 10 } : null),
               }
             : undefined
@@ -980,8 +980,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
              separates rows. The opaque screen background stays so swipe
              actions reveal behind the row. */
           <View>
-            <View className="px-5 py-2.5">{cardContent}</View>
-            {props.showTrailingDivider !== false ? (
+            <View className={materialYouStyleLayoutActive ? "px-3 py-2.5" : "px-5 py-2.5"}>
+              {cardContent}
+            </View>
+            {!materialYouStyleLayoutActive && props.showTrailingDivider !== false ? (
               <View className="ml-5 h-px bg-border-subtle" />
             ) : null}
           </View>
@@ -1013,10 +1015,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             ? {
                 backgroundColor: selected
                   ? selectedBackgroundColor
-                  : sidebarPane
+                  : sidebarPane && !materialYouStyleLayoutActive
                     ? drawerColor
                     : screenColor,
-                borderRadius: SIDEBAR_V2_ROW_RADIUS,
+                borderRadius: materialYouStyleLayoutActive ? 20 : SIDEBAR_V2_ROW_RADIUS,
               }
             : undefined
         }
@@ -1090,10 +1092,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       )}
       <ThreadSwipeable
         threadKey={`${thread.environmentId}:${thread.id}`}
-        backgroundColor={sidebarPane ? drawerColor : screenColor}
+        backgroundColor={sidebarPane && !materialYouStyleLayoutActive ? drawerColor : screenColor}
         compactActions={variant === "slim"}
         containerStyle={
-          sidebarPane ? { borderRadius: SIDEBAR_V2_ROW_RADIUS, overflow: "hidden" } : undefined
+          materialYouStyleLayoutActive
+            ? { borderRadius: 20, overflow: "hidden", marginHorizontal: 8, marginVertical: 2 }
+            : sidebarPane
+              ? { borderRadius: SIDEBAR_V2_ROW_RADIUS, overflow: "hidden" }
+              : undefined
         }
         enableTrackpadSwipe
         // Full swipe commits the advertised lifecycle action (Settle /

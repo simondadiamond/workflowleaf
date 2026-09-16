@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { withUniwind } from "uniwind";
 
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { cn } from "../lib/cn";
 import { GlassBackdrop } from "./GlassBackdrop";
 
@@ -47,25 +48,18 @@ export function GlassSurface({
   style,
   ...props
 }: GlassSurfaceProps) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const isDarkMode = useColorScheme() === "dark";
   const supportsGlass = Platform.OS === "ios" && isGlassEffectAPIAvailable();
+  const hasShadow = chrome !== "none" && !materialYouStyleLayoutActive;
   const surfaceStyle: ViewStyle = {
     borderRadius: 32,
     overflow: "hidden",
-    shadowColor: chrome === "none" ? "transparent" : "#000000",
-    shadowOpacity: chrome === "none" ? 0 : isDarkMode ? 0.22 : 0.08,
-    shadowRadius: chrome === "none" ? 0 : 28,
-    shadowOffset:
-      chrome === "none"
-        ? {
-            width: 0,
-            height: 0,
-          }
-        : {
-            width: 0,
-            height: 14,
-          },
-    elevation: chrome === "none" ? 0 : 12,
+    shadowColor: hasShadow ? "#000000" : "transparent",
+    shadowOpacity: hasShadow ? (isDarkMode ? 0.22 : 0.08) : 0,
+    shadowRadius: hasShadow ? 28 : 0,
+    shadowOffset: { width: 0, height: hasShadow ? 14 : 0 },
+    elevation: hasShadow ? 12 : 0,
   };
 
   if (supportsGlass) {

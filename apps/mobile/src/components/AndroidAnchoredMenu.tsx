@@ -218,8 +218,10 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
               <Animated.View
                 entering={FadeIn.duration(120)}
                 className={cn(
-                  "absolute w-[250px] overflow-hidden rounded-[12px] shadow-2xl",
-                  materialYouStyleLayoutActive ? "bg-card-alt" : "border border-border",
+                  "absolute w-[250px] overflow-hidden rounded-[12px]",
+                  materialYouStyleLayoutActive
+                    ? "bg-card-alt shadow-md"
+                    : "border border-border shadow-2xl",
                 )}
                 style={{
                   left,
@@ -238,6 +240,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                   active editor; the first item tap must act, not just
                   dismiss the keyboard. */}
                 <ScrollView
+                  contentContainerClassName={materialYouStyleLayoutActive ? "py-2" : undefined}
                   bounces={false}
                   keyboardShouldPersistTaps="always"
                   showsVerticalScrollIndicator={false}

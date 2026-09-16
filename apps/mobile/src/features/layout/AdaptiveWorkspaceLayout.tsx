@@ -490,19 +490,9 @@ function AdaptiveWorkspaceLayoutContent(
   const contentSettledWidth = layout.usesSplitView
     ? Math.max(0, panes.contentPaneWidth - inspectorColumnTargetWidth)
     : null;
-  const contentLeadingInset = materialYouStyleLayoutActive && panes.primarySidebarVisible ? 8 : 0;
-  const contentTrailingInset =
-    materialYouStyleLayoutActive && inspectorColumnTargetWidth > 0 ? 8 : 0;
   const renderedInspectorWidth = useSharedValue(inspectorColumnTargetWidth);
   const renderedContentWidth = useDerivedValue(() =>
-    Math.max(
-      0,
-      width -
-        renderedSidebarWidth.value -
-        renderedInspectorWidth.value -
-        contentLeadingInset -
-        contentTrailingInset,
-    ),
+    Math.max(0, width - renderedSidebarWidth.value - renderedInspectorWidth.value),
   );
 
   const handleSelectThread = useCallback(
@@ -592,7 +582,7 @@ function AdaptiveWorkspaceLayoutContent(
               style={sidebarAnimatedStyle}
             >
               <View className="flex-1" style={{ width: layout.listPaneWidth }}>
-                <AndroidHomeFabLayout onStartNewTask={handleStartNewTask}>
+                <AndroidHomeFabLayout sidebar onStartNewTask={handleStartNewTask}>
                   <ThreadNavigationSidebar
                     width={layout.listPaneWidth}
                     visible={panes.primarySidebarVisible}
@@ -624,12 +614,7 @@ function AdaptiveWorkspaceLayoutContent(
                 contentSettledWidth !== null
                   ? {
                       flex: 1,
-                      marginLeft: contentLeadingInset,
-                      marginRight: contentTrailingInset,
-                      width: Math.max(
-                        0,
-                        contentSettledWidth - contentLeadingInset - contentTrailingInset,
-                      ),
+                      width: contentSettledWidth,
                     }
                   : { flex: 1 }
               }
