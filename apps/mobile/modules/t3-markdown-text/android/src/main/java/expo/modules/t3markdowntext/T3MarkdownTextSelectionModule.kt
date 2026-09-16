@@ -195,17 +195,21 @@ class T3MarkdownTextSelectionModule : Module() {
       }
     }.fontMetricsInt
 
+  private fun setSelectionHandleColor(reactTag: Int, color: Int) {
+    val reactContext = appContext.reactContext as? ReactContext ?: return
+    reactContext.runOnUiQueueThread {
+      val textView = runCatching {
+        UIManagerHelper.getUIManagerForReactTag(reactContext, reactTag)?.resolveView(reactTag)
+      }.getOrNull() as? TextView ?: return@runOnUiQueueThread
+      applySelectionHandleColor(textView, color)
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("T3MarkdownTextSelection")
 
     Function("setSelectionHandleColor") { reactTag: Int, color: Int ->
-      val reactContext = appContext.reactContext as? ReactContext ?: return@Function
-      reactContext.runOnUiQueueThread {
-        val textView = runCatching {
-          UIManagerHelper.getUIManagerForReactTag(reactContext, reactTag)?.resolveView(reactTag)
-        }.getOrNull() as? TextView ?: return@runOnUiQueueThread
-        applySelectionHandleColor(textView, color)
-      }
+      setSelectionHandleColor(reactTag, color)
     }
 
     Function("renderContextChip") { payloadJson: String ->
