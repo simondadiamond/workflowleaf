@@ -9,12 +9,18 @@ import {
   type ThirdPartyLicenseEntry,
 } from "@t3tools/shared/thirdPartyLicenses";
 import { useCallback, useMemo, useState } from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Linking, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import {
+  createNativeMailSearchToolbarItem,
+  NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
+  NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
+} from "../layout/native-mail-search-toolbar";
 import { getMobileThirdPartyLicenses } from "./mobileThirdPartyLicenses";
 
 function useMobileThirdPartyLicenses() {
@@ -65,6 +71,7 @@ export function SettingsOpenSourceLicensesRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
+  const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const manifest = useMobileThirdPartyLicenses();
   const entries = manifest?.entries ?? [];
   const filteredEntries = useMemo(
@@ -103,9 +110,48 @@ export function SettingsOpenSourceLicensesRouteScreen() {
 
   return (
     <SettingsScreen title="Open source licenses">
+      {Platform.OS === "ios" ? (
+        <NativeStackScreenOptions
+          options={{
+            unstable_headerToolbarItems: usesNativeMailSearchToolbar
+              ? () => [
+                  createNativeMailSearchToolbarItem({
+                    onSearchTextChange: setQuery,
+                    placeholder: "Search packages",
+                    searchTextChangeId: "open-source-licenses-search-text",
+                    showsSearchDismissButton: true,
+                  }),
+                ]
+              : undefined,
+            headerSearchBarOptions: usesNativeMailSearchToolbar
+              ? undefined
+              : {
+                  allowToolbarIntegration: true,
+                  autoCapitalize: "none",
+                  hideNavigationBar: false,
+                  hideWhenScrolling: false,
+                  obscureBackground: false,
+                  onCancelButtonPress: () => setQuery(""),
+                  onChangeText: (event) => setQuery(event.nativeEvent.text),
+                  placeholder: "Search packages",
+                },
+          }}
+        />
+      ) : null}
+      {Platform.OS === "ios" && !usesNativeMailSearchToolbar ? (
+        <NativeHeaderToolbar placement="bottom">
+          <NativeHeaderToolbar.SearchBarSlot />
+        </NativeHeaderToolbar>
+      ) : null}
       <LegendList
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+        contentContainerStyle={{
+          paddingBottom: usesNativeMailSearchToolbar
+            ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET + 18
+            : Platform.OS === "ios"
+              ? 18
+              : Math.max(insets.bottom, 18) + 18,
+        }}
         contentInsetAdjustmentBehavior="automatic"
         data={filteredEntries}
         estimatedItemSize={78}
@@ -120,26 +166,20 @@ export function SettingsOpenSourceLicensesRouteScreen() {
           </View>
         }
         ListHeaderComponent={
-          <View className="gap-4 px-5 pt-4 pb-5">
-            <Text className="text-base leading-normal text-foreground-muted">
-              Notices for dependencies, assets, and optional tools used by T3 Code Mobile.
-            </Text>
-            <TextInput
-              accessibilityLabel="Search open-source licenses"
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-              onChangeText={setQuery}
-              placeholder="Search packages"
-              returnKeyType="search"
-              value={query}
-            />
-            <Text className="tabular-nums text-sm text-foreground-muted">
-              {filteredEntries.length === entries.length
-                ? `${String(entries.length)} notices`
-                : `${String(filteredEntries.length)} of ${String(entries.length)} notices`}
-            </Text>
-          </View>
+          Platform.OS !== "ios" ? (
+            <View className="px-5 pt-4 pb-5">
+              <TextInput
+                accessibilityLabel="Search open-source licenses"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+                onChangeText={setQuery}
+                placeholder="Search packages"
+                returnKeyType="search"
+                value={query}
+              />
+            </View>
+          ) : null
         }
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}

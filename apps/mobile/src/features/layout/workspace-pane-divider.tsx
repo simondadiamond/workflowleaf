@@ -22,7 +22,6 @@ export function WorkspacePaneDivider(props: WorkspacePaneDividerProps) {
   const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const latestProps = useRef(props);
   latestProps.current = props;
-  const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const handleResizeStart = useCallback(() => {
     setDragging(true);
@@ -65,7 +64,7 @@ export function WorkspacePaneDivider(props: WorkspacePaneDividerProps) {
   return (
     <GestureDetector gesture={resizeGesture}>
       <Pressable
-        className="relative z-[100] -mx-[22px] w-11 self-stretch cursor-pointer justify-center"
+        className="relative z-[100] -mx-[22px] w-11 self-stretch justify-center"
         accessibilityActions={[
           { name: "increment", label: "Make pane wider" },
           { name: "decrement", label: "Make pane narrower" },
@@ -77,16 +76,14 @@ export function WorkspacePaneDivider(props: WorkspacePaneDividerProps) {
           text: `${Math.round(props.currentWidth)} points wide`,
         }}
         onAccessibilityAction={handleAccessibilityAction}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
       >
         <View
           className={cn(
             "h-full self-center bg-border opacity-70",
-            hovered || dragging ? "w-0.5 bg-primary opacity-100" : "w-px",
-            materialYouStyleLayoutActive && !hovered && !dragging && "opacity-0",
+            dragging ? "w-0.5 bg-primary opacity-100" : "w-px",
+            materialYouStyleLayoutActive && !dragging && "opacity-0",
           )}
-          style={[styles.line, (hovered || dragging) && styles.activeLine]}
+          style={[styles.line, dragging && styles.activeLine]}
         />
       </Pressable>
     </GestureDetector>
