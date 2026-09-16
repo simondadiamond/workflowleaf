@@ -951,7 +951,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     : sidebarPane && !materialYouStyleLayoutActive
                       ? drawerColor
                       : screenColor,
-                borderRadius: materialYouStyleLayoutActive ? 28 : SIDEBAR_V2_ROW_RADIUS,
+                borderRadius: materialYouStyleLayoutActive ? 20 : SIDEBAR_V2_ROW_RADIUS,
                 ...(sidebarPane ? { paddingHorizontal: 12, paddingVertical: 10 } : null),
               })
             : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
@@ -997,7 +997,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     : sidebarPane && !materialYouStyleLayoutActive
                       ? drawerColor
                       : screenColor,
-                borderRadius: materialYouStyleLayoutActive ? 28 : SIDEBAR_V2_ROW_RADIUS,
+                borderRadius: materialYouStyleLayoutActive ? 20 : SIDEBAR_V2_ROW_RADIUS,
               })
             : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
         }
@@ -1075,7 +1075,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         compactActions={variant === "slim"}
         containerStyle={
           materialYouStyleLayoutActive
-            ? { borderRadius: 28, overflow: "hidden", marginHorizontal: 8, marginVertical: 2 }
+            ? { borderRadius: 20, overflow: "hidden", marginHorizontal: 8, marginVertical: 2 }
             : sidebarPane
               ? { borderRadius: SIDEBAR_V2_ROW_RADIUS, overflow: "hidden" }
               : undefined

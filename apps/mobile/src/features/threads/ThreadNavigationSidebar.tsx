@@ -1165,7 +1165,13 @@ function ThreadNavigationSidebarPane(
   // Snoozed threads need no special case: the shelf header is a list row
   // even while collapsed.
   const listEmpty = (
-    <Text className="px-2 py-4 text-sm text-foreground-muted">
+    <Text
+      className={
+        materialYouStyleLayoutActive
+          ? "px-4 py-4 text-center text-sm text-foreground-muted"
+          : "px-2 py-4 text-sm text-foreground-muted"
+      }
+    >
       {catalogState.isLoadingConnections
         ? "Loading threads…"
         : props.searchQuery.trim().length > 0
@@ -1269,6 +1275,7 @@ function ThreadNavigationSidebarPane(
           materialYouStyleLayoutActive
             ? {
                 marginTop: stickyHeaderHeight,
+                marginHorizontal: 4,
                 paddingBottom: insets.bottom,
                 backgroundColor: screenColor,
                 borderTopLeftRadius: 28,
@@ -1278,41 +1285,45 @@ function ThreadNavigationSidebarPane(
             : { paddingBottom: insets.bottom }
         }
       >
-        <SwipeableScrollGateProvider enabled={swipeEnabled}>
-          <GestureDetector gesture={sidebarScrollGesture}>
-            <LegendList
-              data={listItems}
-              drawDistance={500}
-              estimatedItemSize={64}
-              extraData={listExtraData}
-              getItemType={(item) => item.type}
-              itemsAreEqual={sidebarItemsAreEqual}
-              keyExtractor={(item) => item.key}
-              renderItem={renderListItem}
-              contentContainerStyle={[
-                styles.threadListContent,
-                materialYouStyleLayoutActive ? { paddingHorizontal: 0 } : null,
-                {
-                  paddingBottom:
-                    Platform.OS === "android"
-                      ? Math.max(insets.bottom, 16) +
-                        (materialYouStyleLayoutActive ? 148 : 88) -
-                        insets.bottom
-                      : 16 + insets.bottom,
-                  paddingTop: materialYouStyleLayoutActive ? 6 : topListInset,
-                },
-              ]}
-              keyboardDismissMode="on-drag"
-              keyboardShouldPersistTaps="handled"
-              {...scrollGateHandlers}
-              recycleItems
-              scrollEventThrottle={16}
-              showsVerticalScrollIndicator={false}
-              style={styles.threadList}
-              ListEmptyComponent={listEmpty}
-            />
-          </GestureDetector>
-        </SwipeableScrollGateProvider>
+        {materialYouStyleLayoutActive && listItems.length === 0 ? (
+          <View className="flex-1 items-center justify-center">{listEmpty}</View>
+        ) : (
+          <SwipeableScrollGateProvider enabled={swipeEnabled}>
+            <GestureDetector gesture={sidebarScrollGesture}>
+              <LegendList
+                data={listItems}
+                drawDistance={500}
+                estimatedItemSize={64}
+                extraData={listExtraData}
+                getItemType={(item) => item.type}
+                itemsAreEqual={sidebarItemsAreEqual}
+                keyExtractor={(item) => item.key}
+                renderItem={renderListItem}
+                contentContainerStyle={[
+                  styles.threadListContent,
+                  materialYouStyleLayoutActive ? { paddingHorizontal: 0 } : null,
+                  {
+                    paddingBottom:
+                      Platform.OS === "android"
+                        ? Math.max(insets.bottom, 16) +
+                          (materialYouStyleLayoutActive ? 148 : 88) -
+                          insets.bottom
+                        : 16 + insets.bottom,
+                    paddingTop: materialYouStyleLayoutActive ? 6 : topListInset,
+                  },
+                ]}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                {...scrollGateHandlers}
+                recycleItems
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+                style={styles.threadList}
+                ListEmptyComponent={listEmpty}
+              />
+            </GestureDetector>
+          </SwipeableScrollGateProvider>
+        )}
       </View>
 
       {materialYouStyleLayoutActive ? (
@@ -1377,6 +1388,11 @@ function ThreadNavigationSidebarPane(
               onChangeText={props.onSearchQueryChange}
               placeholder="Search"
               placeholderTextColorClassName={"accent-placeholder"}
+              selectionColorClassName={Platform.OS === "android" ? "accent-primary/32" : undefined}
+              cursorColorClassName={Platform.OS === "android" ? "accent-primary" : undefined}
+              selectionHandleColorClassName={
+                Platform.OS === "android" ? "accent-primary" : undefined
+              }
               returnKeyType="search"
               className="h-[34px] flex-1 px-0 py-0 font-sans text-base text-foreground"
               value={props.searchQuery}

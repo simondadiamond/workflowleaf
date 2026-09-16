@@ -73,6 +73,9 @@ export function MaterialThreadListToolbar(props: {
         returnKeyType="search"
         placeholder="Search"
         placeholderTextColorClassName="accent-placeholder"
+        selectionColorClassName="accent-primary/32"
+        cursorColorClassName="accent-primary"
+        selectionHandleColorClassName="accent-primary"
         className="min-w-0 flex-1 py-2 font-sans text-base text-foreground"
         value={props.searchQuery}
         onChangeText={onSearchQueryChange}
@@ -142,27 +145,30 @@ export function MaterialThreadListToolbar(props: {
       {/* Sit 8dp above the 56dp extended New thread FAB. */}
       <View
         className="absolute right-5 z-[5]"
-        style={{ bottom: Math.max(insets.bottom, 16) + 16 + 56 + 8 }}
+        style={{
+          bottom:
+            (props.sidebar ? Math.max(insets.bottom, 12) + 6 : Math.max(insets.bottom, 16) + 16) +
+            56 +
+            8,
+        }}
       >
-        {!searching ? (
-          <ControlPillMenu
-            actions={props.filterActions}
-            onPressAction={props.onFilterAction}
-            isAnchoredToRight
+        <ControlPillMenu
+          actions={props.filterActions}
+          onPressAction={props.onFilterAction}
+          isAnchoredToRight
+        >
+          <Pressable
+            accessibilityLabel="Filter and sort threads"
+            accessibilityRole="button"
+            className="size-[56px] items-center justify-center rounded-[16px] bg-thread-selected"
           >
-            <Pressable
-              accessibilityLabel="Filter and sort threads"
-              accessibilityRole="button"
-              className="size-[56px] items-center justify-center rounded-[16px] bg-thread-selected"
-            >
-              <SymbolView
-                name={filterIcon}
-                size={24}
-                tintColorClassName="accent-thread-selected-foreground"
-              />
-            </Pressable>
-          </ControlPillMenu>
-        ) : null}
+            <SymbolView
+              name={filterIcon}
+              size={24}
+              tintColorClassName="accent-thread-selected-foreground"
+            />
+          </Pressable>
+        </ControlPillMenu>
       </View>
     </>
   );

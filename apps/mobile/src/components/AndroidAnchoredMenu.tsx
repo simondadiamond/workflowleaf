@@ -12,6 +12,7 @@ import { type AppSymbolName, SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
 import { GlassBackdrop } from "./GlassBackdrop";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 const MENU_WIDTH = 250;
 const SCREEN_MARGIN = 12;
@@ -62,6 +63,7 @@ export type AndroidAnchoredMenuProps = {
  * trailing check glyph); submenus drill in under a muted parent-title header.
  */
 export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
   const [path, setPath] = useState<readonly MenuAction[]>([]);
   // Height of the modal's root view, in the modal's own coordinate space.
@@ -215,7 +217,12 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
             {!placeable || local === null ? null : (
               <Animated.View
                 entering={FadeIn.duration(120)}
-                className="absolute w-[250px] overflow-hidden rounded-[12px] border border-border shadow-2xl"
+                className={cn(
+                  "absolute w-[250px] overflow-hidden rounded-[12px]",
+                  materialYouStyleLayoutActive
+                    ? "bg-card shadow-md"
+                    : "border border-border shadow-2xl",
+                )}
                 style={{
                   left,
                   maxHeight,
@@ -224,11 +231,14 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     : { bottom: (rootHeight ?? 0) - local.y + ANCHOR_GAP }),
                 }}
               >
-                <GlassBackdrop blurTarget={appBlurTargetRef} />
+                {!materialYouStyleLayoutActive ? (
+                  <GlassBackdrop blurTarget={appBlurTargetRef} />
+                ) : null}
                 {/* keyboardShouldPersistTaps: the menu often opens over an
                   active editor; the first item tap must act, not just
                   dismiss the keyboard. */}
                 <ScrollView
+                  contentContainerClassName={materialYouStyleLayoutActive ? "py-2" : undefined}
                   bounces={false}
                   keyboardShouldPersistTaps="always"
                   showsVerticalScrollIndicator={false}
@@ -263,7 +273,10 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                         key={action.id ?? `${index}-${action.title}`}
                         disabled={disabled}
                         className={cn(
-                          "min-h-11 flex-row items-center gap-2.5 px-3.5 py-2.5 active:bg-subtle",
+                          "flex-row items-center gap-2.5 active:bg-subtle",
+                          materialYouStyleLayoutActive
+                            ? "min-h-12 px-4 py-3"
+                            : "min-h-11 px-3.5 py-2.5",
                           disabled && "opacity-45",
                         )}
                         onPress={() => onPressItem(action)}
@@ -272,7 +285,9 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                           <Text
                             className={cn(
                               // Same face as the pill labels that open these menus.
-                              "text-sm font-t3-bold",
+                              materialYouStyleLayoutActive
+                                ? "text-base font-t3-medium"
+                                : "text-sm font-t3-bold",
                               destructive && "text-danger-foreground",
                             )}
                           >

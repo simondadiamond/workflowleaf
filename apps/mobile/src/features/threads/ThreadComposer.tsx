@@ -49,6 +49,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
@@ -242,7 +243,10 @@ export function ComposerSurface(props: {
         {
           overflow: "hidden",
           // Android versions before 9 do not support outset box shadows.
-          elevation: Platform.OS === "android" && Platform.Version < 28 ? 10 : undefined,
+          elevation:
+            !materialYouStyleLayoutActive && Platform.OS === "android" && Platform.Version < 28
+              ? 10
+              : undefined,
         },
       ]}
     >
@@ -627,7 +631,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       style={{
         paddingTop: isExpanded ? 8 : 6,
         paddingBottom: (props.bottomInset ?? 0) + (isExpanded ? 8 : 6),
-        backgroundColor: materialYouStyleLayoutActive ? composerPanel : undefined,
+        backgroundColor: materialYouStyleLayoutActive
+          ? themeColorWithAlpha(composerPanel, 1)
+          : undefined,
       }}
     >
       {/* The backdrop gradient lives on a plain View: Reanimated's Animated.View

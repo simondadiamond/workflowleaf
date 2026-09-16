@@ -3,7 +3,7 @@ import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
-import { AppText } from "../../components/AppText";
+import { MaterialNewThreadButton } from "../../components/MaterialNewThreadButton";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 /**
@@ -13,6 +13,7 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 export function AndroidHomeFabLayout(props: {
   readonly onStartNewTask: () => void;
   readonly children: ReactNode;
+  readonly sidebar?: boolean;
 }) {
   if (Platform.OS !== "android") {
     return <>{props.children}</>;
@@ -24,37 +25,41 @@ export function AndroidHomeFabLayout(props: {
 function AndroidHomeFab(props: {
   readonly onStartNewTask: () => void;
   readonly children: ReactNode;
+  readonly sidebar?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
     <View className="flex-1">
       {props.children}
-      <Pressable
-        accessibilityLabel={materialYouStyleLayoutActive ? "New thread" : "New task"}
-        accessibilityRole="button"
-        onPress={props.onStartNewTask}
-        className={
-          materialYouStyleLayoutActive
-            ? "absolute right-5 h-[56px] flex-row items-center justify-center gap-[8px] rounded-[16px] bg-primary px-[16px] shadow-lg"
-            : "absolute right-5 size-14 items-center justify-center rounded-full bg-primary shadow-lg"
-        }
-        style={{
-          bottom: Math.max(insets.bottom, 16) + 16,
-        }}
-      >
-        <SymbolView
-          name="square.and.pencil"
-          size={materialYouStyleLayoutActive ? 24 : 22}
-          tintColorClassName={"accent-primary-foreground"}
-          type="monochrome"
+      {materialYouStyleLayoutActive ? (
+        <MaterialNewThreadButton
+          extended
+          onPress={props.onStartNewTask}
+          className="absolute right-5"
+          style={{
+            // Match the adjacent collapsed composer's safe inset and 6dp padding.
+            bottom: props.sidebar
+              ? Math.max(insets.bottom, 12) + 6
+              : Math.max(insets.bottom, 16) + 16,
+          }}
         />
-        {materialYouStyleLayoutActive ? (
-          <AppText className="text-[16px] font-t3-medium text-primary-foreground">
-            New thread
-          </AppText>
-        ) : null}
-      </Pressable>
+      ) : (
+        <Pressable
+          accessibilityLabel="New task"
+          accessibilityRole="button"
+          onPress={props.onStartNewTask}
+          className="absolute right-5 size-14 items-center justify-center rounded-full bg-primary shadow-lg"
+          style={{ bottom: Math.max(insets.bottom, 16) + 16 }}
+        >
+          <SymbolView
+            name="square.and.pencil"
+            size={22}
+            tintColorClassName={"accent-primary-foreground"}
+            type="monochrome"
+          />
+        </Pressable>
+      )}
     </View>
   );
 }

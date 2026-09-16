@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/AppText";
 import { cn } from "../../../lib/cn";
+import { useAppearancePreferences } from "../../settings/appearance/AppearancePreferencesProvider";
 
 /* ─── Shared sheet components ──────────────────────────────────────── */
 
@@ -13,6 +14,7 @@ export function SheetActionButton(props: {
   readonly tone?: "primary" | "secondary" | "danger";
   readonly onPress: () => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const tone = props.tone ?? "secondary";
   const textColorClassName =
     tone === "primary"
@@ -24,25 +26,28 @@ export function SheetActionButton(props: {
   return (
     <Pressable
       className={cn(
-        "min-h-[48px] flex-1 flex-row items-center justify-center gap-2 rounded-[18px] px-4 py-3 disabled:opacity-[0.45]",
-        tone === "primary"
-          ? "bg-primary"
-          : tone === "danger"
-            ? "border border-danger-border bg-danger"
-            : "border border-secondary-border bg-secondary",
+        "min-h-[48px] flex-row items-center justify-center gap-2 px-4 py-3 disabled:opacity-[0.45]",
+        materialYouStyleLayoutActive ? "rounded-full" : "flex-1 rounded-[18px]",
+        tone === "primary" ? "bg-primary" : tone === "danger" ? "bg-danger" : "bg-secondary",
+        !materialYouStyleLayoutActive &&
+          tone !== "primary" &&
+          (tone === "danger" ? "border border-danger-border" : "border border-secondary-border"),
       )}
+      accessibilityRole="button"
       disabled={props.disabled}
       onPress={props.onPress}
     >
       <SymbolView
         name={props.icon}
-        size={16}
+        size={materialYouStyleLayoutActive ? 20 : 16}
         tintColorClassName={textColorClassName}
         type="monochrome"
       />
       <Text
         className={cn(
-          "text-xs font-t3-bold tracking-[0.9px] uppercase",
+          materialYouStyleLayoutActive
+            ? "shrink text-center text-sm font-t3-medium"
+            : "text-xs font-t3-bold tracking-[0.9px] uppercase",
           tone === "primary"
             ? "text-primary-foreground"
             : tone === "danger"
@@ -57,8 +62,15 @@ export function SheetActionButton(props: {
 }
 
 export function MetaCard(props: { readonly label: string; readonly value: string }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
-    <View className="rounded-[18px] border border-border bg-card px-4 py-3">
+    <View
+      className={
+        materialYouStyleLayoutActive
+          ? "rounded-[20px] bg-card px-4 py-3"
+          : "rounded-[18px] border border-border bg-card px-4 py-3"
+      }
+    >
       <Text className="text-foreground-muted text-2xs font-t3-bold tracking-[0.9px] uppercase">
         {props.label}
       </Text>
@@ -76,32 +88,53 @@ export function SheetListRow(props: {
   readonly disabled?: boolean;
   readonly onPress: () => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
     <Pressable
-      className="flex-row items-center gap-3 px-1 py-3 disabled:opacity-[0.45]"
+      className={
+        materialYouStyleLayoutActive
+          ? "min-h-16 flex-row items-center gap-4 px-4 py-3 active:bg-subtle disabled:opacity-[0.45]"
+          : "flex-row items-center gap-3 px-1 py-3 disabled:opacity-[0.45]"
+      }
       disabled={props.disabled}
       onPress={props.onPress}
     >
-      <View className="bg-subtle h-9 w-9 items-center justify-center rounded-full">
+      <View
+        className={
+          materialYouStyleLayoutActive
+            ? "size-6 items-center justify-center"
+            : "bg-subtle h-9 w-9 items-center justify-center rounded-full"
+        }
+      >
         <SymbolView
           name={props.icon}
-          size={16}
+          size={materialYouStyleLayoutActive ? 24 : 16}
           tintColorClassName={"accent-icon"}
           type="monochrome"
         />
       </View>
       <View className="flex-1 gap-0.5">
-        <Text className="text-foreground text-base font-t3-bold">{props.title}</Text>
+        <Text
+          className={
+            materialYouStyleLayoutActive
+              ? "text-foreground text-base font-t3-medium"
+              : "text-foreground text-base font-t3-bold"
+          }
+        >
+          {props.title}
+        </Text>
         {props.subtitle ? (
           <Text className="text-foreground-muted text-xs leading-snug">{props.subtitle}</Text>
         ) : null}
       </View>
-      <SymbolView
-        name="chevron.right"
-        size={13}
-        tintColorClassName={"accent-icon-subtle"}
-        type="monochrome"
-      />
+      {!materialYouStyleLayoutActive ? (
+        <SymbolView
+          name="chevron.right"
+          size={13}
+          tintColorClassName={"accent-icon-subtle"}
+          type="monochrome"
+        />
+      ) : null}
     </Pressable>
   );
 }

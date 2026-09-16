@@ -759,7 +759,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
             : pressed || hovered
               ? effectivePressedBackground
               : backgroundColor,
-          borderRadius: materialYouStyleLayoutActive ? 28 : SIDEBAR_ROW_RADIUS,
+          borderRadius: materialYouStyleLayoutActive ? 20 : SIDEBAR_ROW_RADIUS,
           cursor: "pointer",
           minHeight: 64,
           justifyContent: "center",
@@ -820,7 +820,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       backgroundColor={backgroundColor}
       containerStyle={
         materialYouStyleLayoutActive
-          ? { borderRadius: 28, overflow: "hidden", marginHorizontal: 8, marginVertical: 2 }
+          ? { borderRadius: 20, overflow: "hidden", marginHorizontal: 8, marginVertical: 2 }
           : compact
             ? undefined
             : { borderRadius: SIDEBAR_ROW_RADIUS, overflow: "hidden" }

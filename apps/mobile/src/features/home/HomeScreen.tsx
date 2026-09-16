@@ -1123,34 +1123,65 @@ export function HomeScreen(props: HomeScreenProps) {
 
   const listEmpty = !hasResults ? (
     hasSearchQuery && threadSearch.isPending ? null : hasSearchQuery ? (
-      <EmptyState title="No results" detail={`No threads matching "${props.searchQuery}".`} />
+      <EmptyState
+        title="No results"
+        detail={`No threads matching "${props.searchQuery}".`}
+        variant={materialYouStyleLayoutActive ? "plain" : undefined}
+      />
     ) : selectedProjectScope !== null ? (
       <EmptyState
         title={`No threads in ${selectedProjectScope.title}`}
         detail="Choose another project or create a new task."
+        variant={materialYouStyleLayoutActive ? "plain" : undefined}
       />
     ) : selectedEnvironmentLabel ? (
       <EmptyState
         title={`No threads in ${selectedEnvironmentLabel}`}
         detail="Choose another environment or create a new task."
+        variant={materialYouStyleLayoutActive ? "plain" : undefined}
       />
     ) : (
-      <EmptyState title="No threads yet" detail="Create a task to start a new coding session." />
+      <EmptyState
+        title="No threads yet"
+        detail="Create a task to start a new coding session."
+        variant={materialYouStyleLayoutActive ? "plain" : undefined}
+      />
     )
   ) : null;
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
   const v2ListEmpty =
     hasSearchQuery && threadSearch.isPending ? null : hasSearchQuery ? (
-      <EmptyState title="No results" detail={`No threads matching "${props.searchQuery}".`} />
+      <EmptyState
+        title="No results"
+        detail={`No threads matching "${props.searchQuery}".`}
+        variant={materialYouStyleLayoutActive ? "plain" : undefined}
+      />
     ) : v2ScopedProjectGroup !== null ? (
       <EmptyState
         title={`No threads in ${v2ScopedProjectGroup.title}`}
         detail="Choose another project or create a new task."
+        variant={materialYouStyleLayoutActive ? "plain" : undefined}
       />
     ) : (
       listEmpty
     );
+
+  if (
+    materialYouStyleLayoutActive &&
+    (threadListV2Enabled ? threadListV2Items.length === 0 : listLayout.items.length === 0)
+  ) {
+    return (
+      <View className="flex-1 bg-header">
+        <View
+          className="flex-1 items-center justify-center overflow-hidden rounded-t-[28px] bg-screen px-4"
+          style={{ paddingBottom: insets.bottom }}
+        >
+          {threadListV2Enabled ? v2ListEmpty : listEmpty}
+        </View>
+      </View>
+    );
+  }
 
   if (threadListV2Enabled) {
     return (

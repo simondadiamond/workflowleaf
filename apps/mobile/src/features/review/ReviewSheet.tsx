@@ -35,6 +35,8 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { AndroidHeaderIconButton, AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ControlPillMenu } from "../../components/ControlPill";
+import { MaterialScreenContent } from "../../components/MaterialScreenContent";
+import { cn } from "../../lib/cn";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -80,8 +82,14 @@ const REVIEW_HEADER_SPACING = 0;
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
 const ReviewNotice = memo(function ReviewNotice(props: { readonly notice: string }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
-    <View className="border-b border-warning-border bg-warning px-4 py-3">
+    <View
+      className={cn(
+        "bg-warning px-4 py-3",
+        materialYouStyleLayoutActive ? "m-2 rounded-[20px]" : "border-b border-warning-border",
+      )}
+    >
       <Text className="text-xs font-t3-bold uppercase text-warning-foreground">Partial diff</Text>
       <Text className="text-xs leading-normal text-warning-foreground">{props.notice}</Text>
     </View>
@@ -164,6 +172,7 @@ const ReviewFileNavigatorRow = memo(function ReviewFileNavigatorRow(props: {
   readonly onSelectFile: (fileId: string | null) => void;
 }) {
   const { file, selected, onSelectFile } = props;
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   // Tapping the selected file again returns to the all-files diff.
   const handlePress = useCallback(() => {
     onSelectFile(selected ? null : file.id);
@@ -174,9 +183,14 @@ const ReviewFileNavigatorRow = memo(function ReviewFileNavigatorRow(props: {
       accessibilityRole="button"
       accessibilityState={{ selected }}
       className={
-        selected
-          ? "mt-1 min-h-12 justify-center rounded-xl bg-subtle-strong px-3 py-2"
-          : "mt-1 min-h-12 justify-center rounded-xl px-3 py-2 active:bg-subtle"
+        materialYouStyleLayoutActive
+          ? cn(
+              "mt-1 min-h-12 justify-center rounded-[20px] px-3 py-2 active:bg-subtle",
+              selected && "bg-thread-selected",
+            )
+          : selected
+            ? "mt-1 min-h-12 justify-center rounded-xl bg-subtle-strong px-3 py-2"
+            : "mt-1 min-h-12 justify-center rounded-xl px-3 py-2 active:bg-subtle"
       }
       onPress={handlePress}
     >
@@ -219,6 +233,7 @@ function ReviewFileNavigator({
 }: ReviewFileNavigatorProps) {
   const insets = useSafeAreaInsets();
   const theme = useUniwindTheme();
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const sheetColor = theme["--color-sheet"];
   const foregroundColor = theme["--color-foreground"];
   const headerScrollEdgeEffects = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -323,16 +338,28 @@ function ReviewFileNavigator({
   }
 
   return (
-    <View className="flex-1 border-l border-border bg-sheet">
-      <View className="border-b border-border" style={{ paddingTop: headerInset }}>
-        <View className="px-4 py-3">
-          <Text className="text-sm font-t3-bold text-foreground">Changed files</Text>
-          <Text className="text-xs text-foreground-muted">
-            {files.length} {files.length === 1 ? "file" : "files"}
-          </Text>
+    <View
+      className={
+        materialYouStyleLayoutActive ? "flex-1 bg-header" : "flex-1 border-l border-border bg-sheet"
+      }
+    >
+      {materialYouStyleLayoutActive ? (
+        <AndroidScreenHeader
+          title="Changed files"
+          subtitle={`${files.length} ${files.length === 1 ? "file" : "files"}`}
+          hideBottomBorder
+        />
+      ) : (
+        <View className="border-b border-border" style={{ paddingTop: headerInset }}>
+          <View className="px-4 py-3">
+            <Text className="text-sm font-t3-bold text-foreground">Changed files</Text>
+            <Text className="text-xs text-foreground-muted">
+              {files.length} {files.length === 1 ? "file" : "files"}
+            </Text>
+          </View>
         </View>
-      </View>
-      {fileList}
+      )}
+      <MaterialScreenContent insetHorizontal>{fileList}</MaterialScreenContent>
     </View>
   );
 }
@@ -349,7 +376,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const { panes, showAuxiliaryPane, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { themeAppearance: selectedTheme } = useAppearancePreferences();
+  const { themeAppearance: selectedTheme, materialYouStyleLayoutActive } =
+    useAppearancePreferences();
   const headerIcon = String(useUniwindTheme()["--color-icon"]);
   const { environmentId, threadId } = props.route.params;
   const environment = useEnvironmentPresentation(environmentId);
@@ -629,7 +657,13 @@ export function ReviewSheet(props: ReviewSheetProps) {
 
     if (error) {
       children.push(
-        <View key="review-error" className="border-b border-border bg-card px-4 py-3">
+        <View
+          key="review-error"
+          className={cn(
+            "bg-card px-4 py-3",
+            materialYouStyleLayoutActive ? "m-2 rounded-[20px]" : "border-b border-border",
+          )}
+        >
           <Text className="text-sm font-t3-bold text-foreground">Review unavailable</Text>
           <Text className="text-xs leading-normal text-foreground-muted">{error}</Text>
         </View>,
@@ -645,7 +679,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     }
 
     return <>{children}</>;
-  }, [error, parsedDiffNotice]);
+  }, [error, parsedDiffNotice, materialYouStyleLayoutActive]);
   const headerSubtitle = [
     headerDiffSummary.additions,
     headerDiffSummary.deletions,
@@ -680,6 +714,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
       {isAndroid ? (
         <AndroidScreenHeader
           title="Review changes"
+          hideBottomBorder={materialYouStyleLayoutActive}
           subtitle={androidHeaderSubtitle || "Select a diff"}
           onBack={handleReturnToThread}
           trailing={
@@ -786,141 +821,187 @@ export function ReviewSheet(props: ReviewSheetProps) {
         </NativeHeaderToolbar>
       ) : null}
 
-      <View className="flex-1 bg-sheet">
-        {showConnectionNotice ? (
-          <View className="flex-1" style={{ paddingTop: topContentInset }}>
-            <EnvironmentConnectionNotice
-              environmentLabel={environment.presentation?.entry.target.label ?? "Environment"}
-              connection={
-                environment.presentation?.connection ?? {
-                  phase: "available",
-                  error: null,
-                  traceId: null,
+      <MaterialScreenContent>
+        <View
+          className={materialYouStyleLayoutActive ? "flex-1 bg-sheet-solid" : "flex-1 bg-sheet"}
+        >
+          {showConnectionNotice ? (
+            <View className="flex-1" style={{ paddingTop: topContentInset }}>
+              <EnvironmentConnectionNotice
+                environmentLabel={environment.presentation?.entry.target.label ?? "Environment"}
+                connection={
+                  environment.presentation?.connection ?? {
+                    phase: "available",
+                    error: null,
+                    traceId: null,
+                  }
                 }
-              }
-              resourceName="review"
-              onRetry={handleRetryEnvironment}
-            />
-          </View>
-        ) : selectedSection && parsedDiff.kind === "files" && NativeReviewDiffView ? (
-          <View
-            className="flex-1"
-            style={{
-              backgroundColor: nativeBridge.theme.background,
-            }}
-          >
+                resourceName="review"
+                onRetry={handleRetryEnvironment}
+              />
+            </View>
+          ) : selectedSection && parsedDiff.kind === "files" && NativeReviewDiffView ? (
             <View
-              className="min-w-0 flex-1"
-              style={{ paddingTop: topContentInset + REVIEW_HEADER_SPACING }}
+              className="flex-1"
+              style={{
+                backgroundColor: nativeBridge.theme.background,
+              }}
             >
-              {listHeader}
-              <View className="min-w-0 flex-1" collapsable={false}>
-                <NativeReviewDiffView
-                  collapsable={false}
-                  testID="review-native-diff-view"
-                  refreshing={isPullRefreshing}
-                  onPullToRefresh={() => void handlePullToRefresh()}
-                  style={StyleSheet.absoluteFill}
-                  appearanceScheme={selectedTheme}
-                  collapsedFileIdsJson={nativeBridge.collapsedFileIdsJson}
-                  collapsedCommentIdsJson={nativeBridge.collapsedCommentIdsJson}
-                  contentResetKey={`${reviewCache.threadKey}:${selectedSection.id}`}
-                  contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}
-                  nativeViewRef={nativeReviewDiffViewRef}
-                  rowHeight={nativeReviewDiffStyle.rowHeight}
-                  rowsJson={nativeBridge.rowsJson}
-                  selectedRowIdsJson={nativeBridge.selectedRowIdsJson}
-                  styleJson={nativeBridge.styleJson}
-                  themeJson={nativeBridge.themeJson}
-                  tokensPatchJson={nativeBridge.tokensPatchJson}
-                  tokensResetKey={nativeBridge.tokensResetKey}
-                  viewedFileIdsJson={nativeBridge.viewedFileIdsJson}
-                  onDebug={handleNativeDebug}
-                  onPressLine={commentSelection.onPressLine}
-                  onVisibleFileChange={handleVisibleFileChange}
-                  onToggleComment={nativeBridge.onToggleComment}
-                  onToggleFile={handleNativeToggleFile}
-                  onToggleViewedFile={handleNativeToggleViewedFile}
-                />
+              <View
+                className="min-w-0 flex-1"
+                style={{ paddingTop: topContentInset + REVIEW_HEADER_SPACING }}
+              >
+                {listHeader}
+                <View className="min-w-0 flex-1" collapsable={false}>
+                  <NativeReviewDiffView
+                    collapsable={false}
+                    testID="review-native-diff-view"
+                    refreshing={isPullRefreshing}
+                    onPullToRefresh={() => void handlePullToRefresh()}
+                    style={StyleSheet.absoluteFill}
+                    appearanceScheme={selectedTheme}
+                    collapsedFileIdsJson={nativeBridge.collapsedFileIdsJson}
+                    collapsedCommentIdsJson={nativeBridge.collapsedCommentIdsJson}
+                    contentResetKey={`${reviewCache.threadKey}:${selectedSection.id}`}
+                    contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}
+                    nativeViewRef={nativeReviewDiffViewRef}
+                    rowHeight={nativeReviewDiffStyle.rowHeight}
+                    rowsJson={nativeBridge.rowsJson}
+                    selectedRowIdsJson={nativeBridge.selectedRowIdsJson}
+                    styleJson={nativeBridge.styleJson}
+                    themeJson={nativeBridge.themeJson}
+                    tokensPatchJson={nativeBridge.tokensPatchJson}
+                    tokensResetKey={nativeBridge.tokensResetKey}
+                    viewedFileIdsJson={nativeBridge.viewedFileIdsJson}
+                    onDebug={handleNativeDebug}
+                    onPressLine={commentSelection.onPressLine}
+                    onVisibleFileChange={handleVisibleFileChange}
+                    onToggleComment={nativeBridge.onToggleComment}
+                    onToggleFile={handleNativeToggleFile}
+                    onToggleViewedFile={handleNativeToggleViewedFile}
+                  />
+                </View>
               </View>
             </View>
-          </View>
-        ) : (
-          <ScrollView
-            contentInsetAdjustmentBehavior="never"
-            contentInset={{ top: topContentInset, bottom: Math.max(insets.bottom, 18) + 18 }}
-            contentOffset={{ x: 0, y: -topContentInset }}
-            scrollIndicatorInsets={{
-              top: topContentInset,
-              bottom: Math.max(insets.bottom, 18) + 18,
-            }}
-            showsVerticalScrollIndicator={false}
-            className="flex-1"
-            refreshControl={
-              // The native diff surface owns pull-to-refresh via onPullToRefresh;
-              // the raw fallback (and empty states) need an explicit control —
-              // iOS has no other refresh affordance here (the explicit
-              // "Refresh current diff" menu is Android-only).
-              <RefreshControl
-                refreshing={isPullRefreshing}
-                onRefresh={() => void handlePullToRefresh()}
-              />
-            }
-          >
-            {listHeader}
-            {!selectedSection ? (
-              <View className="border-b border-border bg-card px-4 py-5">
-                <Text className="text-sm font-t3-bold text-foreground">No review diffs</Text>
-                <Text className="text-xs leading-normal text-foreground-muted">
-                  This thread has no ready turn diffs and the worktree diff is empty.
-                </Text>
-              </View>
-            ) : selectedSection.isLoading && selectedSection.diff === null ? (
-              <View className="items-center gap-3 border-b border-border bg-card px-4 py-6">
-                <ActivityIndicator size="small" />
-                <Text className="text-xs text-foreground-muted">Loading diff…</Text>
-              </View>
-            ) : parsedDiff.kind === "empty" ? (
-              <View className="border-b border-border bg-card px-4 py-5">
-                <Text className="text-sm font-t3-bold text-foreground">No changes</Text>
-                <Text className="text-xs leading-normal text-foreground-muted">
-                  {selectedSection.subtitle ?? "This diff is empty."}
-                </Text>
-              </View>
-            ) : parsedDiff.kind === "raw" ? (
-              <View className="gap-3 border-b border-border bg-card px-4 py-4">
-                <Text className="text-xs leading-normal text-foreground-muted">
-                  {parsedDiff.reason}
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
-                  <Text selectable className="font-mono text-xs leading-relaxed text-foreground">
-                    {parsedDiff.text}
+          ) : (
+            <ScrollView
+              contentContainerStyle={
+                materialYouStyleLayoutActive && (parsedDiff.kind === "empty" || !selectedSection)
+                  ? { flexGrow: 1, justifyContent: "center" }
+                  : undefined
+              }
+              contentInsetAdjustmentBehavior="never"
+              contentInset={{ top: topContentInset, bottom: Math.max(insets.bottom, 18) + 18 }}
+              contentOffset={{ x: 0, y: -topContentInset }}
+              scrollIndicatorInsets={{
+                top: topContentInset,
+                bottom: Math.max(insets.bottom, 18) + 18,
+              }}
+              showsVerticalScrollIndicator={false}
+              className="flex-1"
+              refreshControl={
+                // The native diff surface owns pull-to-refresh via onPullToRefresh;
+                // the raw fallback (and empty states) need an explicit control —
+                // iOS has no other refresh affordance here (the explicit
+                // "Refresh current diff" menu is Android-only).
+                <RefreshControl
+                  refreshing={isPullRefreshing}
+                  onRefresh={() => void handlePullToRefresh()}
+                />
+              }
+            >
+              {listHeader}
+              {!selectedSection ? (
+                <View
+                  className={
+                    materialYouStyleLayoutActive
+                      ? "items-center px-6 py-5"
+                      : "border-b border-border bg-card px-4 py-5"
+                  }
+                >
+                  <Text className="text-sm font-t3-bold text-foreground">No review diffs</Text>
+                  <Text
+                    className={cn(
+                      "text-xs leading-normal text-foreground-muted",
+                      materialYouStyleLayoutActive && "mt-2 text-center",
+                    )}
+                  >
+                    This thread has no ready turn diffs and the worktree diff is empty.
                   </Text>
-                </ScrollView>
-              </View>
-            ) : parsedDiff.kind === "files" ? (
-              // The native diff surface could not be resolved on this binary;
-              // degrade to the raw patch instead of crashing the app.
-              <View className="gap-3 border-b border-border bg-card px-4 py-4">
-                <Text className="text-xs leading-normal text-foreground-muted">
-                  Native diff view unavailable. Showing the raw patch.
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
-                  <Text selectable className="font-mono text-xs leading-relaxed text-foreground">
-                    {selectedSection?.diff ?? ""}
+                </View>
+              ) : selectedSection.isLoading && selectedSection.diff === null ? (
+                <View
+                  className={cn(
+                    "items-center gap-3 px-4 py-6",
+                    !materialYouStyleLayoutActive && "border-b border-border bg-card",
+                  )}
+                >
+                  <ActivityIndicator size="small" />
+                  <Text className="text-xs text-foreground-muted">Loading diff…</Text>
+                </View>
+              ) : parsedDiff.kind === "empty" ? (
+                <View
+                  className={
+                    materialYouStyleLayoutActive
+                      ? "items-center px-6 py-5"
+                      : "border-b border-border bg-card px-4 py-5"
+                  }
+                >
+                  <Text className="text-sm font-t3-bold text-foreground">No changes</Text>
+                  <Text
+                    className={cn(
+                      "text-xs leading-normal text-foreground-muted",
+                      materialYouStyleLayoutActive && "mt-2 text-center",
+                    )}
+                  >
+                    {selectedSection.subtitle ?? "This diff is empty."}
                   </Text>
-                </ScrollView>
-              </View>
-            ) : null}
-          </ScrollView>
-        )}
-        <ReviewSelectionActionBar
-          bottomInset={insets.bottom}
-          title={commentSelection.selectionAction?.title ?? null}
-          onOpenComment={commentSelection.selectionAction?.onOpenComment ?? null}
-          onClear={commentSelection.clearSelection}
-        />
-      </View>
+                </View>
+              ) : parsedDiff.kind === "raw" ? (
+                <View
+                  className={cn(
+                    "gap-3 bg-card px-4 py-4",
+                    materialYouStyleLayoutActive ? "m-2 rounded-[20px]" : "border-b border-border",
+                  )}
+                >
+                  <Text className="text-xs leading-normal text-foreground-muted">
+                    {parsedDiff.reason}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
+                    <Text selectable className="font-mono text-xs leading-relaxed text-foreground">
+                      {parsedDiff.text}
+                    </Text>
+                  </ScrollView>
+                </View>
+              ) : parsedDiff.kind === "files" ? (
+                // The native diff surface could not be resolved on this binary;
+                // degrade to the raw patch instead of crashing the app.
+                <View
+                  className={cn(
+                    "gap-3 bg-card px-4 py-4",
+                    materialYouStyleLayoutActive ? "m-2 rounded-[20px]" : "border-b border-border",
+                  )}
+                >
+                  <Text className="text-xs leading-normal text-foreground-muted">
+                    Native diff view unavailable. Showing the raw patch.
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
+                    <Text selectable className="font-mono text-xs leading-relaxed text-foreground">
+                      {selectedSection?.diff ?? ""}
+                    </Text>
+                  </ScrollView>
+                </View>
+              ) : null}
+            </ScrollView>
+          )}
+          <ReviewSelectionActionBar
+            bottomInset={insets.bottom}
+            title={commentSelection.selectionAction?.title ?? null}
+            onOpenComment={commentSelection.selectionAction?.onOpenComment ?? null}
+            onClear={commentSelection.clearSelection}
+          />
+        </View>
+      </MaterialScreenContent>
     </>
   );
 }

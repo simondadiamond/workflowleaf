@@ -3,20 +3,11 @@ import type { ComponentProps, ReactNode } from "react";
 import { Platform, View } from "react-native";
 
 import { AndroidScreenHeader } from "../../../components/AndroidScreenHeader";
+import { MaterialScreenContent as SettingsScreenContent } from "../../../components/MaterialScreenContent";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { useAppearancePreferences } from "../appearance/AppearancePreferencesProvider";
 
-/** Clips scrolling settings content below the header, leaving the shared frame behind its corners. */
-export function SettingsScreenContent({ children }: { readonly children: ReactNode }) {
-  const { materialYouStyleLayoutActive } = useAppearancePreferences();
-  if (!materialYouStyleLayoutActive) return children;
-
-  return (
-    <View className="flex-1 bg-header">
-      <View className="flex-1 overflow-hidden rounded-t-[28px] bg-sheet-solid">{children}</View>
-    </View>
-  );
-}
+export { SettingsScreenContent };
 
 export function SettingsScreen(
   props: Pick<ComponentProps<typeof AndroidScreenHeader>, "title" | "actions" | "trailing"> & {

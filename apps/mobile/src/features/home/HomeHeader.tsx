@@ -312,6 +312,11 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               onChangeText={props.onSearchQueryChange}
               placeholder="Search threads"
               placeholderTextColorClassName="accent-placeholder"
+              selectionColorClassName={Platform.OS === "android" ? "accent-primary/32" : undefined}
+              cursorColorClassName={Platform.OS === "android" ? "accent-primary" : undefined}
+              selectionHandleColorClassName={
+                Platform.OS === "android" ? "accent-primary" : undefined
+              }
               className="flex-1 py-2.5 text-base font-sans text-foreground"
               value={props.searchQuery}
             />
