@@ -35,9 +35,11 @@ import { vcsEnvironment } from "../../state/vcs";
 
 import { EmptyState } from "../../components/EmptyState";
 import {
+  AndroidHeaderIconButton,
   AndroidScreenHeader,
   type AndroidHeaderAction,
 } from "../../components/AndroidScreenHeader";
+import { AndroidWorkspaceSidebarButton } from "../layout/workspace-sidebar-toolbar";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
@@ -766,22 +768,13 @@ function ThreadRouteContent(
       icon: "point.topleft.down.curvedto.point.bottomright.up",
       onPress: handleOpenGitInspector,
     });
-    if (fileInspector.supported && selectedThreadCwd !== null) {
-      actions.push({
-        accessibilityLabel: "Toggle inspector",
-        icon: "sidebar.right",
-        onPress: handleToggleInspector,
-      });
-    }
     return actions;
   }, [
-    fileInspector.supported,
     inspectorMode,
     panes.auxiliaryPaneVisible,
     handleOpenFilesInspector,
     handleOpenTerminal,
     handleOpenGitInspector,
-    handleToggleInspector,
     toggleAuxiliaryPane,
     props.onReturnToThread,
     selectedThreadCwd,
@@ -1010,6 +1003,21 @@ function ThreadRouteContent(
         <AndroidScreenHeader
           title={selectedThread.title}
           subtitle={headerSubtitle}
+          leading={<AndroidWorkspaceSidebarButton />}
+          trailing={
+            fileInspector.supported && selectedThreadCwd !== null ? (
+              <AndroidHeaderIconButton
+                accessibilityLabel={
+                  inspectorMode !== null && panes.auxiliaryPaneVisible
+                    ? "Hide inspector"
+                    : "Show inspector"
+                }
+                icon="sidebar.right"
+                selected={inspectorMode !== null && panes.auxiliaryPaneVisible}
+                onPress={handleToggleInspector}
+              />
+            ) : null
+          }
           onBack={
             layout.usesSplitView
               ? undefined

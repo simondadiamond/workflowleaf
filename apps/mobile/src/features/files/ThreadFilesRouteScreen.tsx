@@ -44,7 +44,10 @@ import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
-import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
+import {
+  AndroidWorkspaceSidebarButton,
+  WorkspaceSidebarToolbar,
+} from "../layout/workspace-sidebar-toolbar";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
@@ -489,6 +492,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
           {materialYouStyleLayoutActive ? (
             <MaterialFilesHeader
               projectName={projectName}
+              leading={<AndroidWorkspaceSidebarButton />}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
               onRefresh={entriesQuery.refresh}
@@ -498,6 +502,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
             <AndroidScreenHeader
               title="Files"
               subtitle={projectName}
+              leading={<AndroidWorkspaceSidebarButton />}
               onBack={handleReturnToThread}
               actions={[
                 {
@@ -938,6 +943,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         <AndroidScreenHeader
           title={basename(relativePath)}
           subtitle={headerSubtitle}
+          leading={<AndroidWorkspaceSidebarButton />}
           hideBottomBorder={materialYouStyleLayoutActive}
           onBack={handleBack}
           trailing={
@@ -948,6 +954,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
                     panes.auxiliaryPaneVisible ? "Hide file navigator" : "Show file navigator"
                   }
                   icon="sidebar.right"
+                  selected={panes.auxiliaryPaneVisible}
                   onPress={toggleAuxiliaryPane}
                 />
               ) : null}

@@ -54,6 +54,7 @@ import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadDetail } from "../../state/use-thread-detail";
 import { EnvironmentConnectionNotice } from "../connection/EnvironmentConnectionNotice";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { AndroidWorkspaceSidebarButton } from "../layout/workspace-sidebar-toolbar";
 import { TerminalSurface } from "./NativeTerminalSurface";
 import { getMobileTerminalTheme } from "./terminalTheme";
 import { terminalDebugLog } from "./terminalDebugLog";
@@ -1189,22 +1190,10 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         <AndroidScreenHeader
           title="Terminal"
           subtitle={headerSubtitle}
+          leading={<AndroidWorkspaceSidebarButton />}
           onBack={handleCloseTerminal}
           trailing={
             <>
-              {layout.usesSplitView ? (
-                <AndroidHeaderIconButton
-                  accessibilityLabel={
-                    panes.primarySidebarVisible ? "Maximize terminal" : "Show threads"
-                  }
-                  icon={
-                    panes.primarySidebarVisible
-                      ? "arrow.up.left.and.arrow.down.right"
-                      : "sidebar.left"
-                  }
-                  onPress={togglePrimarySidebar}
-                />
-              ) : null}
               {isEnvironmentReady ? (
                 <ControlPillMenu
                   actions={androidTerminalMenuActions}

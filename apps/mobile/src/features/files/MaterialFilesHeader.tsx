@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BackHandler, Keyboard, Pressable, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,7 @@ export function MaterialFilesHeader(props: {
   readonly onSearchQueryChange: (query: string) => void;
   readonly onRefresh: () => void;
   readonly onBack?: () => void;
+  readonly leading?: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const searchRef = useRef<TextInput>(null);
@@ -40,6 +41,7 @@ export function MaterialFilesHeader(props: {
         subtitle={props.projectName}
         hideBottomBorder
         onBack={props.onBack}
+        leading={props.leading}
         actions={[
           {
             accessibilityLabel: "Search files",

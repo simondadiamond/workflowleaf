@@ -56,7 +56,10 @@ import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-s
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { vcsEnvironment } from "../../state/vcs";
-import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
+import {
+  AndroidWorkspaceSidebarButton,
+  WorkspaceSidebarToolbar,
+} from "../layout/workspace-sidebar-toolbar";
 import { ThreadGitMenu } from "../threads/ThreadGitControls";
 import { useReviewCacheForThread } from "./reviewState";
 import {
@@ -641,16 +644,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
     parsedDiff.kind === "files" &&
     NativeReviewDiffView !== null;
   useRegisterWorkspaceInspector(showChangedFilesPane ? renderInspector : undefined);
-  // Raw fallback renders the patch inline with no inspector content, so the
-  // pane toggle would open an empty column — hide it in exactly that case.
-  const showChangedFilesToggle =
-    panes.supportsAuxiliaryPane &&
-    !(
-      !showConnectionNotice &&
-      selectedSection !== null &&
-      parsedDiff.kind === "files" &&
-      NativeReviewDiffView === null
-    );
+  // A toggle needs registered content; loading, errors and raw patches have no navigator pane.
+  const showChangedFilesToggle = panes.supportsAuxiliaryPane && showChangedFilesPane;
 
   const listHeader = useMemo(() => {
     const children: ReactElement[] = [];
@@ -714,22 +709,35 @@ export function ReviewSheet(props: ReviewSheetProps) {
       {isAndroid ? (
         <AndroidScreenHeader
           title="Review changes"
+          leading={<AndroidWorkspaceSidebarButton />}
           hideBottomBorder={materialYouStyleLayoutActive}
           subtitle={androidHeaderSubtitle || "Select a diff"}
           onBack={handleReturnToThread}
           trailing={
-            showSectionToolbar ? (
-              <ControlPillMenu
-                actions={androidSectionMenuActions}
-                isAnchoredToRight
-                onPressAction={handleAndroidSectionMenuAction}
-              >
+            <>
+              {showChangedFilesToggle ? (
                 <AndroidHeaderIconButton
-                  accessibilityLabel="Select review diff"
-                  icon="ellipsis.circle"
+                  accessibilityLabel={
+                    panes.auxiliaryPaneVisible ? "Hide changed files" : "Show changed files"
+                  }
+                  icon="sidebar.right"
+                  selected={panes.auxiliaryPaneVisible}
+                  onPress={toggleAuxiliaryPane}
                 />
-              </ControlPillMenu>
-            ) : null
+              ) : null}
+              {showSectionToolbar ? (
+                <ControlPillMenu
+                  actions={androidSectionMenuActions}
+                  isAnchoredToRight
+                  onPressAction={handleAndroidSectionMenuAction}
+                >
+                  <AndroidHeaderIconButton
+                    accessibilityLabel="Select review diff"
+                    icon="ellipsis.circle"
+                  />
+                </ControlPillMenu>
+              ) : null}
+            </>
           }
         />
       ) : null}

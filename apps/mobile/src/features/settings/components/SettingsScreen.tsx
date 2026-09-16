@@ -6,6 +6,7 @@ import { AndroidScreenHeader } from "../../../components/AndroidScreenHeader";
 import { MaterialScreenContent as SettingsScreenContent } from "../../../components/MaterialScreenContent";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { useAppearancePreferences } from "../appearance/AppearancePreferencesProvider";
+import { AndroidWorkspaceSidebarButton } from "../../layout/workspace-sidebar-toolbar";
 
 export { SettingsScreenContent };
 
@@ -30,6 +31,7 @@ export function SettingsScreen(
           {showAndroidHeader ? (
             <AndroidScreenHeader
               title={props.title}
+              leading={props.formSheet ? undefined : <AndroidWorkspaceSidebarButton />}
               actions={props.actions}
               trailing={props.trailing}
               onBack={() => navigation.goBack()}

@@ -32,6 +32,7 @@ export function AndroidHeaderIconButton(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(props.disabled), selected: props.selected }}
       disabled={props.disabled}
       hitSlop={8}
       onPress={props.onPress}
@@ -54,6 +55,7 @@ export function AndroidScreenHeader(props: {
   readonly title: string;
   readonly subtitle?: string | null;
   readonly actions?: ReadonlyArray<AndroidHeaderAction>;
+  readonly leading?: ReactNode;
   readonly trailing?: ReactNode;
   readonly onBack?: () => void;
   readonly embedded?: boolean;
@@ -118,6 +120,8 @@ export function AndroidScreenHeader(props: {
             </Pressable>
           )
         ) : null}
+
+        {props.leading}
 
         <View className={cn("min-w-0 flex-1", !props.onBack && "pl-1")}>
           <Text
