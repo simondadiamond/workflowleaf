@@ -383,7 +383,7 @@ import {
 } from "./chat/ThreadErrorBanner";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { snoozeWakeDescription } from "./Sidebar.snooze";
-import { useServerUpdateAvailability } from "./BranchToolbarServerUpdate";
+import { useServerUpdateAvailability } from "./serverUpdateAvailability";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import {
   hasAvailableCompactionProvider,

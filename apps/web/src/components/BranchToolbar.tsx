@@ -40,10 +40,7 @@ import {
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
-import {
-  BranchToolbarServerUpdate,
-  useServerUpdateAvailability,
-} from "./BranchToolbarServerUpdate";
+import { useServerUpdateAvailability } from "./serverUpdateAvailability";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { Button } from "./ui/button";
 import {
@@ -632,8 +629,8 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker && onEnvironmentChange ? { onEnvironmentChange } : {})}
+                serverUpdate={serverUpdate}
               />
-              {serverUpdate ? <BranchToolbarServerUpdate update={serverUpdate} /> : null}
               {showGitControls ? (
                 <Separator
                   orientation="vertical"

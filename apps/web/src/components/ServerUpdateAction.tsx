@@ -45,10 +45,11 @@ export interface ServerUpdateTarget {
   readonly continueThreadsAfterServerUpdate?: boolean;
 }
 
-type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
+type UpdateButtonProps = Pick<
+  ComponentProps<typeof Button>,
+  "variant" | "size" | "className" | "aria-label" | "children"
+> & {
   readonly label?: string;
-  /** Label when the only path is copying the update command. Defaults to saying so. */
-  readonly manualLabel?: string;
   /** "icon" renders a compact icon button with the label in a tooltip. */
   readonly appearance?: "button" | "icon";
 };
@@ -196,11 +197,12 @@ export function ServerUpdateAction({
   threadContinuation = false,
   targetVersion,
   label = "Update",
-  manualLabel = "Copy update command",
   variant = "outline",
   size = "xs",
   className,
   appearance = "button",
+  "aria-label": ariaLabel,
+  children,
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const continueThreadsAfterServerUpdate = useEnvironmentSettings(
@@ -262,7 +264,7 @@ export function ServerUpdateAction({
   }
 
   const manualCommand = selfUpdate === null ? manualServerUpdateCommand(targetVersion) : null;
-  const actionLabel = manualCommand !== null ? manualLabel : label;
+  const actionLabel = manualCommand !== null ? "Copy update command" : label;
   const onClick =
     manualCommand !== null
       ? () => copyToClipboard(manualCommand, { command: manualCommand })
@@ -289,9 +291,17 @@ export function ServerUpdateAction({
     );
   }
 
+  // Children replace the label when the caller supplies the body, such as the
+  // context strip's server chip. The manual-copy case keeps its own name.
   return (
-    <Button size={size} variant={variant} className={className} onClick={onClick}>
-      {actionLabel}
+    <Button
+      size={size}
+      variant={variant}
+      className={className}
+      aria-label={ariaLabel ?? (children ? actionLabel : undefined)}
+      onClick={onClick}
+    >
+      {children ?? actionLabel}
     </Button>
   );
 }

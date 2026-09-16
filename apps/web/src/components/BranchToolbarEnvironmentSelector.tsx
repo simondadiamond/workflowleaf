@@ -1,10 +1,13 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ScaleIcon } from "lucide-react";
+import { CircleArrowUpIcon, ScaleIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import type { EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { ServerUpdateAction } from "./ServerUpdateAction";
 import { useComposerMenuProps } from "./chat/composerEventScope";
+import type { ServerUpdateAvailability } from "./serverUpdateAvailability";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   Select,
   SelectGroup,
@@ -24,6 +27,79 @@ interface BranchToolbarEnvironmentSelectorProps {
   // Absent when there is only one environment to show: the indicator still
   // renders (as a static label) so remote projects are always identifiable.
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
+  /**
+   * An update waiting on the active server. An up arrow takes the machine
+   * icon's place while it is pending, and where the chip is not a picker the
+   * chip itself becomes the update action.
+   */
+  serverUpdate?: ServerUpdateAvailability | null;
+}
+
+const CHIP_LABEL_CLASS = "min-w-0 max-w-[240px] group-data-[compact]/composer-context:max-w-0";
+const CHIP_LABEL_MOTION_CLASS =
+  "block w-full min-w-0 max-w-[240px] truncate transition-opacity duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none";
+
+function updateTooltip(update: ServerUpdateAvailability) {
+  const versions = `${update.serverLabel} runs ${update.serverVersion}, this client is ${update.targetVersion}.`;
+  if (update.selfUpdate === "desktop-managed" && !update.desktopAppUpdate) {
+    return `${versions} Update the desktop app on that machine.`;
+  }
+  return update.selfUpdate === null
+    ? `${versions} Click to copy the update command.`
+    : `${versions} Click to update.`;
+}
+
+/**
+ * The server chip while an update is pending. The arrow is the notice. The
+ * chip is the action, except when the only path is a desktop app the server
+ * cannot update for you, where it stays a label with the tooltip.
+ */
+function ServerUpdateChip({
+  update,
+  label,
+}: {
+  readonly update: ServerUpdateAvailability;
+  readonly label: string;
+}) {
+  const body = (
+    <>
+      <CircleArrowUpIcon aria-hidden="true" className="size-3 shrink-0 text-foreground" />
+      <span data-composer-label className={CHIP_LABEL_CLASS}>
+        <span data-composer-label-motion className={CHIP_LABEL_MOTION_CLASS}>
+          {label}
+        </span>
+      </span>
+    </>
+  );
+  const actionable = !(update.selfUpdate === "desktop-managed" && !update.desktopAppUpdate);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<span className="inline-flex min-w-0 max-w-full" data-composer-context-control />}
+      >
+        {actionable ? (
+          <ServerUpdateAction
+            environmentId={update.environmentId}
+            serverLabel={update.serverLabel}
+            selfUpdate={update.selfUpdate}
+            desktopAppUpdate={update.desktopAppUpdate}
+            threadContinuation={update.threadContinuation}
+            targetVersion={update.targetVersion}
+            variant="ghost"
+            size="xs"
+            className="min-w-0 max-w-full font-normal text-muted-foreground/70 text-xs! hover:text-foreground"
+          >
+            {body}
+          </ServerUpdateAction>
+        ) : (
+          <span className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6">
+            {body}
+          </span>
+        )}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{updateTooltip(update)}</TooltipPopup>
+    </Tooltip>
+  );
 }
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
@@ -33,6 +109,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   environmentId,
   availableEnvironments,
   onEnvironmentChange,
+  serverUpdate = null,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment = useMemo(() => {
@@ -58,6 +135,11 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   // a shorter label would drag the seam out of line whenever this label is the
   // only thing in the strip.
   if (envLocked || onEnvironmentChange === undefined) {
+    if (serverUpdate) {
+      return (
+        <ServerUpdateChip update={serverUpdate} label={activeEnvironment?.label ?? "Run on"} />
+      );
+    }
     return (
       <span
         className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6"
@@ -101,6 +183,8 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       >
         {autoEnvironmentLabel ? (
           <ScaleIcon className="size-3 shrink-0" aria-hidden="true" />
+        ) : serverUpdate ? (
+          <CircleArrowUpIcon aria-hidden="true" className="size-3 shrink-0 text-foreground" />
         ) : (
           <EnvironmentMachineIcon
             kind={activeEnvironment?.machine ?? "server"}
@@ -138,7 +222,11 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           {availableEnvironments.map((env) => (
             <SelectItem key={env.environmentId} value={env.environmentId}>
               <span className="inline-flex items-center gap-1.5">
-                <EnvironmentMachineIcon kind={env.machine} className="size-3" />
+                {serverUpdate?.environmentId === env.environmentId ? (
+                  <CircleArrowUpIcon aria-hidden="true" className="size-3 text-foreground" />
+                ) : (
+                  <EnvironmentMachineIcon kind={env.machine} className="size-3" />
+                )}
                 {env.label}
               </span>
             </SelectItem>
