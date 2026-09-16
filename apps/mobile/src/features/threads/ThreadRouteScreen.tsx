@@ -746,8 +746,10 @@ function ThreadRouteContent(
       });
     }
     if (selectedThreadCwd !== null) {
+      const filesVisible = inspectorMode === "files" && panes.auxiliaryPaneVisible;
       actions.push({
-        accessibilityLabel: "Open files",
+        accessibilityLabel: filesVisible ? "Close files" : "Open files",
+        selected: filesVisible,
         icon: "folder",
         onPress: handleOpenFilesInspector,
       });
@@ -774,6 +776,8 @@ function ThreadRouteContent(
     return actions;
   }, [
     fileInspector.supported,
+    inspectorMode,
+    panes.auxiliaryPaneVisible,
     handleOpenFilesInspector,
     handleOpenTerminal,
     handleOpenGitInspector,

@@ -15,6 +15,7 @@ export function MaterialIconButton(props: {
   readonly icon: AppSymbolName;
   readonly onPress?: () => void;
   readonly disabled?: boolean;
+  readonly selected?: boolean;
   readonly variant?: "standard" | "primary" | "tonal" | "danger";
 }) {
   const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
@@ -45,7 +46,7 @@ export function MaterialIconButton(props: {
       accessible
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(props.disabled) }}
+      accessibilityState={{ disabled: Boolean(props.disabled), selected: props.selected }}
       accessibilityActions={[{ name: "activate" }]}
       onAccessibilityAction={() => {
         if (!props.disabled) props.onPress?.();

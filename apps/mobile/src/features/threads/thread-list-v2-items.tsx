@@ -456,7 +456,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const providerIconSurfaceColor = sidebarPane
     ? selected
       ? selectedBackgroundColor
-      : drawerColor
+      : materialYouStyleLayoutActive
+        ? screenColor
+        : drawerColor
     : screenColor;
 
   const status = resolveThreadListV2Status(thread);
