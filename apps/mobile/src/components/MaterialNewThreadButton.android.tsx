@@ -10,6 +10,7 @@ export function MaterialNewThreadButton(
       {...props}
       icon="square.and.pencil"
       label="New thread"
+      tone="primary"
       variant={props.extended ? "extended" : "large"}
     />
   );

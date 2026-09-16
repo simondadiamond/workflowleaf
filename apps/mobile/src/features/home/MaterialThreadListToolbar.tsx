@@ -125,11 +125,13 @@ export function MaterialThreadListToolbar(props: {
             </>
           ) : (
             <>
-              <WorkspaceConnectionTitle
-                grow
-                onPress={props.onOpenEnvironments}
-                brand={<CompactBrandTitle allowFontScaling={false} />}
-              />
+              <View className="min-w-0 flex-1 pl-1">
+                <WorkspaceConnectionTitle
+                  grow
+                  onPress={props.onOpenEnvironments}
+                  brand={<CompactBrandTitle allowFontScaling={false} />}
+                />
+              </View>
               <AndroidHeaderIconButton
                 accessibilityLabel="Search threads"
                 icon="magnifyingglass"

@@ -14,14 +14,32 @@ export function MaterialFloatingActionButton(
       accessibilityLabel={props.label}
       onPress={props.onPress}
       className={cn(
-        "min-h-14 min-w-14 flex-row items-center justify-center gap-2 rounded-2xl bg-secondary px-4",
+        "min-h-14 min-w-14 flex-row items-center justify-center gap-2 rounded-2xl px-4",
+        props.tone === "primary" ? "bg-primary" : "bg-thread-selected",
         props.className,
       )}
       style={props.style}
     >
-      <SymbolView name={props.icon} size={24} tintColorClassName="accent-secondary-foreground" />
+      <SymbolView
+        name={props.icon}
+        size={24}
+        tintColorClassName={
+          props.tone === "primary"
+            ? "accent-primary-foreground"
+            : "accent-thread-selected-foreground"
+        }
+      />
       {props.variant === "extended" ? (
-        <AppText className="text-sm text-secondary-foreground">{props.label}</AppText>
+        <AppText
+          className={cn(
+            "text-sm",
+            props.tone === "primary"
+              ? "text-primary-foreground"
+              : "text-thread-selected-foreground",
+          )}
+        >
+          {props.label}
+        </AppText>
       ) : null}
     </Pressable>
   );

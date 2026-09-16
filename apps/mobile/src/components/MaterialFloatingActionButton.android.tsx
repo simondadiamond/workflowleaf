@@ -17,11 +17,16 @@ export function MaterialFloatingActionButton(props: {
   readonly label: string;
   readonly icon: AppSymbolName;
   readonly variant?: "extended" | "large";
+  readonly tone?: "primary" | "secondary";
   readonly className?: string;
   readonly style?: StyleProp<ViewStyle>;
 }) {
   const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
   const typography = useScaledTextRole("footnote");
+  const primary = props.tone === "primary";
+  const containerColor = colors[primary ? "--color-primary" : "--color-thread-selected"];
+  const contentColor =
+    colors[primary ? "--color-primary-foreground" : "--color-thread-selected-foreground"];
   const Component =
     props.variant === "extended"
       ? ExtendedFloatingActionButton
@@ -41,16 +46,13 @@ export function MaterialFloatingActionButton(props: {
     >
       <View importantForAccessibility="no-hide-descendants">
         <Host matchContents colorScheme={themeAppearance} ignoreSafeAreaKeyboardInsets>
-          <Component containerColor={colors["--color-secondary"]} onClick={props.onPress}>
+          <Component containerColor={containerColor} onClick={props.onPress}>
             <Component.Icon>
               <Box modifiers={[size(iconSize, iconSize)]} />
             </Component.Icon>
             {props.variant === "extended" ? (
               <ExtendedFloatingActionButton.Text>
-                <Text
-                  color={colors["--color-secondary-foreground"]}
-                  style={{ ...typography, fontWeight: "500" }}
-                >
+                <Text color={contentColor} style={{ ...typography, fontWeight: "500" }}>
                   {props.label}
                 </Text>
               </ExtendedFloatingActionButton.Text>
@@ -68,7 +70,9 @@ export function MaterialFloatingActionButton(props: {
         <SymbolView
           name={props.icon}
           size={iconSize}
-          tintColorClassName="accent-secondary-foreground"
+          tintColorClassName={
+            primary ? "accent-primary-foreground" : "accent-thread-selected-foreground"
+          }
         />
       </View>
     </View>
