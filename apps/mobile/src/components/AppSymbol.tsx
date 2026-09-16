@@ -146,6 +146,7 @@ const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   "folder.fill": IconFolder,
   gearshape: IconSettings,
   "info.circle": IconInfoCircle,
+  keyboard: IconKeyboard,
   laptopcomputer: IconDeviceLaptop,
   link: IconLink,
   "line.3.horizontal": IconMenu2,
