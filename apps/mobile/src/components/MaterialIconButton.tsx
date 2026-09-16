@@ -14,6 +14,7 @@ export function MaterialIconButton(props: {
     <Pressable
       {...props}
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(props.disabled), selected: props.selected }}
       className="size-12 items-center justify-center"
     >
       <SymbolView name={props.icon} size={24} tintColorClassName="accent-foreground" />
