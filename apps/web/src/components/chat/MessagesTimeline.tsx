@@ -56,6 +56,7 @@ import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
+  type ComponentProps,
   createContext,
   memo,
   use,
@@ -1637,24 +1638,32 @@ function QueuedMessageTimelineRow({
   );
 }
 
+/** A hairline row with centered content: the two context rows share this shell. */
+function TimelineSeparatorRow({ children, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      {...props}
+      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Minimize2Icon aria-hidden="true" className="size-3" />
+        {children}
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
+
 function ContextCompactionTimelineRow({
   row,
 }: {
   row: Extract<TimelineRow, { kind: "context-compaction" }>;
 }) {
   return (
-    <div
-      role="separator"
-      aria-label={row.label}
-      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
-    >
-      <span className="h-px flex-1 bg-border/70" />
-      <span className="flex shrink-0 items-center gap-1.5">
-        <Minimize2Icon aria-hidden="true" className="size-3" />
-        {row.label}
-      </span>
-      <span className="h-px flex-1 bg-border/70" />
-    </div>
+    <TimelineSeparatorRow role="separator" aria-label={row.label}>
+      {row.label}
+    </TimelineSeparatorRow>
   );
 }
 
@@ -1670,30 +1679,22 @@ function ContextOfferTimelineRow({
 }) {
   const ctx = use(TimelineRowCtx);
   return (
-    <div
-      role="note"
-      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
-    >
-      <span className="h-px flex-1 bg-border/70" />
-      <span className="flex shrink-0 items-center gap-1.5">
-        <Minimize2Icon aria-hidden="true" className="size-3" />
-        {formatContextWindowTokens(row.usedTokens)} tokens in context
-        {ctx.onCompactContext ? (
-          <>
-            <span aria-hidden="true" className="text-muted-foreground/40">
-              ·
-            </span>
-            <InlineButton
-              className="text-foreground/85 hover:text-foreground"
-              onClick={ctx.onCompactContext}
-            >
-              Compact
-            </InlineButton>
-          </>
-        ) : null}
-      </span>
-      <span className="h-px flex-1 bg-border/70" />
-    </div>
+    <TimelineSeparatorRow role="note">
+      {formatContextWindowTokens(row.usedTokens)} tokens in context
+      {ctx.onCompactContext ? (
+        <>
+          <span aria-hidden="true" className="text-muted-foreground/40">
+            ·
+          </span>
+          <InlineButton
+            className="text-foreground/85 hover:text-foreground"
+            onClick={ctx.onCompactContext}
+          >
+            Compact
+          </InlineButton>
+        </>
+      ) : null}
+    </TimelineSeparatorRow>
   );
 }
 

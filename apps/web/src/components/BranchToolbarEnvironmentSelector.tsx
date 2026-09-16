@@ -85,9 +85,9 @@ function ServerUpdateChip({
             desktopAppUpdate={update.desktopAppUpdate}
             threadContinuation={update.threadContinuation}
             targetVersion={update.targetVersion}
-            variant="ghost"
+            variant="ghost-muted"
             size="xs"
-            className="min-w-0 max-w-full font-normal text-muted-foreground/70 text-xs! hover:text-foreground"
+            className="min-w-0 max-w-full font-normal text-xs!"
           >
             {body}
           </ServerUpdateAction>
