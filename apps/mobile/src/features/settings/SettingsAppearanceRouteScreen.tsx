@@ -1,4 +1,4 @@
-import { ScrollView } from "react-native";
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "./components/SettingsScreen";
