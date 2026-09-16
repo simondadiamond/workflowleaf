@@ -1,6 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { CircleArrowUpIcon, ScaleIcon } from "lucide-react";
-import { memo, useMemo } from "react";
+import { type ComponentProps, memo, type ReactNode, useMemo } from "react";
 
 import type { EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -67,6 +67,36 @@ interface BranchToolbarEnvironmentSelectorProps {
   serverUpdate?: ServerUpdateAvailability | null;
 }
 
+/**
+ * The chip when it is a label, not a control. It carries the xs control's
+ * height (h-7 sm:h-6) and padding: the composer context strip has no
+ * min-height of its own, and the glass seam joining it to the composer assumes
+ * a fixed strip height, so a shorter label would drag the seam out of line
+ * whenever this label is the only thing in the strip.
+ */
+function StaticChip(props: ComponentProps<"span">) {
+  return (
+    <span
+      {...props}
+      className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6"
+    />
+  );
+}
+
+/** Icon plus the collapsible label every chip shares. */
+function ChipBody({ icon, label }: { readonly icon: ReactNode; readonly label: string }) {
+  return (
+    <>
+      {icon}
+      <span data-composer-label className={CHIP_LABEL_CLASS}>
+        <span data-composer-label-motion className={CHIP_LABEL_MOTION_CLASS}>
+          {label}
+        </span>
+      </span>
+    </>
+  );
+}
+
 const CHIP_LABEL_CLASS = "min-w-0 max-w-[240px] group-data-[compact]/composer-context:max-w-0";
 const CHIP_LABEL_MOTION_CLASS =
   "block w-full min-w-0 max-w-[240px] truncate transition-opacity duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none";
@@ -94,14 +124,10 @@ function ServerUpdateChip({
   readonly label: string;
 }) {
   const body = (
-    <>
-      <CircleArrowUpIcon aria-hidden="true" className="size-3 shrink-0 text-foreground" />
-      <span data-composer-label className={CHIP_LABEL_CLASS}>
-        <span data-composer-label-motion className={CHIP_LABEL_MOTION_CLASS}>
-          {label}
-        </span>
-      </span>
-    </>
+    <ChipBody
+      icon={<CircleArrowUpIcon aria-hidden="true" className="size-3 shrink-0 text-foreground" />}
+      label={label}
+    />
   );
   const actionable = !(update.selfUpdate === "desktop-managed" && !update.desktopAppUpdate);
   return (
@@ -124,9 +150,7 @@ function ServerUpdateChip({
             {body}
           </ServerUpdateAction>
         ) : (
-          <span className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6">
-            {body}
-          </span>
+          <StaticChip>{body}</StaticChip>
         )}
       </TooltipTrigger>
       <TooltipPopup side="top">{updateTooltip(update)}</TooltipPopup>
@@ -180,38 +204,23 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
     ],
   );
 
-  // The static label carries the xs control's height (h-7 sm:h-6) as well as
-  // its padding: the composer context strip has no min-height of its own, and
-  // the glass seam joining it to the composer assumes a fixed strip height, so
-  // a shorter label would drag the seam out of line whenever this label is the
-  // only thing in the strip.
   if (envLocked || onEnvironmentChange === undefined) {
+    const label = activeEnvironment?.label ?? "Run on";
     if (serverUpdate) {
-      return (
-        <ServerUpdateChip update={serverUpdate} label={activeEnvironment?.label ?? "Run on"} />
-      );
+      return <ServerUpdateChip update={serverUpdate} label={label} />;
     }
     return (
-      <span
-        className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(2)-1px)] font-normal text-muted-foreground/70 text-xs sm:h-6"
-        data-composer-context-control
-      >
-        <EnvironmentMachineIcon
-          kind={activeEnvironment?.machine ?? "server"}
-          className="size-3 shrink-0"
+      <StaticChip data-composer-context-control>
+        <ChipBody
+          icon={
+            <EnvironmentMachineIcon
+              kind={activeEnvironment?.machine ?? "server"}
+              className="size-3 shrink-0"
+            />
+          }
+          label={label}
         />
-        <span
-          data-composer-label
-          className="min-w-0 max-w-[240px] group-data-[compact]/composer-context:max-w-0"
-        >
-          <span
-            data-composer-label-motion
-            className="block w-full min-w-0 max-w-[240px] truncate transition-opacity duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none"
-          >
-            {activeEnvironment?.label ?? "Run on"}
-          </span>
-        </span>
-      </span>
+      </StaticChip>
     );
   }
 
