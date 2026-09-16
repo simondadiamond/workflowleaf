@@ -8,12 +8,14 @@ import {
 import { SymbolView } from "../../components/AppSymbol";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useEffect, useRef } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
+import { MaterialButton } from "../../components/MaterialButton";
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "../../components/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
@@ -262,7 +264,17 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               <Text className="text-center text-sm leading-normal text-foreground-muted">
                 {projectEmptyState.detail}
               </Text>
-              {!catalogState.hasReadyEnvironment ? (
+              {materialYouStyleLayoutActive ? (
+                <MaterialButton
+                  label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
+                  tone="primary"
+                  onPress={() =>
+                    catalogState.hasReadyEnvironment
+                      ? navigation.dispatch(StackActions.push("AddProject"))
+                      : navigation.navigate("ConnectionsNew")
+                  }
+                />
+              ) : !catalogState.hasReadyEnvironment ? (
                 <Pressable
                   className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
                   onPress={() => navigation.navigate("ConnectionsNew")}
