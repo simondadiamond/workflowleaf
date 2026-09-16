@@ -4,7 +4,7 @@ import { memo, useMemo } from "react";
 
 import type { EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { ServerUpdateAction } from "./ServerUpdateAction";
+import { ServerUpdateAction, useServerUpdateTrigger } from "./ServerUpdateAction";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import type { ServerUpdateAvailability } from "./serverUpdateAvailability";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -14,9 +14,34 @@ import {
   SelectGroupLabel,
   SelectItem,
   SelectPopup,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+
+const UPDATE_SERVER_VALUE = "update-server";
+
+/**
+ * The environment picker with the update as its last row. The picker's own
+ * value never changes to that row; picking it runs the update and the Select
+ * keeps the environment that was already selected.
+ */
+function ServerUpdateSelectItem({
+  label,
+  serverLabel,
+}: {
+  readonly label: string;
+  readonly serverLabel: string;
+}) {
+  return (
+    <SelectItem value={UPDATE_SERVER_VALUE}>
+      <span className="inline-flex items-center gap-1.5">
+        <CircleArrowUpIcon aria-hidden="true" className="size-3 text-foreground" />
+        {label} {serverLabel}
+      </span>
+    </SelectItem>
+  );
+}
 
 interface BranchToolbarEnvironmentSelectorProps {
   autoEnvironmentLabel?: string | undefined;
@@ -116,6 +141,16 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
     return availableEnvironments.find((env) => env.environmentId === environmentId) ?? null;
   }, [availableEnvironments, environmentId]);
 
+  // A fixed hook call: the target falls back to the active environment with no
+  // update so the hook count never changes while the picker is mounted.
+  const serverUpdateTrigger = useServerUpdateTrigger(
+    serverUpdate ?? {
+      environmentId,
+      serverLabel: activeEnvironment?.label ?? "",
+      selfUpdate: null,
+      targetVersion: "",
+    },
+  );
   const environmentItems = useMemo(
     () => [
       ...(onAutoEnvironment
@@ -125,8 +160,17 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
         value: env.environmentId,
         label: env.label,
       })),
+      ...(serverUpdate
+        ? [{ value: UPDATE_SERVER_VALUE, label: activeEnvironment?.label ?? "" }]
+        : []),
     ],
-    [availableEnvironments, autoEnvironmentLabel, onAutoEnvironment],
+    [
+      activeEnvironment?.label,
+      availableEnvironments,
+      autoEnvironmentLabel,
+      onAutoEnvironment,
+      serverUpdate,
+    ],
   );
 
   // The static label carries the xs control's height (h-7 sm:h-6) as well as
@@ -168,9 +212,17 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
     <Select
       modal={false}
       value={autoEnvironmentLabel ? "auto" : environmentId}
-      onValueChange={(value) =>
-        value === "auto" ? onAutoEnvironment?.() : onEnvironmentChange(value as EnvironmentId)
-      }
+      onValueChange={(value) => {
+        if (value === UPDATE_SERVER_VALUE) {
+          void serverUpdateTrigger.trigger();
+          return;
+        }
+        if (value === "auto") {
+          onAutoEnvironment?.();
+          return;
+        }
+        onEnvironmentChange(value as EnvironmentId);
+      }}
       items={environmentItems}
     >
       <SelectTrigger
@@ -232,6 +284,15 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             </SelectItem>
           ))}
         </SelectGroup>
+        {serverUpdate ? (
+          <>
+            <SelectSeparator />
+            <ServerUpdateSelectItem
+              label={serverUpdateTrigger.label}
+              serverLabel={serverUpdate.serverLabel}
+            />
+          </>
+        ) : null}
       </SelectPopup>
     </Select>
   );
