@@ -37,12 +37,15 @@ const environmentIdFromValue = (value: string | null) =>
 function ServerUpdateSelectItem({
   label,
   serverLabel,
+  disabled = false,
 }: {
   readonly label: string;
   readonly serverLabel: string;
+  /** No remote path: the row explains the arrow and takes no click. */
+  readonly disabled?: boolean;
 }) {
   return (
-    <SelectItem value={UPDATE_SERVER_VALUE}>
+    <SelectItem value={UPDATE_SERVER_VALUE} disabled={disabled}>
       <span className="inline-flex items-center gap-1.5">
         <CircleArrowUpIcon aria-hidden="true" className="size-3 text-foreground" />
         {label} {serverLabel}
@@ -305,12 +308,17 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             </SelectItem>
           ))}
         </SelectGroup>
-        {serverUpdate && serverUpdateTrigger.actionable ? (
+        {serverUpdate ? (
           <>
             <SelectSeparator />
             <ServerUpdateSelectItem
-              label={serverUpdateTrigger.label}
+              label={
+                serverUpdateTrigger.actionable
+                  ? serverUpdateTrigger.label
+                  : "Update the desktop app on"
+              }
               serverLabel={serverUpdate.serverLabel}
+              disabled={!serverUpdateTrigger.actionable}
             />
           </>
         ) : null}
