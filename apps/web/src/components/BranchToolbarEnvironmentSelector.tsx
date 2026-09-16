@@ -19,7 +19,14 @@ import {
   SelectValue,
 } from "./ui/select";
 
-const UPDATE_SERVER_VALUE = "update-server";
+// Select values are plain strings, and EnvironmentId is any non-empty string,
+// so the picker's two non-environment rows get their own namespace and every
+// environment value is prefixed. Nothing a server could mint collides.
+const AUTO_VALUE = "action:auto";
+const UPDATE_SERVER_VALUE = "action:update-server";
+const environmentValue = (environmentId: EnvironmentId) => `env:${environmentId}`;
+const environmentIdFromValue = (value: string | null) =>
+  value?.startsWith("env:") ? (value.slice(4) as EnvironmentId) : null;
 
 /**
  * The environment picker with the update as its last row. The picker's own
@@ -154,10 +161,10 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   const environmentItems = useMemo(
     () => [
       ...(onAutoEnvironment
-        ? [{ value: "auto", label: autoEnvironmentLabel ?? "Auto balance" }]
+        ? [{ value: AUTO_VALUE, label: autoEnvironmentLabel ?? "Auto balance" }]
         : []),
       ...availableEnvironments.map((env) => ({
-        value: env.environmentId,
+        value: environmentValue(env.environmentId),
         label: env.label,
       })),
       ...(serverUpdate
@@ -211,17 +218,18 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   return (
     <Select
       modal={false}
-      value={autoEnvironmentLabel ? "auto" : environmentId}
+      value={autoEnvironmentLabel ? AUTO_VALUE : environmentValue(environmentId)}
       onValueChange={(value) => {
         if (value === UPDATE_SERVER_VALUE) {
           void serverUpdateTrigger.trigger();
           return;
         }
-        if (value === "auto") {
+        if (value === AUTO_VALUE) {
           onAutoEnvironment?.();
           return;
         }
-        onEnvironmentChange(value as EnvironmentId);
+        const nextEnvironmentId = environmentIdFromValue(value);
+        if (nextEnvironmentId !== null) onEnvironmentChange(nextEnvironmentId);
       }}
       items={environmentItems}
     >
@@ -260,7 +268,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           <SelectGroupLabel>Run on</SelectGroupLabel>
           {onAutoEnvironment && (
             <SelectItem
-              value="auto"
+              value={AUTO_VALUE}
               onClick={() => {
                 if (autoEnvironmentLabel) onAutoEnvironment?.();
               }}
@@ -272,7 +280,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             </SelectItem>
           )}
           {availableEnvironments.map((env) => (
-            <SelectItem key={env.environmentId} value={env.environmentId}>
+            <SelectItem key={env.environmentId} value={environmentValue(env.environmentId)}>
               <span className="inline-flex items-center gap-1.5">
                 {serverUpdate?.environmentId === env.environmentId ? (
                   <CircleArrowUpIcon aria-hidden="true" className="size-3 text-foreground" />
