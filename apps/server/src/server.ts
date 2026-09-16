@@ -707,7 +707,10 @@ const makeServerLayer = Layer.unwrap(
           yield* Deferred.succeed(cloudLinkParked, undefined).pipe(Effect.orDie);
           return;
         }
-        const releaseManagedTunnel = releaseManagedTunnelOnShutdown().pipe(
+        const desktopUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
+        const releaseManagedTunnel = releaseManagedTunnelOnShutdown(
+          desktopUpdate.isRestartPending,
+        ).pipe(
           Effect.timeout("10 seconds"),
           Effect.tap((released) =>
             released ? Effect.logInfo("Released the managed tunnel on shutdown") : Effect.void,
@@ -791,7 +794,7 @@ const makeServerLayer = Layer.unwrap(
       httpListeningLayer,
       runtimeStateLayer.pipe(Layer.provide(launcherLayer)),
       tailscaleServeLayer,
-      cloudDesiredLinkReconcileLayer,
+      cloudDesiredLinkReconcileLayer.pipe(Layer.provide(DesktopAppUpdateLayerLive)),
     );
 
     return serverApplicationLayer.pipe(
