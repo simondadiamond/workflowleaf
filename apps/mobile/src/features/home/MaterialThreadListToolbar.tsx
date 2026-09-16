@@ -106,17 +106,17 @@ export function MaterialThreadListToolbar(props: {
         onLayout={props.onLayout}
         className={
           props.sidebar
-            ? "absolute inset-x-0 top-0 z-[4] bg-header px-3 pb-2.5"
-            : "bg-header px-3 pb-2.5"
+            ? "absolute inset-x-0 top-0 z-[4] bg-header px-2 pb-2"
+            : "bg-header px-2 pb-2"
         }
         style={{ paddingTop: Math.max(insets.top, 12) }}
       >
-        <View className="h-12 flex-row items-center gap-2">
+        <View className="min-h-14 flex-row items-center gap-1">
           {searching ? (
             <>
               <AndroidHeaderIconButton
                 accessibilityLabel="Close search"
-                icon="chevron.left"
+                icon="arrow.left"
                 onPress={closeSearch}
               />
               {searchField}

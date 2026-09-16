@@ -679,7 +679,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           materialYouStyleLayoutActive
             ? {
                 backgroundColor: visuallySelected ? effectiveSelectedBackground : backgroundColor,
-                borderRadius: 28,
+                borderRadius: 20,
               }
             : undefined
         }

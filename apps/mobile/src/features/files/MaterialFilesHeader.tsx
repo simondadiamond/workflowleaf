@@ -57,11 +57,11 @@ export function MaterialFilesHeader(props: {
   }
 
   return (
-    <View className="bg-header px-3 pb-2.5" style={{ paddingTop: Math.max(insets.top, 12) }}>
-      <View className="h-12 flex-row items-center gap-2">
+    <View className="bg-header px-2 pb-2" style={{ paddingTop: Math.max(insets.top, 12) }}>
+      <View className="min-h-14 flex-row items-center gap-1">
         <AndroidHeaderIconButton
           accessibilityLabel="Close file search"
-          icon="chevron.left"
+          icon="arrow.left"
           onPress={closeSearch}
         />
         <View className="h-12 min-w-0 flex-1 flex-row items-center gap-2 rounded-full border border-input-border bg-input px-3">

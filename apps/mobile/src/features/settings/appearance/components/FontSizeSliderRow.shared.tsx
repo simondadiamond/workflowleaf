@@ -53,7 +53,7 @@ export function FontSizeSliderRow(props: {
 
   const commit = useCallback((next: number) => {
     const current = latest.current;
-    if (next === current.value) {
+    if (current.disabled || next === current.value) {
       return;
     }
     Haptics.selectionAsync().catch(() => undefined);
@@ -162,6 +162,7 @@ export function FontSizeSliderRow(props: {
             ]}
             accessibilityLabel={props.label}
             accessibilityRole="adjustable"
+            accessibilityState={{ disabled: Boolean(disabled) }}
             accessibilityValue={{ min, max, now: value, text: props.valueLabel }}
             className="h-11 flex-1 justify-center"
             onAccessibilityAction={handleAccessibilityAction}
