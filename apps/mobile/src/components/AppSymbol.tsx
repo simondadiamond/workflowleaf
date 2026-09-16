@@ -39,6 +39,7 @@ import IconCopy from "@tabler/icons-react-native/IconCopy";
 import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
 import IconDeviceLaptop from "@tabler/icons-react-native/IconDeviceLaptop";
 import IconDots from "@tabler/icons-react-native/IconDots";
+import IconDotsVertical from "@tabler/icons-react-native/IconDotsVertical";
 import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleHorizontal";
 import IconEdit from "@tabler/icons-react-native/IconEdit";
 import IconExternalLink from "@tabler/icons-react-native/IconExternalLink";
@@ -211,6 +212,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME: Record<string, Icon> = {
   keyboard_arrow_down: IconChevronDown,
   keyboard_arrow_up: IconChevronUp,
   keyboard_hide: IconKeyboardHide,
+  more_vert: IconDotsVertical,
   public: IconWorld,
   remove: IconMinus,
   terminal: IconTerminal2,

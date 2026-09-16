@@ -74,7 +74,12 @@ export function MaterialIconButton(props: {
       </View>
       {/* Keep RN SVG measurement outside Compose; the native button owns touch and ripple. */}
       <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-        <SymbolView name={props.icon} size={24} tintColorClassName={iconTint} type="monochrome" />
+        <SymbolView
+          name={props.icon === "ellipsis" ? { ios: "ellipsis", android: "more_vert" } : props.icon}
+          size={24}
+          tintColorClassName={iconTint}
+          type="monochrome"
+        />
       </View>
     </View>
   );

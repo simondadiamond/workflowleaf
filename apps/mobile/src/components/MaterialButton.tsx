@@ -5,6 +5,7 @@ export interface MaterialButtonProps {
   readonly label: string;
   readonly onPress: () => void;
   readonly disabled?: boolean;
+  readonly loading?: boolean;
   readonly tone?: "primary" | "secondary" | "danger" | "text";
   readonly fullWidth?: boolean;
 }

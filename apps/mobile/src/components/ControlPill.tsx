@@ -26,6 +26,7 @@ import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { MaterialIconButton } from "./MaterialIconButton";
+import { MaterialButton } from "./MaterialButton";
 
 const ThemedMenuView = withUniwind(
   function NativeMenuView({
@@ -122,6 +123,27 @@ export function ControlPill(props: {
         : "text-primary-foreground"
       : "",
   );
+
+  if (
+    materialYouStyleLayoutActive &&
+    (variant === "pill" || variant === "primary") &&
+    props.label &&
+    props.onPress &&
+    !props.icon &&
+    !props.iconNode &&
+    !props.className &&
+    !props.activateOnPressIn &&
+    (!props.accessibilityLabel || props.accessibilityLabel === props.label)
+  ) {
+    return (
+      <MaterialButton
+        label={props.label}
+        onPress={props.onPress}
+        disabled={props.disabled}
+        tone={variant === "primary" ? "primary" : "secondary"}
+      />
+    );
+  }
 
   if (
     materialYouStyleLayoutActive &&

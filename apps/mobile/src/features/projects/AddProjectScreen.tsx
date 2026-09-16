@@ -1,4 +1,6 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { MaterialButton } from "../../components/MaterialButton";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
@@ -219,6 +221,8 @@ function PrimaryActionButton(props: {
   readonly loading?: boolean;
   readonly onPress: () => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
+  if (materialYouStyleLayoutActive) return <MaterialButton {...props} tone="primary" fullWidth />;
   return (
     <Pressable
       disabled={props.disabled}

@@ -1,5 +1,11 @@
-import { useNativeState } from "@expo/ui";
-import { AlertDialog, Host, OutlinedTextField, Text, TextButton } from "@expo/ui/jetpack-compose";
+import {
+  AlertDialog,
+  Host,
+  OutlinedTextField,
+  Text,
+  TextButton,
+  useNativeState,
+} from "@expo/ui/jetpack-compose";
 
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { useScaledTextRole } from "../features/settings/appearance/useScaledTextRole";
@@ -11,8 +17,12 @@ export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
   const bodyTypography = useScaledTextRole("footnote");
   const inputTypography = useScaledTextRole("body");
   const inputState = useNativeState(props.inputInitialValue ?? "");
-  const confirm = () =>
-    props.onConfirm(props.inputInitialValue === undefined ? undefined : inputState.get());
+  const inputSelection = useNativeState({ start: 0, end: props.inputInitialValue?.length ?? 0 });
+  const confirm = () => {
+    const value = props.inputInitialValue === undefined ? undefined : inputState.get();
+    if (value !== undefined && !value.trim()) return;
+    props.onConfirm(value);
+  };
   return (
     <Host
       colorScheme={themeAppearance}
@@ -37,6 +47,7 @@ export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
               autoFocus
               singleLine
               value={inputState}
+              selection={inputSelection}
               onValueChange={props.onInputChange}
               textStyle={inputTypography}
               keyboardOptions={{ imeAction: "done" }}
@@ -52,7 +63,11 @@ export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
                 unfocusedIndicatorColor: colors["--color-border"],
                 cursorColor: colors["--color-primary"],
               }}
-            />
+            >
+              <OutlinedTextField.Label>
+                <Text style={bodyTypography}>{props.request.title}</Text>
+              </OutlinedTextField.Label>
+            </OutlinedTextField>
           </AlertDialog.Text>
         ) : props.request.message ? (
           <AlertDialog.Text>

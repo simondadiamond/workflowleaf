@@ -25,26 +25,40 @@ function MaterialHomeFab(props: ComponentProps<typeof SharedAndroidHomeFabLayout
   return (
     <View className="flex-1">
       {props.children}
-      <View className="absolute right-4" style={{ bottom: Math.max(insets.bottom, 16) + 16 }}>
-        <Host matchContents colorScheme={themeAppearance} ignoreSafeAreaKeyboardInsets>
-          <ExtendedFloatingActionButton
-            containerColor={colors["--color-secondary"]}
-            onClick={props.onStartNewTask}
-          >
-            <ExtendedFloatingActionButton.Icon>
-              <Box modifiers={[size(24, 24)]} />
-            </ExtendedFloatingActionButton.Icon>
-            <ExtendedFloatingActionButton.Text>
-              <Text
-                color={colors["--color-secondary-foreground"]}
-                style={{ ...typography, fontWeight: "500" }}
-              >
-                New task
-              </Text>
-            </ExtendedFloatingActionButton.Text>
-          </ExtendedFloatingActionButton>
-        </Host>
-        <View pointerEvents="none" className="absolute bottom-0 left-5 top-0 justify-center">
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="New task"
+        accessibilityActions={[{ name: "activate" }]}
+        onAccessibilityAction={props.onStartNewTask}
+        className="absolute right-4"
+        style={{ bottom: Math.max(insets.bottom, 16) + 16 }}
+      >
+        <View importantForAccessibility="no-hide-descendants">
+          <Host matchContents colorScheme={themeAppearance} ignoreSafeAreaKeyboardInsets>
+            <ExtendedFloatingActionButton
+              containerColor={colors["--color-secondary"]}
+              onClick={props.onStartNewTask}
+            >
+              <ExtendedFloatingActionButton.Icon>
+                <Box modifiers={[size(24, 24)]} />
+              </ExtendedFloatingActionButton.Icon>
+              <ExtendedFloatingActionButton.Text>
+                <Text
+                  color={colors["--color-secondary-foreground"]}
+                  style={{ ...typography, fontWeight: "500" }}
+                >
+                  New task
+                </Text>
+              </ExtendedFloatingActionButton.Text>
+            </ExtendedFloatingActionButton>
+          </Host>
+        </View>
+        <View
+          pointerEvents="none"
+          className="absolute bottom-0 top-0 justify-center"
+          style={{ start: 20 }}
+        >
           <SymbolView
             name="square.and.pencil"
             size={24}

@@ -26,13 +26,7 @@ export function SegmentedControl<Value extends number | string>(
   const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const compact = props.size === "compact";
   const tabs = materialYouStyleLayoutActive && props.role === "tab";
-  // Compose owns selection semantics; keep the RN control when an abbreviated
-  // label needs a separate spoken label that the pinned native API cannot set.
-  if (
-    materialYouStyleLayoutActive &&
-    !tabs &&
-    props.options.every((option) => !option.accessibilityLabel)
-  ) {
+  if (materialYouStyleLayoutActive && !tabs) {
     return <MaterialSegmentedControl {...props} />;
   }
   return (

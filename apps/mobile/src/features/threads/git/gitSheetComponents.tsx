@@ -3,6 +3,8 @@ import type { ComponentProps } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/AppText";
 import { cn } from "../../../lib/cn";
+import { MaterialButton } from "../../../components/MaterialButton";
+import { useAppearancePreferences } from "../../settings/appearance/AppearancePreferencesProvider";
 
 /* ─── Shared sheet components ──────────────────────────────────────── */
 
@@ -13,6 +15,19 @@ export function SheetActionButton(props: {
   readonly tone?: "primary" | "secondary" | "danger";
   readonly onPress: () => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
+  if (materialYouStyleLayoutActive)
+    return (
+      <View className="flex-1">
+        <MaterialButton
+          label={props.label}
+          tone={props.tone}
+          disabled={props.disabled}
+          onPress={props.onPress}
+          fullWidth
+        />
+      </View>
+    );
   const tone = props.tone ?? "secondary";
   const textColorClassName =
     tone === "primary"
