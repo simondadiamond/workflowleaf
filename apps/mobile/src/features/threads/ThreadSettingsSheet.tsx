@@ -36,6 +36,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { MaterialButton } from "../../components/MaterialButton";
+import { MaterialIconButton } from "../../components/MaterialIconButton";
+import { MaterialRadioIndicator } from "../../components/MaterialRadioIndicator";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
@@ -118,6 +121,7 @@ function ModelRow(props: {
       }}
       disabled={props.option.isUnavailable}
       onPress={props.onPress}
+      style={materialYouStyleLayoutActive ? { minHeight: 56, paddingVertical: 12 } : undefined}
       className={cn(
         "mx-4 min-h-11 flex-row items-center gap-2 bg-card px-4 py-2 active:bg-subtle",
         selectedMaterialRow && "bg-thread-selected",
@@ -125,11 +129,12 @@ function ModelRow(props: {
         props.isLast ? "rounded-b-2xl" : "border-b border-border-subtle",
       )}
     >
+      {materialYouStyleLayoutActive ? <MaterialRadioIndicator selected={props.selected} /> : null}
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-2">
           <Text
             className="min-w-0 shrink text-base font-t3-medium text-foreground"
-            numberOfLines={1}
+            numberOfLines={materialYouStyleLayoutActive ? 2 : 1}
           >
             {props.option.label}
           </Text>
@@ -148,12 +153,15 @@ function ModelRow(props: {
           ) : null}
         </View>
         {props.option.subtitle ? (
-          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+          <Text
+            className="text-xs text-foreground-muted"
+            numberOfLines={materialYouStyleLayoutActive ? 2 : 1}
+          >
             {props.option.subtitle}
           </Text>
         ) : null}
       </View>
-      {props.selected ? (
+      {props.selected && !materialYouStyleLayoutActive ? (
         <SymbolView
           name="checkmark"
           size={16}
@@ -175,6 +183,7 @@ function ProviderHeader(props: {
   readonly modelCount: number;
   readonly onToggle: () => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const content = (
     <>
       <ProviderIcon provider={props.driver} size={15} />
@@ -206,6 +215,7 @@ function ProviderHeader(props: {
         accessibilityState={{ expanded: !props.collapsed }}
         className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60"
         onPress={props.onToggle}
+        style={materialYouStyleLayoutActive ? { minHeight: 48 } : undefined}
       >
         {content}
       </Pressable>
@@ -226,10 +236,12 @@ function DisclosureRow(props: {
   readonly onPress: () => void;
   readonly isLast?: boolean;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
     <Pressable
       accessibilityRole="button"
       onPress={props.onPress}
+      style={materialYouStyleLayoutActive ? { minHeight: 56 } : undefined}
       className={cn(
         "min-h-11 flex-row items-center gap-2 bg-card px-4 py-2 active:bg-subtle",
         !props.isLast && "border-b border-border-subtle",
@@ -260,24 +272,27 @@ function ChoiceRow(props: {
   readonly onPress: () => void;
   readonly isLast: boolean;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   return (
     <Pressable
       accessibilityLabel={props.description ? `${props.label}. ${props.description}` : props.label}
       accessibilityRole="radio"
       accessibilityState={{ checked: props.selected }}
       onPress={props.onPress}
+      style={materialYouStyleLayoutActive ? { minHeight: 56 } : undefined}
       className={cn(
         "min-h-14 flex-row items-center gap-3 bg-card px-4 py-3 active:bg-subtle",
         !props.isLast && "border-b border-border-subtle",
       )}
     >
+      {materialYouStyleLayoutActive ? <MaterialRadioIndicator selected={props.selected} /> : null}
       <View className="min-w-0 flex-1 gap-0.5">
         <Text className="text-base font-t3-medium text-foreground">{props.label}</Text>
         {props.description ? (
           <Text className="text-sm leading-5 text-foreground-muted">{props.description}</Text>
         ) : null}
       </View>
-      {props.selected ? (
+      {props.selected && !materialYouStyleLayoutActive ? (
         <SymbolView
           name="checkmark"
           size={16}
@@ -855,10 +870,15 @@ function ThreadSettingsMainContent(props: {
     <AnimatedLegendList
       automaticallyAdjustsScrollIndicatorInsets
       className="flex-1 bg-sheet"
+      style={
+        materialYouStyleLayoutActive
+          ? { width: "100%", maxWidth: 720, alignSelf: "center" }
+          : undefined
+      }
       contentContainerStyle={{ paddingTop: 4 }}
       contentInsetAdjustmentBehavior={usesTransparentNativeHeader ? "never" : "automatic"}
       data={listItems}
-      estimatedItemSize={48}
+      estimatedItemSize={materialYouStyleLayoutActive ? 56 : 48}
       extraData={animationsReady}
       getItemType={(item) => item.kind}
       itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
@@ -871,28 +891,53 @@ function ThreadSettingsMainContent(props: {
           {usesTransparentNativeHeader ? <View style={{ height: nativeHeaderHeight }} /> : null}
           {Platform.OS === "android" ? (
             <View className="px-4 pb-2 pt-3">
-              <TextInput
-                accessibilityLabel="Find a model"
-                autoCapitalize="none"
-                autoCorrect={false}
+              <View
                 className={
                   materialYouStyleLayoutActive
-                    ? "h-12 min-h-12 rounded-full border border-input-border bg-input px-4 py-0 text-base text-foreground"
-                    : "h-11 rounded-xl bg-card px-4 text-base text-foreground"
-                }
-                style={
-                  materialYouStyleLayoutActive
-                    ? { includeFontPadding: false, textAlignVertical: "center" }
+                    ? "flex-row items-center rounded-full bg-input px-2"
                     : undefined
                 }
-                onChangeText={session.setSearchQuery}
-                placeholder="Find a model"
-                placeholderTextColorClassName="accent-placeholder"
-                selectionColorClassName="accent-primary/32"
-                cursorColorClassName="accent-primary"
-                selectionHandleColorClassName="accent-primary"
-                value={session.searchQuery}
-              />
+                style={materialYouStyleLayoutActive ? { minHeight: 56 } : undefined}
+              >
+                {materialYouStyleLayoutActive ? (
+                  <View pointerEvents="none" className="px-2">
+                    <SymbolView
+                      name="magnifyingglass"
+                      size={24}
+                      tintColorClassName="accent-icon-subtle"
+                    />
+                  </View>
+                ) : null}
+                <TextInput
+                  accessibilityLabel="Find a model"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  className={
+                    materialYouStyleLayoutActive
+                      ? "min-w-0 flex-1 px-2 py-0 text-base text-foreground"
+                      : "h-11 rounded-xl bg-card px-4 text-base text-foreground"
+                  }
+                  style={
+                    materialYouStyleLayoutActive
+                      ? { minHeight: 56, includeFontPadding: false, textAlignVertical: "center" }
+                      : undefined
+                  }
+                  onChangeText={session.setSearchQuery}
+                  placeholder="Find a model"
+                  placeholderTextColorClassName="accent-placeholder"
+                  selectionColorClassName="accent-primary/32"
+                  cursorColorClassName="accent-primary"
+                  selectionHandleColorClassName="accent-primary"
+                  value={session.searchQuery}
+                />
+                {materialYouStyleLayoutActive && session.searchQuery.length > 0 ? (
+                  <MaterialIconButton
+                    accessibilityLabel="Clear model search"
+                    icon="xmark"
+                    onPress={() => session.setSearchQuery("")}
+                  />
+                ) : null}
+              </View>
             </View>
           ) : null}
         </>
@@ -910,6 +955,7 @@ function ThreadSettingsChoiceContent(props: {
   readonly submenu: ThreadSettingsSubmenuPage;
   readonly onSelected: () => void;
 }) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
   const descriptorId = props.submenu.kind === "descriptor" ? props.submenu.id : null;
@@ -959,6 +1005,11 @@ function ThreadSettingsChoiceContent(props: {
   return (
     <ScrollView
       className="flex-1 bg-sheet"
+      style={
+        materialYouStyleLayoutActive
+          ? { width: "100%", maxWidth: 720, alignSelf: "center" }
+          : undefined
+      }
       contentContainerStyle={{
         paddingBottom: insets.bottom + 12,
         paddingHorizontal: 16,
@@ -1083,12 +1134,25 @@ function ThreadSettingsModelsScreen() {
               icon: "arrow.clockwise",
               onPress: refreshProviders,
             },
-            {
-              accessibilityLabel: session.pendingModel ? "Save thread settings" : "Done",
-              icon: "checkmark",
-              onPress: commitAndClose,
-            },
+            ...(!materialYouStyleLayoutActive
+              ? [
+                  {
+                    accessibilityLabel: session.pendingModel ? "Save thread settings" : "Done",
+                    icon: "checkmark" as const,
+                    onPress: commitAndClose,
+                  },
+                ]
+              : []),
           ]}
+          trailing={
+            materialYouStyleLayoutActive ? (
+              <MaterialButton
+                label={session.pendingModel ? "Save" : "Done"}
+                tone="text"
+                onPress={commitAndClose}
+              />
+            ) : undefined
+          }
           onBack={presentation.onClose}
           title="Thread settings"
           hideBottomBorder={materialYouStyleLayoutActive}
