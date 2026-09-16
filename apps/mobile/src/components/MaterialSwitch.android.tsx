@@ -24,7 +24,11 @@ export function MaterialSwitch(props: ThemedSwitchProps) {
       testID={props.testID}
     >
       <View importantForAccessibility="no-hide-descendants">
-        <Host colorScheme={themeAppearance} style={{ width: 52, height: 48 }}>
+        <Host
+          colorScheme={themeAppearance}
+          ignoreSafeAreaKeyboardInsets
+          style={{ width: 52, height: 48 }}
+        >
           <ComposeSwitch
             value={Boolean(props.value)}
             enabled={!props.disabled}

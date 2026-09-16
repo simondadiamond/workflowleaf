@@ -7,6 +7,7 @@ export function MaterialIconButton(props: {
   readonly icon: AppSymbolName;
   readonly onPress?: () => void;
   readonly disabled?: boolean;
+  readonly variant?: "standard" | "primary" | "tonal" | "danger";
 }) {
   return (
     <Pressable

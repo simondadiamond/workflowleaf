@@ -12,6 +12,7 @@ import { type AppSymbolName, SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
 import { GlassBackdrop } from "./GlassBackdrop";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 const MENU_WIDTH = 250;
 const SCREEN_MARGIN = 12;
@@ -62,6 +63,7 @@ export type AndroidAnchoredMenuProps = {
  * trailing check glyph); submenus drill in under a muted parent-title header.
  */
 export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
+  const { materialYouStyleLayoutActive, themeVariables } = useAppearancePreferences();
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
   const [path, setPath] = useState<readonly MenuAction[]>([]);
   // Height of the modal's root view, in the modal's own coordinate space.
@@ -215,7 +217,10 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
             {!placeable || local === null ? null : (
               <Animated.View
                 entering={FadeIn.duration(120)}
-                className="absolute w-[250px] overflow-hidden rounded-[12px] border border-border shadow-2xl"
+                className={cn(
+                  "absolute w-[250px] overflow-hidden rounded-[12px] shadow-2xl",
+                  materialYouStyleLayoutActive ? "bg-card-alt" : "border border-border",
+                )}
                 style={{
                   left,
                   maxHeight,
@@ -224,7 +229,11 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     : { bottom: (rootHeight ?? 0) - local.y + ANCHOR_GAP }),
                 }}
               >
-                <GlassBackdrop blurTarget={appBlurTargetRef} />
+                {/* Compose DropdownMenu takes popup focus in the pinned Expo UI version.
+                    Keep editor menus in-window so opening one preserves the keyboard. */}
+                {!materialYouStyleLayoutActive ? (
+                  <GlassBackdrop blurTarget={appBlurTargetRef} />
+                ) : null}
                 {/* keyboardShouldPersistTaps: the menu often opens over an
                   active editor; the first item tap must act, not just
                   dismiss the keyboard. */}
@@ -262,8 +271,19 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                       <Pressable
                         key={action.id ?? `${index}-${action.title}`}
                         disabled={disabled}
+                        accessibilityRole="button"
+                        accessibilityLabel={[action.title, action.subtitle]
+                          .filter(Boolean)
+                          .join(", ")}
+                        accessibilityState={{ disabled, selected: action.state === "on" }}
+                        android_ripple={
+                          materialYouStyleLayoutActive
+                            ? { color: themeVariables["--color-subtle-strong"] }
+                            : undefined
+                        }
                         className={cn(
-                          "min-h-11 flex-row items-center gap-2.5 px-3.5 py-2.5 active:bg-subtle",
+                          "flex-row items-center gap-2.5 px-3.5 py-2.5 active:bg-subtle",
+                          materialYouStyleLayoutActive ? "min-h-12" : "min-h-11",
                           disabled && "opacity-45",
                         )}
                         onPress={() => onPressItem(action)}
@@ -272,7 +292,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                           <Text
                             className={cn(
                               // Same face as the pill labels that open these menus.
-                              "text-sm font-t3-bold",
+                              materialYouStyleLayoutActive ? "text-base" : "text-sm font-t3-bold",
                               destructive && "text-danger-foreground",
                             )}
                           >

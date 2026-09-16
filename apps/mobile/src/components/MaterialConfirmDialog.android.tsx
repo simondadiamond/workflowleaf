@@ -1,0 +1,53 @@
+import { AlertDialog, Host, Text, TextButton } from "@expo/ui/jetpack-compose";
+
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
+import { useScaledTextRole } from "../features/settings/appearance/useScaledTextRole";
+import type { MaterialConfirmDialogProps } from "./MaterialConfirmDialog";
+
+export function MaterialConfirmDialog(props: MaterialConfirmDialogProps) {
+  const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
+  const titleTypography = useScaledTextRole("title");
+  const bodyTypography = useScaledTextRole("footnote");
+  return (
+    <Host
+      colorScheme={themeAppearance}
+      ignoreSafeAreaKeyboardInsets
+      style={{ height: 0, width: 0 }}
+    >
+      <AlertDialog
+        onDismissRequest={props.onCancel}
+        tonalElevation={0}
+        colors={{
+          containerColor: colors["--color-card-alt"],
+          titleContentColor: colors["--color-foreground"],
+          textContentColor: colors["--color-foreground-secondary"],
+        }}
+      >
+        <AlertDialog.Title>
+          <Text style={titleTypography}>{props.request.title}</Text>
+        </AlertDialog.Title>
+        {props.request.message ? (
+          <AlertDialog.Text>
+            <Text style={bodyTypography}>{props.request.message}</Text>
+          </AlertDialog.Text>
+        ) : null}
+        <AlertDialog.DismissButton>
+          <TextButton onClick={props.onCancel} colors={{ contentColor: colors["--color-primary"] }}>
+            <Text style={bodyTypography}>{props.request.cancelText ?? "Cancel"}</Text>
+          </TextButton>
+        </AlertDialog.DismissButton>
+        <AlertDialog.ConfirmButton>
+          <TextButton
+            onClick={props.onConfirm}
+            colors={{
+              contentColor:
+                colors[props.request.destructive ? "--color-danger-foreground" : "--color-primary"],
+            }}
+          >
+            <Text style={bodyTypography}>{props.request.confirmText}</Text>
+          </TextButton>
+        </AlertDialog.ConfirmButton>
+      </AlertDialog>
+    </Host>
+  );
+}

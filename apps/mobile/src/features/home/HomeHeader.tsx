@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
+import { MaterialIconButton } from "../../components/MaterialIconButton";
+import { AndroidAnchoredMenu } from "../../components/AndroidAnchoredMenu";
 import { T3Wordmark } from "../../components/T3Wordmark";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../../lib/mobileBranding";
@@ -235,50 +237,75 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               }
             />
 
-            <ControlPillMenu
-              actions={menuActions}
-              isAnchoredToRight
-              onPressAction={handleMenuAction}
-            >
-              <Pressable
-                accessibilityLabel="Filter and sort threads"
-                accessibilityRole="button"
-                className="size-11 items-center justify-center rounded-full bg-subtle"
-              >
-                <SymbolView
-                  name={
-                    hasCustomListOptions
-                      ? "line.3.horizontal.decrease.circle.fill"
-                      : "line.3.horizontal.decrease.circle"
-                  }
-                  size={16}
-                  tintColorClassName={"accent-icon"}
-                  type="monochrome"
+            {materialYouStyleLayoutActive ? (
+              <>
+                <AndroidAnchoredMenu actions={menuActions} onPressAction={handleMenuAction}>
+                  {(open) => (
+                    <MaterialIconButton
+                      accessibilityLabel="Filter and sort threads"
+                      icon={
+                        hasCustomListOptions
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle"
+                      }
+                      onPress={open}
+                    />
+                  )}
+                </AndroidAnchoredMenu>
+                <MaterialIconButton
+                  accessibilityLabel="Open settings"
+                  icon="gearshape"
+                  onPress={props.onOpenSettings}
                 />
-              </Pressable>
-            </ControlPillMenu>
-            {/* Built identically to the filter button so the two circles
+              </>
+            ) : (
+              <>
+                <ControlPillMenu
+                  actions={menuActions}
+                  isAnchoredToRight
+                  onPressAction={handleMenuAction}
+                >
+                  <Pressable
+                    accessibilityLabel="Filter and sort threads"
+                    accessibilityRole="button"
+                    className="size-11 items-center justify-center rounded-full bg-subtle"
+                  >
+                    <SymbolView
+                      name={
+                        hasCustomListOptions
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle"
+                      }
+                      size={16}
+                      tintColorClassName={"accent-icon"}
+                      type="monochrome"
+                    />
+                  </Pressable>
+                </ControlPillMenu>
+                {/* Built identically to the filter button so the two circles
                 match exactly (ControlPill sizes via Tailwind classes and
                 resolves to a different box). */}
-            <Pressable
-              accessibilityLabel="Open settings"
-              accessibilityRole="button"
-              onPress={props.onOpenSettings}
-              className="size-11 items-center justify-center rounded-full bg-subtle"
-            >
-              <SymbolView
-                name="gearshape"
-                size={18}
-                tintColorClassName={"accent-icon"}
-                type="monochrome"
-              />
-            </Pressable>
+                <Pressable
+                  accessibilityLabel="Open settings"
+                  accessibilityRole="button"
+                  onPress={props.onOpenSettings}
+                  className="size-11 items-center justify-center rounded-full bg-subtle"
+                >
+                  <SymbolView
+                    name="gearshape"
+                    size={18}
+                    tintColorClassName={"accent-icon"}
+                    type="monochrome"
+                  />
+                </Pressable>
+              </>
+            )}
           </View>
 
           <View
             className={
               materialYouStyleLayoutActive
-                ? "min-h-12 flex-row items-center gap-2.5 rounded-full border border-input-border bg-input px-3.5"
+                ? "min-h-14 flex-row items-center gap-3 rounded-full bg-sidebar-search px-4"
                 : "min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5"
             }
           >

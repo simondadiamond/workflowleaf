@@ -7,6 +7,7 @@ import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/Stac
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform, Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
 import { TerminalContextSheet } from "./TerminalContextSheet";
 import { hasNativeTerminalSurface } from "./nativeTerminalModule";
@@ -29,6 +30,8 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { LoadingScreen } from "../../components/LoadingScreen";
+import { MaterialButton } from "../../components/MaterialButton";
+import { MaterialIconButton } from "../../components/MaterialIconButton";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { terminalEnvironment } from "../../state/terminal";
@@ -158,6 +161,7 @@ type ThreadTerminalRouteScreenProps = StaticScreenProps<{
 }>;
 
 export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps) {
+  const insets = useSafeAreaInsets();
   const terminalBlurTarget = useRef<View>(null);
   const navigation = useNavigation();
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
@@ -190,6 +194,8 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     themeAppearance: appearanceScheme,
     themeId,
     setTerminalFontSize,
+    materialYouStyleLayoutActive,
+    themeVariables,
   } = useAppearancePreferences();
   const fontSize = appearance.terminalFontSize;
   const cachedRouteGridSize =
@@ -1280,7 +1286,15 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         </NativeHeaderToolbar>
       ) : null}
 
-      <View className="flex-1" style={{ backgroundColor: terminalTheme.background }}>
+      <View
+        className="flex-1"
+        style={{
+          backgroundColor: materialYouStyleLayoutActive
+            ? themeVariables["--color-card-alt"]
+            : terminalTheme.background,
+          paddingBottom: Platform.OS === "android" && !keyboardState.isVisible ? insets.bottom : 0,
+        }}
+      >
         {!isEnvironmentReady ? (
           <EnvironmentConnectionNotice
             environmentLabel={
@@ -1334,7 +1348,23 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
               />
             </BlurTargetView>
 
-            {selectedThread && hasNativeTerminalSurface() ? (
+            {materialYouStyleLayoutActive && !keyboardState.isVisible ? (
+              <View className="min-h-14 flex-row items-center gap-2 bg-card-alt px-2">
+                {selectedThread && hasNativeTerminalSurface() ? (
+                  <MaterialButton
+                    label="Attach output"
+                    tone="text"
+                    onPress={() => setCaptureRequest((value) => value + 1)}
+                  />
+                ) : null}
+                <View className="flex-1" />
+                <MaterialIconButton
+                  accessibilityLabel="Show keyboard"
+                  icon="keyboard"
+                  onPress={handleShowKeyboard}
+                />
+              </View>
+            ) : !materialYouStyleLayoutActive && selectedThread && hasNativeTerminalSurface() ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
@@ -1396,7 +1426,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                   </ComposerToolbarRow>
                 </View>
               </KeyboardStickyView>
-            ) : !keyboardState.isVisible ? (
+            ) : !keyboardState.isVisible && !materialYouStyleLayoutActive ? (
               <Pressable
                 accessibilityLabel="Show keyboard"
                 accessibilityRole="button"

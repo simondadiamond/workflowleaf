@@ -25,6 +25,7 @@ import { withMenuActionIconColors } from "../lib/menu-action-colors";
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
+import { MaterialIconButton } from "./MaterialIconButton";
 
 const ThemedMenuView = withUniwind(
   function NativeMenuView({
@@ -66,6 +67,7 @@ export function ControlPill(props: {
   readonly className?: string;
 }) {
   const variant = props.variant ?? "circle";
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const activatedOnPressInRef = useRef(false);
 
   const handlePressIn = () => {
@@ -120,6 +122,26 @@ export function ControlPill(props: {
         : "text-primary-foreground"
       : "",
   );
+
+  if (
+    materialYouStyleLayoutActive &&
+    props.accessibilityLabel &&
+    props.icon &&
+    !props.iconNode &&
+    !props.label &&
+    !props.className &&
+    !props.activateOnPressIn
+  ) {
+    return (
+      <MaterialIconButton
+        accessibilityLabel={props.accessibilityLabel}
+        icon={props.icon}
+        onPress={props.onPress}
+        disabled={props.disabled}
+        variant={variant === "primary" ? "primary" : variant === "danger" ? "danger" : "tonal"}
+      />
+    );
+  }
 
   return (
     <Pressable

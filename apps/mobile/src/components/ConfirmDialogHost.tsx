@@ -3,6 +3,8 @@ import { Modal, Pressable, View } from "react-native";
 
 import { cn } from "../lib/cn";
 import { AppText } from "./AppText";
+import { MaterialConfirmDialog } from "./MaterialConfirmDialog";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 export type ConfirmDialogRequest = {
   readonly title: string;
@@ -33,6 +35,7 @@ export function showConfirmDialog(request: ConfirmDialogRequest): void {
  * button color and a dimmer message than the title.
  */
 export function ConfirmDialogHost() {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const [request, setRequest] = useState<ConfirmDialogRequest | null>(null);
   useEffect(() => {
     presentRequest = setRequest;
@@ -50,6 +53,11 @@ export function ConfirmDialogHost() {
     request?.onConfirm();
     setRequest(null);
   }, [request]);
+
+  if (materialYouStyleLayoutActive)
+    return request ? (
+      <MaterialConfirmDialog request={request} onCancel={handleCancel} onConfirm={handleConfirm} />
+    ) : null;
 
   return (
     <Modal

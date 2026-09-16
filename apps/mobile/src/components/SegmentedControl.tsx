@@ -2,8 +2,10 @@ import { Platform, Pressable, View } from "react-native";
 import Animated, { Easing, LinearTransition, ReduceMotion } from "react-native-reanimated";
 import { AppText as Text } from "./AppText";
 import { cn } from "../lib/cn";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
+import { MaterialSegmentedControl } from "./MaterialSegmentedControl";
 
-export function SegmentedControl<Value extends number | string>(props: {
+export interface SegmentedControlProps<Value extends number | string> {
   readonly options: readonly {
     readonly value: Value;
     readonly label: string;
@@ -16,13 +18,29 @@ export function SegmentedControl<Value extends number | string>(props: {
   /** "tab" for the view switcher; filters stay plain buttons. */
   readonly role?: "tab" | "button";
   readonly className?: string;
-}) {
+}
+
+export function SegmentedControl<Value extends number | string>(
+  props: SegmentedControlProps<Value>,
+) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const compact = props.size === "compact";
+  const tabs = materialYouStyleLayoutActive && props.role === "tab";
+  // Compose owns selection semantics; keep the RN control when an abbreviated
+  // label needs a separate spoken label that the pinned native API cannot set.
+  if (
+    materialYouStyleLayoutActive &&
+    !tabs &&
+    props.options.every((option) => !option.accessibilityLabel)
+  ) {
+    return <MaterialSegmentedControl {...props} />;
+  }
   return (
     <View
       accessible={false}
       className={cn(
-        "flex-row overflow-hidden rounded-full border-continuous bg-card",
+        "flex-row overflow-hidden",
+        tabs ? "border-b border-border" : "rounded-full border-continuous bg-card",
         props.className,
       )}
     >
@@ -31,7 +49,14 @@ export function SegmentedControl<Value extends number | string>(props: {
         layout={LinearTransition.duration(200)
           .easing(Easing.out(Easing.cubic))
           .reduceMotion(ReduceMotion.System)}
-        className="absolute bottom-0 top-0 rounded-full bg-subtle-strong"
+        className={cn(
+          "absolute bottom-0",
+          tabs
+            ? "h-[3px] rounded-t-full bg-primary"
+            : materialYouStyleLayoutActive
+              ? "top-0 rounded-full bg-secondary"
+              : "top-0 rounded-full bg-subtle-strong",
+        )}
         style={{
           width: `${100 / props.options.length}%`,
           start: `${
@@ -55,13 +80,17 @@ export function SegmentedControl<Value extends number | string>(props: {
             onPress={() => props.onSelect(option.value)}
             className={cn(
               "flex-1 items-center justify-center rounded-full",
-              compact ? "h-9" : "h-11",
+              materialYouStyleLayoutActive ? "min-h-12 px-2 py-2" : compact ? "h-9" : "h-11",
             )}
           >
             <Text
               className={cn(
                 compact ? "text-xs" : "text-sm",
-                active ? "font-t3-medium text-foreground" : "text-foreground-muted",
+                tabs && active
+                  ? "font-t3-medium text-primary"
+                  : active
+                    ? "font-t3-medium text-foreground"
+                    : "text-foreground-muted",
               )}
             >
               {option.label}
