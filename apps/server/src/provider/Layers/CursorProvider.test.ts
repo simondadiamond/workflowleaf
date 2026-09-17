@@ -450,6 +450,19 @@ describe("Cursor skills", () => {
       }),
     ));
 
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "\u{11FDD}"])(
+    "rewrites discovered %s skills, not amounts or unknown names",
+    (symbol) => {
+      const prompt = `${symbol}review ${symbol}20k ${symbol}unknown`;
+      expect(hasCursorSkillMention(prompt)).toBe(true);
+      expect(hasCursorSkillMention(prompt)).toBe(true);
+      expect(rewriteCursorSkillMentions(prompt, new Set(["review", "20k"]))).toBe(
+        `/review ${symbol}20k ${symbol}unknown`,
+      );
+      expect(hasCursorSkillMention(`${symbol}20k`)).toBe(false);
+    },
+  );
+
   it("rewrites only discovered skill mentions into Cursor slash invocations", () => {
     expect(hasCursorSkillMention("use $Review_Pr:V2 here")).toBe(true);
     expect(hasCursorSkillMention("please $review this")).toBe(true);

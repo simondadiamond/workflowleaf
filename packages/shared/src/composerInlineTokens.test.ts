@@ -3,6 +3,16 @@ import { describe, expect, it } from "vite-plus/test";
 import { collectComposerInlineTokens } from "./composerInlineTokens.ts";
 
 describe("collectComposerInlineTokens", () => {
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "\u{11FDD}"])(
+    "collects %s skills without consuming currency amounts",
+    (symbol) => {
+      const source = `${symbol}2spec`;
+      const text = `Use ${source} ${symbol}20 ${symbol}20k ${symbol}100M ${symbol}1e6 `;
+      expect(collectComposerInlineTokens(text)).toEqual([
+        { type: "skill", value: "2spec", source, start: 4, end: 4 + source.length },
+      ]);
+    },
+  );
   it("collects file links, mentions, and skills with source ranges", () => {
     const text = "Use $ui and inspect [Chat.tsx](src/Chat.tsx) with @AGENTS.md please";
 

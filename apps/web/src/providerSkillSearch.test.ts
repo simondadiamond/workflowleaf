@@ -13,6 +13,13 @@ function makeSkill(input: Partial<ServerProviderSkill> & Pick<ServerProviderSkil
 }
 
 describe("searchProviderSkills", () => {
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "\u{11FDD}"])(
+    "searches skills with a %s prefix",
+    (symbol) => {
+      const skills = [makeSkill({ name: "review" }), makeSkill({ name: "deploy" })];
+      expect(searchProviderSkills(skills, `${symbol}review`)).toEqual([skills[0]]);
+    },
+  );
   it("moves exact ui matches ahead of broader ui matches", () => {
     const skills = [
       makeSkill({

@@ -155,9 +155,10 @@ export function ComposerEditor({
   const selectedReference = selected
     ? collectComposerContextReferences(selected.source)[0]
     : undefined;
-  const selectedSkill = selected?.source.startsWith("$")
-    ? props.skills?.find((skill) => skill.name === selected.source.slice(1))
-    : undefined;
+  const selectedSkill =
+    selected && /^\p{Sc}/u.test(selected.source)
+      ? props.skills?.find((skill) => skill.name === selected.source.replace(/^\p{Sc}/u, ""))
+      : undefined;
   const record = draft.context?.records.find(
     (entry) => entry.contextId === selectedReference?.contextId,
   );

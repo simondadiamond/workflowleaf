@@ -5,6 +5,21 @@ import { planClaudeSkillDispatch } from "./ClaudeSkillDispatch.ts";
 const SKILLS = new Set(["2spec", "implement", "review", "re-release-version"]);
 
 describe("planClaudeSkillDispatch", () => {
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "\u{11FDD}"])(
+    "dispatches %s aliases and preserves surrounding text",
+    (symbol) => {
+      expect(
+        planClaudeSkillDispatch(
+          `${symbol}review then ${symbol}implement fixes for ${symbol}20`,
+          SKILLS,
+        ),
+      ).toEqual({
+        leadingText: "/review then",
+        commandText: `/implement fixes for ${symbol}20`,
+        skillName: "implement",
+      });
+    },
+  );
   it("leaves a prompt without a known skill untouched", () => {
     expect(planClaudeSkillDispatch("fix the build", SKILLS)).toBeUndefined();
     // Not a discovered skill, so it stays prose rather than becoming a command.

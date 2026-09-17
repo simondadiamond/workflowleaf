@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { serializeComposerFileLink } from "./composerTrigger.ts";
+import { detectComposerTrigger, serializeComposerFileLink } from "./composerTrigger.ts";
+
+it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "\u{11FDD}"])(
+  "opens skill autocomplete with %s and preserves UTF-16 ranges",
+  (symbol) => {
+    const text = `use ${symbol}review`;
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "skill",
+      query: "review",
+      rangeStart: 4,
+      rangeEnd: text.length,
+    });
+    expect(detectComposerTrigger(symbol, symbol.length)?.query).toBe("");
+  },
+);
 
 describe("serializeComposerFileLink", () => {
   it("uses the basename as the markdown label", () => {

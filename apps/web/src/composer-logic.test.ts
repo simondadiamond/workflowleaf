@@ -230,8 +230,8 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it("detects $skill trigger at cursor", () => {
-    const text = "Use $gh-fi";
+  it.each(["$", "€", "£", "₹", "\u{11FDD}"])("detects %s skill trigger at cursor", (symbol) => {
+    const text = `Use ${symbol}gh-fi`;
     const trigger = detectComposerTrigger(text, text.length);
 
     expect(trigger).toEqual({

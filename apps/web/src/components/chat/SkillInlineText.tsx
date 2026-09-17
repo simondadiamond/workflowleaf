@@ -12,7 +12,7 @@ import {
 import { cn } from "~/lib/utils";
 
 const SKILL_TOKEN_REGEX =
-  /(^|\s)\$(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])([a-zA-Z0-9][a-zA-Z0-9:_-]*)(?=\s|$)/g;
+  /(^|\s)\p{Sc}(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])([a-zA-Z0-9][a-zA-Z0-9:_-]*)(?=\s|$)/gu;
 
 type InlineSkill = Pick<ServerProviderSkill, "name" | "displayName">;
 
@@ -24,7 +24,7 @@ export function SkillInlineText(props: { text: string; skills: ReadonlyArray<Inl
     const prefix = match[1] ?? "";
     const name = match[2] ?? "";
     const start = (match.index ?? 0) + prefix.length;
-    const rawText = `$${name}`;
+    const rawText = match[0].slice(prefix.length);
     const skill = props.skills.find((candidate) => candidate.name === name);
     if (!skill) {
       continue;
