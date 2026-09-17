@@ -35,6 +35,7 @@ export interface ShortcutMatchContext {
   previewFocus: boolean;
   previewOpen: boolean;
   isWeb: boolean;
+  isDesktop: boolean;
   [key: string]: boolean;
 }
 
@@ -147,6 +148,7 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     previewFocus: false,
     previewOpen: false,
     isWeb: !isElectron,
+    isDesktop: isElectron,
     ...options?.context,
   };
 }

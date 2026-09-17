@@ -541,13 +541,13 @@ describe("thread navigation helpers", () => {
     assert.isNull(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isWeb: true },
+        context: { isDesktop: false },
       }),
     );
     assert.strictEqual(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isWeb: false },
+        context: { isDesktop: true },
       }),
       "thread.jump.1",
     );
@@ -557,7 +557,7 @@ describe("thread navigation helpers", () => {
         DEFAULT_RESOLVED_KEYBINDINGS,
         {
           platform: "MacIntel",
-          context: { isWeb: true },
+          context: { isDesktop: false },
         },
       ),
     );
@@ -567,7 +567,7 @@ describe("thread navigation helpers", () => {
         DEFAULT_RESOLVED_KEYBINDINGS,
         {
           platform: "MacIntel",
-          context: { isWeb: false },
+          context: { isDesktop: true },
         },
       ),
     );
@@ -589,20 +589,20 @@ describe("model picker navigation helpers", () => {
     assert.isNull(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isWeb: true, modelPickerOpen: true },
+        context: { isDesktop: false, modelPickerOpen: true },
       }),
     );
     assert.strictEqual(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isWeb: false, modelPickerOpen: true },
+        context: { isDesktop: true, modelPickerOpen: true },
       }),
       "modelPicker.jump.3",
     );
     assert.strictEqual(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isWeb: false, modelPickerOpen: false },
+        context: { isDesktop: true, modelPickerOpen: false },
       }),
       "thread.jump.3",
     );
@@ -1167,7 +1167,7 @@ describe("composer and pull request shortcuts", () => {
     }
   });
 
-  it.each(["terminalOpen", "previewFocus", "previewOpen", "modelPickerOpen", "isWeb"])(
+  it.each(["terminalOpen", "previewFocus", "previewOpen", "modelPickerOpen", "isWeb", "isDesktop"])(
     "honors custom PR shortcut conditions for %s",
     (condition) => {
       const bindings = compileResolvedKeybindingsConfig([

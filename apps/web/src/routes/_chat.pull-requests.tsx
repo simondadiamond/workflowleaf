@@ -157,6 +157,7 @@ function getShortcutContext() {
     previewOpen: false,
     modelPickerOpen: false,
     isWeb: !isElectron,
+    isDesktop: isElectron,
   };
 }
 
