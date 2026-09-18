@@ -11,7 +11,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -47,6 +47,9 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { useIsMobile } from "~/hooks/useMediaQuery";
+import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -155,6 +158,7 @@ export const ChatHeader = memo(function ChatHeader({
       breakpoint: { value: HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM, unit: "rem" },
     });
   }, [panelAnimationDurationMs, panelAnimationsActive]);
+  const isMobile = useIsMobile();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
@@ -312,6 +316,49 @@ export const ChatHeader = memo(function ChatHeader({
     },
     [commitRename],
   );
+  // Keep the controls mounted inside the closed popover so editor shortcuts,
+  // pending Git actions, and their dialogs retain the same lifecycle as desktop.
+  const headerActions = (
+    <>
+      {activeProjectScripts && (
+        <div className={isMobile ? "flex items-center justify-between gap-4" : "contents"}>
+          {isMobile && <span className="text-sm">Project actions</span>}
+          <ProjectScriptsControl
+            scripts={activeProjectScripts}
+            fileScripts={fileScripts}
+            keybindings={keybindings}
+            preferredScriptId={preferredScriptId}
+            onRunScript={onRunProjectScript}
+            onAddScript={onAddProjectScript}
+            onUpdateScript={onUpdateProjectScript}
+            onDeleteScript={onDeleteProjectScript}
+          />
+        </div>
+      )}
+      {showOpenInPicker && (
+        <div className={isMobile ? "flex items-center justify-between gap-4" : "contents"}>
+          {isMobile && <span className="text-sm">Open in editor</span>}
+          <OpenInPicker
+            environmentId={activeThreadEnvironmentId}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            openInCwd={openInCwd}
+          />
+        </div>
+      )}
+      {activeProjectName && gitCwd && (
+        <div className={isMobile ? "flex items-center justify-between gap-4" : "contents"}>
+          {isMobile && <span className="text-sm">Git</span>}
+          <GitActionsControl
+            gitCwd={gitCwd}
+            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
+            onOpenPullRequest={onOpenPullRequest}
+            {...(draftId ? { draftId } : {})}
+          />
+        </div>
+      )}
+    </>
+  );
   return (
     <div
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
@@ -409,33 +456,26 @@ export const ChatHeader = memo(function ChatHeader({
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            fileScripts={fileScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
-        {activeProjectName && (
-          <GitActionsControl
-            gitCwd={gitCwd}
-            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            onOpenPullRequest={onOpenPullRequest}
-            {...(draftId ? { draftId } : {})}
-          />
+        {isMobile && (activeProjectScripts || showOpenInPicker || (activeProjectName && gitCwd)) ? (
+          <Popover>
+            <PopoverTrigger
+              render={<Button size="icon" variant="ghost" aria-label="More header actions" />}
+            >
+              <EllipsisIcon className="size-4" />
+            </PopoverTrigger>
+            <PopoverPopup
+              data-chat-header-actions
+              keepMounted
+              aria-label="Header actions"
+              align="end"
+              className="w-72"
+              viewportClassName="flex flex-col gap-4"
+            >
+              {headerActions}
+            </PopoverPopup>
+          </Popover>
+        ) : (
+          headerActions
         )}
       </div>
     </div>

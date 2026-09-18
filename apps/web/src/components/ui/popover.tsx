@@ -25,6 +25,7 @@ function PopoverPopup({
   sideOffset = 4,
   alignOffset = 0,
   tooltipStyle = false,
+  keepMounted = false,
   anchor,
   ...props
 }: PopoverPrimitive.Popup.Props & {
@@ -34,10 +35,11 @@ function PopoverPopup({
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
   tooltipStyle?: boolean;
+  keepMounted?: boolean;
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
 }) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal keepMounted={keepMounted}>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
