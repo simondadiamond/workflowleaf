@@ -355,6 +355,7 @@ export const ChatHeader = memo(function ChatHeader({
       {activeProjectScripts && (
         <>
           <ProjectScriptsControl
+            onRequestMenuClose={() => setActionsOpen(false)}
             presentation={actionsCollapsed ? "menu" : "toolbar"}
             scripts={activeProjectScripts}
             fileScripts={fileScripts}

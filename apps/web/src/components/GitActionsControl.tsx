@@ -1672,7 +1672,7 @@ export default function GitActionsControl({
         if (item.disabled && disabledReason && presentation === "menu") {
           return (
             <div key={`${item.id}-${item.label}`}>
-              <MenuItem disabled>
+              <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
                 <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
                 {item.label}
               </MenuItem>
@@ -1688,7 +1688,11 @@ export default function GitActionsControl({
                 nativeButton={false}
                 render={<span className="block w-max cursor-not-allowed" />}
               >
-                <MenuItem className="w-full" disabled>
+                <MenuItem
+                  density={presentation === "menu" ? "touch" : "default"}
+                  className="w-full"
+                  disabled
+                >
                   <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
                   {item.label}
                 </MenuItem>
@@ -1702,6 +1706,7 @@ export default function GitActionsControl({
 
         return (
           <MenuItem
+            density={presentation === "menu" ? "touch" : "default"}
             key={`${item.id}-${item.label}`}
             disabled={item.disabled}
             onClick={() => {
@@ -1715,6 +1720,7 @@ export default function GitActionsControl({
       })}
       {canPublishRepository ? (
         <MenuItem
+          density={presentation === "menu" ? "touch" : "default"}
           disabled={isGitActionRunning}
           onClick={() => {
             setIsPublishDialogOpen(true);
@@ -1747,7 +1753,8 @@ export default function GitActionsControl({
       {presentation === "menu" ? (
         !isRepo ? (
           <MenuItem
-            className="min-h-10 sm:min-h-10"
+            density={presentation === "menu" ? "touch" : "default"}
+
             disabled={initAction.isPending}
             onClick={initializeGit}
           >
@@ -1757,7 +1764,8 @@ export default function GitActionsControl({
         ) : (
           <>
             <MenuItem
-              className="min-h-10 sm:min-h-10"
+              density={presentation === "menu" ? "touch" : "default"}
+
               disabled={isGitActionRunning || quickAction.disabled || !!quickActionDisabledReason}
               onClick={runQuickAction}
             >
@@ -1778,13 +1786,11 @@ export default function GitActionsControl({
                 if (open) requestVcsStatusRefresh(refreshVcsStatus, activeEnvironmentId, gitCwd);
               }}
             >
-              <MenuSubTrigger className="min-h-10 sm:min-h-10" disabled={isGitActionRunning}>
+              <MenuSubTrigger density="touch" disabled={isGitActionRunning}>
                 <SourceControlIcon className="size-4" />
                 Git actions
               </MenuSubTrigger>
-              <MenuSubPopup className="max-w-[calc(100vw-2rem)] [&_[data-slot=menu-item]]:min-h-10">
-                {gitItems}
-              </MenuSubPopup>
+              <MenuSubPopup className="min-w-32 max-w-[calc(100vw-2rem)]">{gitItems}</MenuSubPopup>
             </MenuSub>
           </>
         )
