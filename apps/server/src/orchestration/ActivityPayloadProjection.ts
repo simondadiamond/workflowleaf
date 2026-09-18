@@ -474,8 +474,8 @@ export function projectActivityPayload(
       typeof payload.itemType === "string" && isToolLifecycleItemType(payload.itemType)
         ? payload.itemType
         : undefined,
-    requestKind: asTrimmedString(payload.requestKind),
-    title: asTrimmedString(payload.title),
+    requestKind: asTrimmedString(payload.requestKind) ?? undefined,
+    title: asTrimmedString(payload.title) ?? undefined,
     data,
   });
   const isRead = action === "read";

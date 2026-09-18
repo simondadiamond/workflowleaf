@@ -1236,8 +1236,8 @@ function classifyPayloadTool(payload: Record<string, unknown> | null, heading: s
   return classifyToolActivity({
     itemType: extractWorkLogItemType(payload),
     requestKind: extractWorkLogRequestKind(payload),
-    title: asTrimmedString(payload?.title ?? heading),
-    data: asRecord(payload?.data),
+    title: asTrimmedString(payload?.title ?? heading) ?? undefined,
+    data: asRecord(payload?.data) ?? undefined,
   });
 }
 
@@ -1250,7 +1250,7 @@ function persistableToolData(
   }
   if (extractWorkLogItemType(payload) === "mcp_tool_call") {
     const toolData = typeof data.toolName === "string" ? (data.item ?? data) : data.item;
-    return asRecord(toolData);
+    return asRecord(toolData) ?? undefined;
   }
   const slim: Record<string, unknown> = {};
   if (data.kind !== undefined) {
@@ -1288,7 +1288,7 @@ function extractToolDetail(
     if (rawOutputSummary && normalizePreviewForComparison(rawOutputSummary) !== normalizedHeading) {
       return rawOutputSummary;
     }
-    const searchLabel = formatSearchToolLabel(data);
+    const searchLabel = formatSearchToolLabel(data ?? undefined);
     return searchLabel && normalizePreviewForComparison(searchLabel) !== normalizedHeading
       ? searchLabel
       : null;
