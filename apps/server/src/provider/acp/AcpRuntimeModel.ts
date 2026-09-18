@@ -453,41 +453,49 @@ function locationsFromToolCallOutput(input: {
   readonly rawInput?: unknown;
   readonly rawOutput?: unknown;
 }): ReadonlyArray<EffectAcpSchema.ToolCallLocation> | undefined {
-  const paths: string[] = [];
+  const locations: EffectAcpSchema.ToolCallLocation[] = [];
   const seen = new Set<string>();
-  const push = (value: unknown) => {
+  const pushLocation = (location: EffectAcpSchema.ToolCallLocation) => {
+    const path = filePathFromToolValue(location.path);
+    if (!path || seen.has(path)) {
+      return;
+    }
+    seen.add(path);
+    locations.push({ ...location, path });
+  };
+  const pushPath = (value: unknown) => {
     const path = filePathFromToolValue(value);
     if (!path || seen.has(path)) {
       return;
     }
     seen.add(path);
-    paths.push(path);
+    locations.push({ path });
   };
 
   if (input.locations) {
     for (const location of input.locations) {
-      push(location.path);
+      pushLocation(location);
     }
   }
   if (input.content) {
     for (const entry of input.content) {
       if (entry.type === "diff") {
-        push(entry.path);
+        pushPath(entry.path);
       }
     }
   }
   if (isRecord(input.rawInput)) {
-    push(input.rawInput.path);
-    push(input.rawInput.filePath);
-    push(input.rawInput.file_path);
+    pushPath(input.rawInput.path);
+    pushPath(input.rawInput.filePath);
+    pushPath(input.rawInput.file_path);
   }
   if (isRecord(input.rawOutput)) {
-    push(input.rawOutput.path);
-    push(input.rawOutput.filePath);
-    push(input.rawOutput.file_path);
+    pushPath(input.rawOutput.path);
+    pushPath(input.rawOutput.filePath);
+    pushPath(input.rawOutput.file_path);
   }
 
-  return paths.length > 0 ? paths.map((path) => ({ path })) : undefined;
+  return locations.length > 0 ? locations : undefined;
 }
 
 function normalizeToolKind(kind: unknown): string | undefined {

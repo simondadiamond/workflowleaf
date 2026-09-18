@@ -2660,6 +2660,7 @@ function ActivityGroupTimelineRow({
         details.push(
           <ReasoningTraceBlock
             key={entry.id}
+            anchorKey={row.id}
             messages={messages}
             live={row.active && index === row.entries.length - 1}
             showHeader={work.length > 0}
@@ -2745,15 +2746,18 @@ function ReasoningTraceBody({
  * thought-only group already toggles from the parent row.
  */
 function ReasoningTraceBlock({
+  anchorKey,
   messages,
   live,
   showHeader,
 }: {
+  anchorKey: string;
   messages: ReadonlyArray<ChatMessage>;
   live: boolean;
   showHeader: boolean;
 }) {
-  const { timestampFormat } = use(TimelineRowCtx);
+  const ctx = use(TimelineRowCtx);
+  const { timestampFormat } = ctx;
   const { isWorking, unsettledTurnId } = use(TimelineRowActivityCtx);
   const first = messages[0]!;
   const streaming =
@@ -2762,7 +2766,7 @@ function ReasoningTraceBlock({
     isWorking &&
     first.turnId !== null &&
     first.turnId === unsettledTurnId;
-  const [expanded, setExpanded] = useState(false);
+  const expanded = !showHeader || ctx.expandedReasoningMessageIds.has(first.id);
   if (
     messages.every((reasoningMessage) => reasoningMessage.text.trim().length === 0) &&
     !streaming
@@ -2779,7 +2783,7 @@ function ReasoningTraceBlock({
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
+        onClick={() => ctx.onToggleReasoning(first.id, !expanded, anchorKey)}
         className="flex w-full min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 py-0 text-start transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
@@ -4957,7 +4961,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               <span
                 className={cn(
                   answerPreview ? "shrink-0" : "min-w-0 flex-1",
-                  expanded ? "whitespace-normal break-words" : "truncate",
+                  expanded ? "whitespace-pre-wrap break-words" : "truncate",
                   headingClass,
                 )}
               >

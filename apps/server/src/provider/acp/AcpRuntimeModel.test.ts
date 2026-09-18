@@ -315,6 +315,26 @@ describe("AcpRuntimeModel", () => {
     expect(event.toolCall.detail).toBe("src/lib/openai-auth.ts");
   });
 
+  it("keeps ACP location line metadata on a read", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-read-line",
+        title: "Read src/env.ts",
+        kind: "read",
+        status: "in_progress",
+        locations: [{ path: "src/env.ts", line: 42 }],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const event = result.events[0];
+    if (event?._tag !== "ToolCallUpdated") {
+      throw new Error("expected a ToolCallUpdated event");
+    }
+    expect(event.toolCall.data.locations).toEqual([{ path: "src/env.ts", line: 42 }]);
+  });
+
   it("lifts a path from rawInput onto the tool-call locations", () => {
     const result = parseSessionUpdateEvent({
       sessionId: "session-1",

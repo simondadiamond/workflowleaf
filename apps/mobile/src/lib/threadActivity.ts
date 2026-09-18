@@ -565,7 +565,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     itemType,
     requestKind,
     title: title ?? activity.summary,
-    data: asRecord(payload?.data),
+    data: asRecord(payload?.data) ?? undefined,
   });
   if (!taskDetailAsLabel && output) {
     entry.detail = output;
@@ -616,7 +616,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     if (typeof totalFiles === "number" && Number.isFinite(totalFiles)) {
       entry.detail = `${totalFiles.toLocaleString()} file${totalFiles === 1 ? "" : "s"}`;
     } else {
-      const searchLabel = formatSearchToolLabel(asRecord(payload?.data));
+      const searchLabel = formatSearchToolLabel(asRecord(payload?.data) ?? undefined);
       if (searchLabel) {
         entry.detail = searchLabel;
       }
@@ -1145,6 +1145,7 @@ function workEntryPreview(
     | "requestKind"
     | "toolData"
     | "viewedImagePath"
+    | "tone"
   >,
 ): string | null {
   if (workEntry.command) return workEntry.command;
@@ -1565,8 +1566,8 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   const action = classifyToolActivity({
     itemType: extractWorkLogItemType(payload),
     requestKind: extractWorkLogRequestKind(payload),
-    title: asTrimmedString(payload?.title),
-    data: asRecord(payload?.data),
+    title: asTrimmedString(payload?.title) ?? undefined,
+    data: asRecord(payload?.data) ?? undefined,
   });
   if (action === "search" || action === "command") {
     return [];
