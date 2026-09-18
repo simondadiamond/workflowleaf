@@ -221,6 +221,27 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("keeps Claude Grep pattern and path as rawInput", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Tool call",
+        data: {
+          toolName: "Grep",
+          input: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+          rawOutput: { totalFiles: 28 },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        toolName: "Grep",
+        rawInput: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+      },
+    });
+    expect((projected.payload as { data?: { input?: unknown } }).data?.input).toBeUndefined();
+  });
+
   it("keeps files from a Cursor 2026.09.15 refreshed read title and rawInput", () => {
     const projected = projectActivityPayload(
       activity({

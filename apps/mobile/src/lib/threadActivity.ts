@@ -21,6 +21,7 @@ import {
   formatReadToolLabel,
   formatSearchToolLabel,
   mergeToolActivityData,
+  structuredSearchToolInput,
 } from "@t3tools/shared/toolActivity";
 import {
   commandDetailRepeatsCommand,
@@ -646,7 +647,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       slim.toolName = data.toolName;
     }
     const rawInput = asRecord(data.rawInput);
-    if (rawInput && Object.keys(rawInput).length > 0) slim.rawInput = rawInput;
+    if (rawInput && Object.keys(rawInput).length > 0) {
+      slim.rawInput = rawInput;
+    } else {
+      const searchInput = structuredSearchToolInput(data);
+      if (searchInput) {
+        slim.rawInput = searchInput;
+      }
+    }
     if (Object.keys(slim).length > 0) {
       entry.toolData = slim;
     }

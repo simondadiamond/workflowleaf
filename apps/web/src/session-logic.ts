@@ -25,6 +25,7 @@ import {
   collectToolFilePaths,
   formatSearchToolLabel,
   mergeToolActivityData,
+  structuredSearchToolInput,
 } from "@t3tools/shared/toolActivity";
 import {
   isToolLifecycleItemType,
@@ -1261,6 +1262,11 @@ function persistableToolData(
   const rawInput = asRecord(data.rawInput);
   if (rawInput && Object.keys(rawInput).length > 0) {
     slim.rawInput = rawInput;
+  } else {
+    const searchInput = structuredSearchToolInput(data);
+    if (searchInput) {
+      slim.rawInput = searchInput;
+    }
   }
   return Object.keys(slim).length > 0 ? slim : undefined;
 }

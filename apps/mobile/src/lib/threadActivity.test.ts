@@ -784,6 +784,43 @@ describe("buildThreadFeed", () => {
     );
   });
 
+  it("labels a Claude Grep from structured input instead of the file count", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-claude-grep"),
+      projectId: ProjectId.make("project-1"),
+      title: "Claude grep",
+      activities: [
+        makeActivity({
+          id: EventId.make("claude-grep"),
+          createdAt: "2026-09-17T00:00:00.000Z",
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Tool call",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Tool call",
+            detail: "28 files",
+            data: {
+              toolName: "Grep",
+              input: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+              rawOutput: { totalFiles: 28 },
+            },
+          },
+        }),
+      ],
+    });
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(toolGroupAction(row!.workEntry)).toBe("code-search");
+    expect(row?.workEntry.toolData).toMatchObject({
+      toolName: "Grep",
+      rawInput: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+    });
+    expect(workEntryRowLabel(row!.workEntry)).toBe("Searched workEntryDisplayLabel in src");
+  });
+
   it("labels a Cursor 2026.09.15 refreshed read with Read plus the file path", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-read-refresh"),

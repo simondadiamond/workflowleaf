@@ -863,6 +863,26 @@ describe("AcpRuntimeModel", () => {
       ).toEqual({ emit: false, skippedSinceEmit: 0 });
     });
 
+    it("coalesces streaming reads whose extracted locations keep the same path", () => {
+      const previous: AcpToolCallState = {
+        toolCallId: "tool-1",
+        title: "Read File",
+        status: "inProgress",
+        data: { locations: [{ path: "/tmp/app.ts" }] },
+      };
+      expect(
+        decideToolCallUpdateEmission({
+          previous,
+          next: {
+            ...previous,
+            data: { locations: [{ path: "/tmp/app.ts" }] },
+          },
+          lastEmittedDetailLength: 0,
+          skippedSinceEmit: 0,
+        }),
+      ).toEqual({ emit: false, skippedSinceEmit: 0 });
+    });
+
     it("emits when Cursor backfills rawInput or locations without changing the title", () => {
       const previous: AcpToolCallState = {
         toolCallId: "tool-1",

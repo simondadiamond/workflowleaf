@@ -10,6 +10,7 @@ import {
   classifyToolActivity,
   collectToolFilePaths,
   projectQuestionToolInput,
+  structuredSearchToolInput,
 } from "@t3tools/shared/toolActivity";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -496,7 +497,8 @@ export function projectActivityPayload(
     projectedData.toolName = data.toolName;
   }
 
-  const rawInput = projectRawInput(data.rawInput);
+  const rawInput =
+    projectRawInput(data.rawInput) ?? projectRawInput(structuredSearchToolInput(data));
   if (rawInput !== undefined) {
     projectedData.rawInput = rawInput;
   }

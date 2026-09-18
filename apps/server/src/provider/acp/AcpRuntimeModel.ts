@@ -669,9 +669,33 @@ function toolCallOutputUnchanged(previous: AcpToolCallState, next: AcpToolCallSt
   );
 }
 
+function toolCallLocationsEqual(previous: unknown, next: unknown): boolean {
+  if (previous === next) {
+    return true;
+  }
+  if (!Array.isArray(previous) || !Array.isArray(next) || previous.length !== next.length) {
+    return false;
+  }
+  for (let index = 0; index < previous.length; index += 1) {
+    const left = previous[index];
+    const right = next[index];
+    if (left === right) {
+      continue;
+    }
+    if (!isRecord(left) || !isRecord(right)) {
+      return false;
+    }
+    if (left.path !== right.path || left.line !== right.line) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function toolCallIdentityUnchanged(previous: AcpToolCallState, next: AcpToolCallState): boolean {
   return (
-    previous.data.rawInput === next.data.rawInput && previous.data.locations === next.data.locations
+    previous.data.rawInput === next.data.rawInput &&
+    toolCallLocationsEqual(previous.data.locations, next.data.locations)
   );
 }
 

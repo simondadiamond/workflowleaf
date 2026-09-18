@@ -1536,6 +1536,40 @@ describe("deriveWorkLogEntries", () => {
     );
   });
 
+  it("labels a Claude Grep from structured input after slimming", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "claude-grep",
+        createdAt: "2026-09-17T00:00:01.000Z",
+        kind: "tool.completed",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          detail: "28 files",
+          data: {
+            toolName: "Grep",
+            input: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+            rawOutput: { totalFiles: 28 },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      id: "claude-grep",
+      toolData: {
+        toolName: "Grep",
+        rawInput: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+      },
+    });
+    expect(entry && toolGroupAction(entry)).toBe("code-search");
+    expect(entry && workEntryDisplayLabel(entry, undefined)).toBe(
+      "Searched workEntryDisplayLabel in src",
+    );
+  });
+
   it("does not use file contents as the read-file label when no path is available", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

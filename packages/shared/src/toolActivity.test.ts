@@ -7,6 +7,7 @@ import {
   formatReadToolLabel,
   formatSearchToolLabel,
   mergeToolActivityData,
+  structuredSearchToolInput,
 } from "./toolActivity.ts";
 
 describe("toolActivity", () => {
@@ -197,6 +198,21 @@ describe("toolActivity", () => {
       }),
     ).toBe("Searched workEntryDisplayLabel in src");
     expect(formatSearchToolLabel({ rawInput: {} })).toBeUndefined();
+  });
+
+  it("copies Claude search args from input without taking write bodies", () => {
+    expect(
+      structuredSearchToolInput({
+        toolName: "Grep",
+        input: { pattern: "workEntryDisplayLabel", path: "apps/web/src" },
+      }),
+    ).toEqual({ pattern: "workEntryDisplayLabel", path: "apps/web/src" });
+    expect(
+      structuredSearchToolInput({
+        toolName: "Edit",
+        input: { file_path: "src/a.ts", old_string: "a", new_string: "b".repeat(80) },
+      }),
+    ).toBeUndefined();
   });
 
   it("formats read labels as a verb plus the path", () => {
