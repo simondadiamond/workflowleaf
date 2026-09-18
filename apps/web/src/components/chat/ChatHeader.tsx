@@ -22,6 +22,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { type DraftId } from "~/composerDraftStore";
@@ -159,6 +160,27 @@ export const ChatHeader = memo(function ChatHeader({
     });
   }, [panelAnimationDurationMs, panelAnimationsActive]);
   const isMobile = useIsMobile();
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsContainer] = useState(() => {
+    const container = document.createElement("div");
+    container.className = "contents";
+    return container;
+  });
+  // Reparent the DOM host, not the React controls: rotating a phone or resizing
+  // a window must not discard an unsaved script or Git dialog.
+  const mountInlineActions = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node && !isMobile) node.appendChild(actionsContainer);
+    },
+    [actionsContainer, isMobile],
+  );
+  const mountPopoverActions = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node && isMobile) node.appendChild(actionsContainer);
+    },
+    [actionsContainer, isMobile],
+  );
+  if (!isMobile && actionsOpen) setActionsOpen(false);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
@@ -456,27 +478,34 @@ export const ChatHeader = memo(function ChatHeader({
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
-        {isMobile && (activeProjectScripts || showOpenInPicker || (activeProjectName && gitCwd)) ? (
-          <Popover>
-            <PopoverTrigger
-              render={<Button size="icon" variant="ghost" aria-label="More header actions" />}
-            >
-              <EllipsisIcon className="size-4" />
-            </PopoverTrigger>
-            <PopoverPopup
-              data-chat-header-actions
-              keepMounted
-              aria-label="Header actions"
-              align="end"
-              className="w-72"
-              viewportClassName="flex flex-col gap-4"
-            >
-              {headerActions}
-            </PopoverPopup>
-          </Popover>
-        ) : (
-          headerActions
-        )}
+        <Popover open={isMobile && actionsOpen} onOpenChange={setActionsOpen}>
+          <PopoverTrigger
+            className={
+              isMobile &&
+              (activeProjectScripts || showOpenInPicker || (activeProjectName && gitCwd))
+                ? undefined
+                : "hidden"
+            }
+            render={<Button size="icon" variant="ghost" aria-label="More header actions" />}
+          >
+            <EllipsisIcon className="size-4" />
+          </PopoverTrigger>
+          <div ref={mountInlineActions} className="contents" />
+          <PopoverPopup
+            data-chat-header-actions
+            keepMounted
+            aria-label="Header actions"
+            align="end"
+            className="w-72"
+            finalFocus={isMobile ? undefined : false}
+          >
+            <div ref={mountPopoverActions} className="contents" />
+          </PopoverPopup>
+          {createPortal(
+            <div className={isMobile ? "flex flex-col gap-4" : "contents"}>{headerActions}</div>,
+            actionsContainer,
+          )}
+        </Popover>
       </div>
     </div>
   );
