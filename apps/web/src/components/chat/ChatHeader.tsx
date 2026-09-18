@@ -50,7 +50,7 @@ import {
 import { cn } from "~/lib/utils";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { Button } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Menu, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -160,6 +160,18 @@ export const ChatHeader = memo(function ChatHeader({
     });
   }, [panelAnimationDurationMs, panelAnimationsActive]);
   const isMobile = useIsMobile();
+  // Side panels can leave a desktop header narrower than a phone.
+  const [isNarrowHeader, setIsNarrowHeader] = useState(false);
+  useEffect(() => {
+    const container = headerActionsRef.current?.parentElement;
+    if (!container) return;
+    const update = () => setIsNarrowHeader(container.clientWidth < 512);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+  const actionsCollapsed = isMobile || isNarrowHeader;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsContainer] = useState(() => {
     const container = document.createElement("div");
@@ -170,17 +182,17 @@ export const ChatHeader = memo(function ChatHeader({
   // a window must not discard an unsaved script or Git dialog.
   const mountInlineActions = useCallback(
     (node: HTMLDivElement | null) => {
-      if (node && !isMobile) node.appendChild(actionsContainer);
+      if (node && !actionsCollapsed) node.appendChild(actionsContainer);
     },
-    [actionsContainer, isMobile],
+    [actionsContainer, actionsCollapsed],
   );
-  const mountPopoverActions = useCallback(
+  const mountMenuActions = useCallback(
     (node: HTMLDivElement | null) => {
-      if (node && isMobile) node.appendChild(actionsContainer);
+      if (node && actionsCollapsed) node.appendChild(actionsContainer);
     },
-    [actionsContainer, isMobile],
+    [actionsContainer, actionsCollapsed],
   );
-  if (!isMobile && actionsOpen) setActionsOpen(false);
+  if (!actionsCollapsed && actionsOpen) setActionsOpen(false);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
@@ -338,14 +350,12 @@ export const ChatHeader = memo(function ChatHeader({
     },
     [commitRename],
   );
-  // Keep the controls mounted inside the closed popover so editor shortcuts,
-  // pending Git actions, and their dialogs retain the same lifecycle as desktop.
   const headerActions = (
     <>
       {activeProjectScripts && (
-        <div className={isMobile ? "flex items-center justify-between gap-4" : "contents"}>
-          {isMobile && <span className="text-sm">Project actions</span>}
+        <>
           <ProjectScriptsControl
+            presentation={actionsCollapsed ? "menu" : "toolbar"}
             scripts={activeProjectScripts}
             fileScripts={fileScripts}
             keybindings={keybindings}
@@ -355,29 +365,31 @@ export const ChatHeader = memo(function ChatHeader({
             onUpdateScript={onUpdateProjectScript}
             onDeleteScript={onDeleteProjectScript}
           />
-        </div>
+        </>
       )}
       {showOpenInPicker && (
-        <div className={isMobile ? "flex items-center justify-between gap-4" : "contents"}>
-          {isMobile && <span className="text-sm">Open in editor</span>}
+        <>
+          {actionsCollapsed && activeProjectScripts && <MenuSeparator />}
           <OpenInPicker
+            presentation={actionsCollapsed ? "menu" : "toolbar"}
             environmentId={activeThreadEnvironmentId}
             keybindings={keybindings}
             availableEditors={availableEditors}
             openInCwd={openInCwd}
           />
-        </div>
+        </>
       )}
       {activeProjectName && gitCwd && (
-        <div className={isMobile ? "flex items-center justify-between gap-4" : "contents"}>
-          {isMobile && <span className="text-sm">Git</span>}
+        <>
+          {actionsCollapsed && (activeProjectScripts || showOpenInPicker) && <MenuSeparator />}
           <GitActionsControl
+            presentation={actionsCollapsed ? "menu" : "toolbar"}
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
             onOpenPullRequest={onOpenPullRequest}
             {...(draftId ? { draftId } : {})}
           />
-        </div>
+        </>
       )}
     </>
   );
@@ -474,38 +486,35 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
+          rightPanelOpen ? "pr-0" : "pr-20 sm:pr-16",
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
-        <Popover open={isMobile && actionsOpen} onOpenChange={setActionsOpen}>
-          <PopoverTrigger
+        <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
+          <MenuTrigger
             className={
-              isMobile &&
+              actionsCollapsed &&
               (activeProjectScripts || showOpenInPicker || (activeProjectName && gitCwd))
                 ? undefined
                 : "hidden"
             }
-            render={<Button size="icon" variant="ghost" aria-label="More header actions" />}
+            render={<Button size="icon-sm" variant="ghost" aria-label="More header actions" />}
           >
             <EllipsisIcon className="size-4" />
-          </PopoverTrigger>
+          </MenuTrigger>
           <div ref={mountInlineActions} className="contents" />
-          <PopoverPopup
+          <MenuPopup
             data-chat-header-actions
             keepMounted
             aria-label="Header actions"
             align="end"
-            className="w-72"
-            finalFocus={isMobile ? undefined : false}
+            className="min-w-56 max-w-[calc(100vw-2rem)]"
+            finalFocus={actionsCollapsed ? undefined : false}
           >
-            <div ref={mountPopoverActions} className="contents" />
-          </PopoverPopup>
-          {createPortal(
-            <div className={isMobile ? "flex flex-col gap-4" : "contents"}>{headerActions}</div>,
-            actionsContainer,
-          )}
-        </Popover>
+            <div ref={mountMenuActions} className="contents" />
+            {createPortal(headerActions, actionsContainer)}
+          </MenuPopup>
+        </Menu>
       </div>
     </div>
   );
