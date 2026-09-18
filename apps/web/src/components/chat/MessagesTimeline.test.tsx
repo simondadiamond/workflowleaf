@@ -2071,7 +2071,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("text-destructive");
   });
 
-  it("only withholds an expanded tool-call label click while text is selected", async () => {
+  it("lets the heading toggle an expanded tool call while the inspect body stays click-isolated", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("requestAnimationFrame", () => 0);
     vi.stubGlobal("cancelAnimationFrame", () => {});
@@ -2090,10 +2090,12 @@ describe("MessagesTimeline", () => {
                   id: "work-standalone",
                   createdAt: MESSAGE_CREATED_AT,
                   toolCallId: "call-standalone",
-                  label: "Run lint",
+                  label: "Read File",
                   tone: "tool",
-                  itemType: "command_execution",
-                  command: "pnpm lint",
+                  itemType: "dynamic_tool_call",
+                  requestKind: "file-read",
+                  changedFiles: ["/tmp/app.ts"],
+                  toolData: { kind: "read" },
                   toolLifecycleStatus: "completed",
                 },
               },
@@ -2102,19 +2104,18 @@ describe("MessagesTimeline", () => {
         );
       });
       await act(() => renderer!.root.findByProps({ "aria-expanded": false }).props.onClick());
-      const label = renderer!.root.findAll(
-        (node) => node.type === "span" && String(node.props.className).includes("select-text"),
+      expect(renderer!.root.findByProps({ "aria-expanded": true })).toBeTruthy();
+      const inspectFrame = renderer!.root.findAll(
+        (node) =>
+          node.type === "div" &&
+          typeof node.props.onClick === "function" &&
+          typeof node.props.onPointerDown === "function",
       )[0];
       const stopPropagation = vi.fn();
-      // Only the click that ends a selection may be withheld from the row
-      // toggle; the plain click has to reach it so the label can collapse.
-      for (const isCollapsed of [false, true]) {
-        label!.props.onClick({
-          currentTarget: { ownerDocument: { getSelection: () => ({ isCollapsed }) } },
-          stopPropagation,
-        });
-      }
+      inspectFrame!.props.onClick({ stopPropagation });
       expect(stopPropagation).toHaveBeenCalledTimes(1);
+      await act(() => renderer!.root.findByProps({ "aria-expanded": true }).props.onClick());
+      expect(renderer!.root.findByProps({ "aria-expanded": false })).toBeTruthy();
     } finally {
       await act(() => renderer?.unmount());
     }

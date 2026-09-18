@@ -159,6 +159,12 @@ describe("toolActivity", () => {
     expect(classifyToolActivity({ data: { toolName: "Glob" } })).toBe("search");
     expect(classifyToolActivity({ data: { toolName: "Read" } })).toBe("read");
     expect(classifyToolActivity({ title: "Read File" })).toBe("other");
+    expect(
+      classifyToolActivity({
+        itemType: "file_change",
+        requestKind: "command",
+      }),
+    ).toBe("file_change");
   });
 
   it("collects named path fields and ignores command strings and file bodies", () => {

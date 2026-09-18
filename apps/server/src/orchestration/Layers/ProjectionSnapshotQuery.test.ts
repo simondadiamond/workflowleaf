@@ -3150,7 +3150,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
               command: "vp test run",
               aggregatedOutput: "failed command",
             },
-            files: [{ path: "apps/server/src/failed.ts" }],
             rawOutput: { content: "failed output" },
           },
         });

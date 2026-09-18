@@ -156,8 +156,8 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 const CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 const CURSOR_PARAMETERIZED_MODEL_PICKER_MIN_VERSION_DATE = 2026_04_08;
 /** Earliest Cursor Agent that contains ACP `refreshToolCall` (2026.08.11 does not). */
-export const MINIMUM_CURSOR_AGENT_VERSION_DATE = 2026_08_25;
-export const MINIMUM_CURSOR_AGENT_VERSION_LABEL = "2026.08.25";
+const MINIMUM_CURSOR_AGENT_VERSION_DATE = 2026_08_25;
+const MINIMUM_CURSOR_AGENT_VERSION_LABEL = "2026.08.25";
 const CURSOR_CLI_INSTALLATION_DOCS_URL = "https://cursor.com/docs/cli/installation";
 const CURSOR_ACP_MODEL_DISCOVERY_FAILED_MESSAGE = [
   "Cursor ACP model discovery failed.",

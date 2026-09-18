@@ -82,7 +82,7 @@ function normalizeToolFilePath(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
-export function rememberToolFilePath(target: string[], seen: Set<string>, value: unknown): void {
+function rememberToolFilePath(target: string[], seen: Set<string>, value: unknown): void {
   const path = filePathFromToolValue(value);
   if (!path) {
     return;
@@ -270,14 +270,25 @@ export function classifyToolActivity(input: {
     asTrimmedString(input.data?.toolName) ?? asTrimmedString(asRecord(input.data?.item)?.tool),
   );
 
-  if (itemType === "command_execution" || requestKind === "command" || kind === "execute") {
+  if (itemType === "command_execution") {
     return "command";
   }
-  if (itemType === "image_view" || requestKind === "file-read" || kind === "read") {
+  if (itemType === "image_view") {
+    return "read";
+  }
+  if (itemType === "file_change") {
+    return "file_change";
+  }
+  if (itemType === "web_search") {
+    return "search";
+  }
+  if (requestKind === "command" || kind === "execute") {
+    return "command";
+  }
+  if (requestKind === "file-read" || kind === "read") {
     return "read";
   }
   if (
-    itemType === "file_change" ||
     requestKind === "file-change" ||
     kind === "edit" ||
     kind === "move" ||
@@ -286,7 +297,7 @@ export function classifyToolActivity(input: {
   ) {
     return "file_change";
   }
-  if (itemType === "web_search" || kind === "search") {
+  if (kind === "search") {
     return "search";
   }
   if (toolName === "terminal" || toolName === "bash" || toolName === "shell") {
