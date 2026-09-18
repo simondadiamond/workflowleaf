@@ -700,9 +700,36 @@ function toolCallLocationsEqual(previous: unknown, next: unknown): boolean {
   return true;
 }
 
+function toolCallRawInputEqual(previous: unknown, next: unknown): boolean {
+  if (previous === next) {
+    return true;
+  }
+  if (Array.isArray(previous) || Array.isArray(next)) {
+    return (
+      Array.isArray(previous) &&
+      Array.isArray(next) &&
+      previous.length === next.length &&
+      previous.every((value, index) => toolCallRawInputEqual(value, next[index]))
+    );
+  }
+  if (!isRecord(previous) || !isRecord(next)) {
+    return Object.is(previous, next);
+  }
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+  return (
+    previousKeys.length === nextKeys.length &&
+    previousKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(next, key) &&
+        toolCallRawInputEqual(previous[key], next[key]),
+    )
+  );
+}
+
 function toolCallIdentityUnchanged(previous: AcpToolCallState, next: AcpToolCallState): boolean {
   return (
-    previous.data.rawInput === next.data.rawInput &&
+    toolCallRawInputEqual(previous.data.rawInput, next.data.rawInput) &&
     toolCallLocationsEqual(previous.data.locations, next.data.locations)
   );
 }
