@@ -16,10 +16,18 @@ import type {
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
+  classifyToolActivity,
+  collectToolFilePaths,
+  formatReadToolLabel,
+  formatSearchToolLabel,
+  mergeToolActivityData,
+} from "@t3tools/shared/toolActivity";
+import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
   extractWorkLogToolLifecycleStatus,
   isWorktreeSetupActivity,
+  compactWorkLogLabel,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
@@ -66,9 +74,11 @@ export interface ThreadFeedActivity {
     | "computer"
     | "edit"
     | "eye"
+    | "file-text"
     | "globe"
     | "hammer"
     | "message"
+    | "search"
     | "warning"
     | "wrench"
     | "zap";
@@ -550,6 +560,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const viewedImagePath = asTrimmedString(asRecord(payload?.data)?.imagePath);
   const commandOutput = commandPreview.command ? extractCommandOutputText(payload?.data) : null;
   const output = commandOutput ? stripTrailingExitCode(commandOutput).output : null;
+  const classified = classifyToolActivity({
+    itemType,
+    requestKind,
+    title: title ?? activity.summary,
+    data: asRecord(payload?.data),
+  });
   if (!taskDetailAsLabel && output) {
     entry.detail = output;
   } else if (!taskDetailAsLabel && typeof payload?.detail === "string") {
@@ -564,7 +580,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
         toolName: data?.toolName,
         data,
       });
-    if (detail && detail !== title && !repeatsCommand) entry.detail = detail;
+    if (detail && detail !== title && !repeatsCommand) {
+      entry.detail = detail;
+    }
   }
   if (isTaskActivity && typeof payload?.error === "string" && payload.error.trim()) {
     entry.detail = payload.error;
@@ -584,6 +602,24 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+    if (classified === "read") {
+      entry.detail = changedFiles.join("\n");
+    }
+  } else if (!entry.detail && classified === "read") {
+    const readOutput = extractReadToolOutput(payload);
+    if (readOutput) {
+      entry.detail = readOutput;
+    }
+  } else if (!entry.detail && classified === "search") {
+    const totalFiles = asRecord(asRecord(payload?.data)?.rawOutput)?.totalFiles;
+    if (typeof totalFiles === "number" && Number.isFinite(totalFiles)) {
+      entry.detail = `${totalFiles.toLocaleString()} file${totalFiles === 1 ? "" : "s"}`;
+    } else {
+      const searchLabel = formatSearchToolLabel(asRecord(payload?.data));
+      if (searchLabel) {
+        entry.detail = searchLabel;
+      }
+    }
   }
   if (title) {
     entry.toolTitle = title;
@@ -597,11 +633,22 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolPresentation.toolSource) {
     entry.toolSource = toolPresentation.toolSource;
   }
+  const data = asRecord(payload?.data);
   if (itemType === "mcp_tool_call") {
-    const data = asRecord(payload?.data);
     const toolData = typeof data?.toolName === "string" ? (data.item ?? data) : data?.item;
     if (toolData !== undefined) {
       entry.toolData = toolData;
+    }
+  } else if (data) {
+    const slim: Record<string, unknown> = {};
+    if (data.kind !== undefined) slim.kind = data.kind;
+    if (typeof data.toolName === "string" && data.toolName.trim().length > 0) {
+      slim.toolName = data.toolName;
+    }
+    const rawInput = asRecord(data.rawInput);
+    if (rawInput && Object.keys(rawInput).length > 0) slim.rawInput = rawInput;
+    if (Object.keys(slim).length > 0) {
+      entry.toolData = slim;
     }
   }
   if (itemType) {
@@ -880,7 +927,7 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolCallId = next.toolCallId ?? previous.toolCallId;
-  const toolData = next.toolData ?? previous.toolData;
+  const toolData = mergeToolActivityData(previous.toolData, next.toolData);
   return {
     ...previous,
     ...next,
@@ -968,13 +1015,26 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   }
   if (entry.sourceActivityKind === "runtime.warning") return "warning";
   if (entry.toolSurface) return entry.toolSurface;
-  if (entry.requestKind === "command") return "command";
-  if (entry.requestKind === "file-read") return "eye";
-  if (entry.requestKind === "file-change") return "edit";
-  if (entry.itemType === "command_execution" || entry.command) return "command";
-  if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
-  if (entry.itemType === "web_search") return "globe";
-  if (entry.itemType === "image_view") return "eye";
+  if (entry.itemType === "image_view" || entry.viewedImagePath) return "eye";
+  const action = toolGroupAction(entry);
+  if (action === "read" || entry.requestKind === "file-read") return "file-text";
+  if (
+    action === "command" ||
+    entry.requestKind === "command" ||
+    entry.itemType === "command_execution" ||
+    Boolean(entry.command)
+  ) {
+    return "command";
+  }
+  if (
+    action === "edit" ||
+    entry.requestKind === "file-change" ||
+    entry.itemType === "file_change"
+  ) {
+    return "edit";
+  }
+  if (action === "code-search") return "search";
+  if (action === "search" || entry.itemType === "web_search") return "globe";
   if (entry.itemType === "mcp_tool_call") return "wrench";
   if (entry.itemType === "dynamic_tool_call" || entry.itemType === "collab_agent_tool_call") {
     return "hammer";
@@ -987,6 +1047,16 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
 
 function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
   if (entry.agentSpawn) return agentSpawnExpandedBody(entry.agentSpawn);
+  if (toolGroupAction(entry) === "read") {
+    const paths = (entry.changedFiles ?? []).map((path) => path.trim()).filter(Boolean);
+    if (paths.length > 0) {
+      return [...new Set(paths)].join("\n");
+    }
+    if (entry.viewedImagePath) {
+      return null;
+    }
+    return entry.detail?.trim() || null;
+  }
   const blocks: string[] = [];
   const visibleLabel = workEntryRowLabel(entry, true).trim();
   const appendBlock = (value: string | null | undefined) => {
@@ -1056,10 +1126,40 @@ function memoizeValue<T>(build: () => T): () => T {
 }
 
 function workEntryPreview(
-  workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles">,
+  workEntry: Pick<
+    WorkLogEntry,
+    | "detail"
+    | "command"
+    | "changedFiles"
+    | "itemType"
+    | "toolTitle"
+    | "label"
+    | "requestKind"
+    | "toolData"
+    | "viewedImagePath"
+  >,
 ): string | null {
   if (workEntry.command) return workEntry.command;
-  if (workEntry.detail) return workEntry.detail;
+  const action = toolGroupAction(workEntry);
+  if (action === "code-search" || action === "search") {
+    const searchLabel = formatSearchToolLabel(asRecord(workEntry.toolData) ?? undefined);
+    if (searchLabel) return searchLabel;
+  }
+  const readLike = action === "read";
+  if (readLike && (workEntry.changedFiles?.length ?? 0) > 0) {
+    const [firstPath] = workEntry.changedFiles ?? [];
+    if (!firstPath) return null;
+    return formatReadToolLabel(firstPath, workEntry.changedFiles!.length - 1);
+  }
+  if (workEntry.viewedImagePath) {
+    return compactWorkLogLabel(workEntry.detail) ?? workEntry.viewedImagePath;
+  }
+  if (readLike) {
+    return "Read file";
+  }
+  if (workEntry.detail) {
+    return workEntry.detail;
+  }
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
   if (!firstPath) return null;
@@ -1446,68 +1546,24 @@ function extractWorkLogRequestKind(
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
 }
 
-function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
-  const normalized = asTrimmedString(value);
-  if (!normalized || seen.has(normalized)) {
-    return;
-  }
-  seen.add(normalized);
-  target.push(normalized);
-}
-
-function collectChangedFiles(value: unknown, target: string[], seen: Set<string>, depth: number) {
-  if (depth > 4 || target.length >= 12) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      collectChangedFiles(entry, target, seen, depth + 1);
-      if (target.length >= 12) {
-        return;
-      }
-    }
-    return;
-  }
-
-  const record = asRecord(value);
-  if (!record) {
-    return;
-  }
-
-  pushChangedFile(target, seen, record.path);
-  pushChangedFile(target, seen, record.filePath);
-  pushChangedFile(target, seen, record.relativePath);
-  pushChangedFile(target, seen, record.filename);
-  pushChangedFile(target, seen, record.newPath);
-  pushChangedFile(target, seen, record.oldPath);
-
-  for (const nestedKey of [
-    "item",
-    "result",
-    "input",
-    "data",
-    "changes",
-    "files",
-    "edits",
-    "patch",
-    "patches",
-    "operations",
-  ]) {
-    if (!(nestedKey in record)) {
-      continue;
-    }
-    collectChangedFiles(record[nestedKey], target, seen, depth + 1);
-    if (target.length >= 12) {
-      return;
-    }
-  }
+function extractReadToolOutput(payload: Record<string, unknown> | null): string | null {
+  const content =
+    asTrimmedString(asRecord(asRecord(payload?.data)?.rawOutput)?.content) ??
+    asTrimmedString(asRecord(asRecord(payload?.data)?.rawOutput)?.stdout);
+  return content;
 }
 
 function extractChangedFiles(payload: Record<string, unknown> | null): string[] {
-  const changedFiles: string[] = [];
-  const seen = new Set<string>();
-  collectChangedFiles(asRecord(payload?.data), changedFiles, seen, 0);
-  return changedFiles;
+  const action = classifyToolActivity({
+    itemType: extractWorkLogItemType(payload),
+    requestKind: extractWorkLogRequestKind(payload),
+    title: asTrimmedString(payload?.title),
+    data: asRecord(payload?.data),
+  });
+  if (action === "search" || action === "command") {
+    return [];
+  }
+  return collectToolFilePaths(asRecord(payload?.data));
 }
 
 function compareActivityLifecycleRank(kind: string): number {

@@ -1,4 +1,4 @@
-import { projectQuestionToolInput } from "@t3tools/shared/toolActivity";
+import { isToolLifecycleItemType } from "@t3tools/contracts";
 import type {
   OrchestrationEvent,
   OrchestrationThreadActivity,
@@ -6,6 +6,11 @@ import type {
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import {
+  classifyToolActivity,
+  collectToolFilePaths,
+  projectQuestionToolInput,
+} from "@t3tools/shared/toolActivity";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -21,66 +26,8 @@ function asTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function pushChangedFile(target: string[], seen: Set<string>, value: unknown): void {
-  const normalized = asTrimmedString(value);
-  if (!normalized || seen.has(normalized)) {
-    return;
-  }
-  seen.add(normalized);
-  target.push(normalized);
-}
-
-function collectChangedFiles(
-  value: unknown,
-  target: string[],
-  seen: Set<string>,
-  depth: number,
-): void {
-  if (depth > 4 || target.length >= 12) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      collectChangedFiles(entry, target, seen, depth + 1);
-      if (target.length >= 12) {
-        return;
-      }
-    }
-    return;
-  }
-
-  const record = asRecord(value);
-  if (!record) {
-    return;
-  }
-
-  pushChangedFile(target, seen, record.path);
-  pushChangedFile(target, seen, record.filePath);
-  pushChangedFile(target, seen, record.relativePath);
-  pushChangedFile(target, seen, record.filename);
-  pushChangedFile(target, seen, record.newPath);
-  pushChangedFile(target, seen, record.oldPath);
-
-  for (const nestedKey of [
-    "item",
-    "result",
-    "input",
-    "data",
-    "changes",
-    "files",
-    "edits",
-    "patch",
-    "patches",
-    "operations",
-  ]) {
-    if (!(nestedKey in record)) {
-      continue;
-    }
-    collectChangedFiles(record[nestedKey], target, seen, depth + 1);
-    if (target.length >= 12) {
-      return;
-    }
-  }
+function collectChangedFiles(value: unknown, target: string[], seen: Set<string>): void {
+  collectToolFilePaths(value, target, seen);
 }
 
 function projectCommandData(data: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -351,7 +298,7 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0);
+  collectChangedFiles(data, changedFiles, new Set<string>());
   if (changedFiles.length > 0) {
     projectedData.files = changedFiles.map((path) => ({ path }));
   }
@@ -359,11 +306,56 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   return projectedData;
 }
 
-function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
+const TOOL_READ_OUTPUT_PREVIEW_MAX_CHARS = 4_000;
+
+function boundReadToolOutput(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (trimmed.length <= TOOL_READ_OUTPUT_PREVIEW_MAX_CHARS) {
+    return Array.from(trimmed).join("");
+  }
+  return `${Array.from(trimmed.slice(0, TOOL_READ_OUTPUT_PREVIEW_MAX_CHARS)).join("").trimEnd()}\n…`;
+}
+
+const TOOL_RAW_INPUT_MAX_STRING_CHARS = 512;
+
+function projectRawInput(value: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const projected: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (typeof entry === "string") {
+      projected[key] =
+        entry.length <= TOOL_RAW_INPUT_MAX_STRING_CHARS
+          ? entry
+          : `${entry.slice(0, TOOL_RAW_INPUT_MAX_STRING_CHARS).trimEnd()}…`;
+    } else if (typeof entry === "number" || typeof entry === "boolean") {
+      projected[key] = entry;
+    }
+  }
+  return projected;
+}
+
+function projectRawOutput(
+  value: unknown,
+  keepReadBody: boolean,
+): Record<string, unknown> | undefined {
+  const projectText = (text: string) => {
+    if (keepReadBody) {
+      const preview = boundReadToolOutput(text);
+      return preview ? { content: preview } : undefined;
+    }
+    const summary = summarizeToolTextOutput(text);
+    return summary ? { content: summary } : undefined;
+  };
+
   const direct = asTrimmedString(value);
   if (direct) {
-    const summary = summarizeToolTextOutput(direct);
-    return summary ? { content: summary } : undefined;
+    return projectText(direct);
   }
 
   const rawOutput = asRecord(value);
@@ -380,26 +372,26 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
 
   const content = asTrimmedString(rawOutput.content);
   if (content) {
-    const summary = summarizeToolTextOutput(content);
-    return summary ? { content: summary } : undefined;
+    return projectText(content);
   }
 
   const stdout = asTrimmedString(rawOutput.stdout);
   if (stdout) {
-    const summary = summarizeToolTextOutput(stdout);
-    return summary ? { content: summary } : undefined;
+    return projectText(stdout);
   }
 
   const stderr = asTrimmedString(rawOutput.stderr);
   if (stderr) {
-    const summary = summarizeToolTextOutput(stderr);
-    return summary ? { content: summary } : undefined;
+    return projectText(stderr);
   }
 
   return undefined;
 }
 
-function projectAcpContent(value: unknown): Record<string, unknown> | undefined {
+function projectAcpContent(
+  value: unknown,
+  keepReadBody: boolean,
+): Record<string, unknown> | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
@@ -408,12 +400,20 @@ function projectAcpContent(value: unknown): Record<string, unknown> | undefined 
     .map((entryValue) => {
       const entry = asRecord(entryValue);
       const content = asRecord(entry?.content);
-      return entry?.type === "content" && content?.type === "text"
-        ? asTrimmedString(content.text)
-        : null;
+      if (entry?.type === "content" && content?.type === "text") {
+        return asTrimmedString(content.text);
+      }
+      if (keepReadBody && entry?.type === "diff") {
+        return asTrimmedString(entry.newText) ?? asTrimmedString(entry.oldText);
+      }
+      return null;
     })
     .filter((entry): entry is string => entry !== null)
     .join("\n");
+  if (keepReadBody) {
+    const preview = boundReadToolOutput(text);
+    return preview ? { content: preview } : undefined;
+  }
   const summary = summarizeToolTextOutput(text);
   return summary ? { content: summary } : undefined;
 }
@@ -467,7 +467,20 @@ export function projectActivityPayload(
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0);
+  const seenFiles = new Set<string>();
+  const action = classifyToolActivity({
+    itemType:
+      typeof payload.itemType === "string" && isToolLifecycleItemType(payload.itemType)
+        ? payload.itemType
+        : undefined,
+    requestKind: asTrimmedString(payload.requestKind),
+    title: asTrimmedString(payload.title),
+    data,
+  });
+  const isRead = action === "read";
+  if (action !== "search" && action !== "command") {
+    collectChangedFiles(data, changedFiles, seenFiles);
+  }
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));
@@ -483,9 +496,14 @@ export function projectActivityPayload(
     projectedData.toolName = data.toolName;
   }
 
+  const rawInput = projectRawInput(data.rawInput);
+  if (rawInput !== undefined) {
+    projectedData.rawInput = rawInput;
+  }
+
   const rawOutput =
-    projectRawOutput(data.rawOutput) ??
-    projectAcpContent(data.content) ??
+    projectRawOutput(data.rawOutput, isRead) ??
+    projectAcpContent(data.content, isRead) ??
     (payload.itemType === "command_execution" ? summarizeMcpResult(data.result) : undefined);
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;

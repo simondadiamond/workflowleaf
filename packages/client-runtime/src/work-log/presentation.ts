@@ -10,6 +10,7 @@ import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-im
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { classifyToolActivity } from "@t3tools/shared/toolActivity";
 
 /**
  * Activities the worktree setup card already represents. The settled record
@@ -455,10 +456,16 @@ export function workEntryIndicatesToolSuccess(entry: WorkLogPresentationEntry): 
 }
 
 function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean {
-  return (
-    entry.itemType === "web_search" &&
-    /\bgrep\b/i.test(normalizeCompactToolLabel(entry.toolTitle ?? entry.label))
-  );
+  const kind = asRecord(entry.toolData)?.kind;
+  return typeof kind === "string" && kind.trim().toLowerCase() === "search";
+}
+
+export function compactWorkLogLabel(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || /[\r\n]/u.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
 }
 
 export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupAction {
@@ -473,27 +480,43 @@ export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
   if (presentation?.action !== undefined) return presentation.action;
   if (presentation?.icon === "browser") return "browser";
   if (presentation?.icon === "device") return "device";
+  const classified = classifyToolActivity({
+    itemType: entry.itemType,
+    requestKind: entry.requestKind,
+    title: entry.toolTitle ?? entry.label,
+    data: asRecord(entry.toolData) ?? undefined,
+  });
   if (
+    classified === "read" ||
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
-    entry.viewedImagePath !== undefined ||
-    (entry.itemType === "dynamic_tool_call" &&
-      entry.toolTitle?.trim().toLowerCase() === "read file")
+    entry.viewedImagePath !== undefined
   ) {
     return "read";
   }
   if (
+    classified === "file_change" ||
     entry.requestKind === "file-change" ||
-    entry.itemType === "file_change" ||
-    (entry.changedFiles?.length ?? 0) > 0
+    entry.itemType === "file_change"
   ) {
     return "edit";
   }
-  if (entry.requestKind === "command" || entry.itemType === "command_execution" || entry.command) {
+  if (
+    classified === "command" ||
+    entry.requestKind === "command" ||
+    entry.itemType === "command_execution" ||
+    entry.command
+  ) {
     return "command";
   }
-  if (workLogEntryIsLocalCodeSearch(entry)) return "code-search";
-  if (entry.itemType === "web_search") return "search";
+  if (classified === "search") {
+    return workLogEntryIsLocalCodeSearch(entry) || entry.itemType !== "web_search"
+      ? "code-search"
+      : "search";
+  }
+  if ((entry.changedFiles?.length ?? 0) > 0) {
+    return "edit";
+  }
   return workLogEntryIsToolLike(entry) ? "other" : "update";
 }
 

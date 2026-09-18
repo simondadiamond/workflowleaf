@@ -193,6 +193,211 @@ describe("projectActivityPayload", () => {
       }),
     );
     expect(textRead.payload).not.toMatchObject({ data: { imagePath: expect.anything() } });
+    expect(textRead.payload).toMatchObject({
+      data: { files: [{ path: "/workspace/src/index.ts" }] },
+    });
+  });
+
+  it("records Cursor read-file rawInput even when it is an empty object", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Read file",
+        data: {
+          toolCallId: "tool-read-raw-input",
+          kind: "read",
+          rawInput: {},
+          rawOutput: { content: "type Waiter = {};\n" },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "read",
+        toolCallId: "tool-read-raw-input",
+        rawInput: {},
+        rawOutput: { content: "type Waiter = {};" },
+      },
+    });
+  });
+
+  it("keeps files from a Cursor 2026.09.15 refreshed read title and rawInput", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Read src/env.ts",
+        data: {
+          toolCallId: "tool-read-refresh",
+          kind: "read",
+          rawInput: { path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" },
+          locations: [{ path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" }],
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "read",
+        rawInput: { path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" },
+        files: [{ path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" }],
+      },
+    });
+  });
+
+  it("keeps a path from rawInput on a recorded read", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Read file",
+        data: {
+          toolCallId: "tool-read-raw-input-path",
+          kind: "read",
+          rawInput: { path: "/workspace/src/index.ts" },
+          rawOutput: { content: "export const value = 1;\n" },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "read",
+        rawInput: { path: "/workspace/src/index.ts" },
+        files: [{ path: "/workspace/src/index.ts" }],
+      },
+    });
+  });
+
+  it("keeps a bounded Cursor read-file body so the row can expand without a path", () => {
+    const content = "type Waiter = {\n\tresolve: (release: () => void) => void;\n};";
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Read file",
+        data: {
+          toolCallId: "tool-read-body",
+          kind: "read",
+          rawInput: {},
+          rawOutput: { content: `${content}\n` },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "read",
+        toolCallId: "tool-read-body",
+        rawOutput: { content },
+      },
+    });
+    const data = (projected.payload as { data?: Record<string, unknown> }).data;
+    expect(data?.files).toBeUndefined();
+  });
+
+  it("keeps ACP read locations as file paths through slimming", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Read file",
+        data: {
+          toolCallId: "tool-read-1",
+          kind: "read",
+          locations: [{ path: "/tmp/app.ts" }],
+          rawInput: {},
+          rawOutput: { content: "---\nname: unslop\n" },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "read",
+        files: [{ path: "/tmp/app.ts" }],
+      },
+    });
+    expect(
+      (projected.payload as { data?: { rawOutput?: { content?: string } } }).data?.rawOutput
+        ?.content,
+    ).toBe("---\nname: unslop");
+    expect(
+      (projected.payload as { data?: { locations?: unknown } }).data?.locations,
+    ).toBeUndefined();
+  });
+
+  it("keeps the path from an ACP content diff as the read/edit file", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        title: "Changed files",
+        data: {
+          toolCallId: "tool-edit-1",
+          kind: "edit",
+          rawInput: {},
+          content: [
+            {
+              type: "diff",
+              path: "/Users/yashsingh/p/projects/ohseearr/scripts/pdf_remediation/remediate.py",
+              oldText: "old",
+              newText: "new",
+            },
+          ],
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "edit",
+        files: [
+          { path: "/Users/yashsingh/p/projects/ohseearr/scripts/pdf_remediation/remediate.py" },
+        ],
+      },
+    });
+  });
+
+  it("keeps a path carried on rawOutput for ACP reads", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Read file",
+        data: {
+          toolCallId: "tool-read-2",
+          kind: "read",
+          rawInput: {},
+          rawOutput: {
+            path: "/workspace/src/index.ts",
+            content: 'import * as Effect from "effect/Effect"\n',
+          },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "read",
+        files: [{ path: "/workspace/src/index.ts" }],
+      },
+    });
+    expect(
+      (projected.payload as { data?: { rawOutput?: { content?: string } } }).data?.rawOutput
+        ?.content,
+    ).toBe('import * as Effect from "effect/Effect"');
+  });
+
+  it("does not classify a path-like shell command as a changed file", () => {
+    const command =
+      "find scripts/pdf_remediation src/routes -type f \\( -name '*.py' -o -name '*.ts' \\) -mtime -1 -print0";
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "command_execution",
+        title: "Ran command",
+        detail: command,
+        data: {
+          toolCallId: "tool-find-1",
+          kind: "execute",
+          command,
+          rawInput: { command },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      itemType: "command_execution",
+      data: { kind: "execute", command },
+    });
+    expect((projected.payload as { data?: { files?: unknown } }).data?.files).toBeUndefined();
   });
 
   it("slims Codex-shaped mcp_tool_call items to rendered fields plus a result summary", () => {

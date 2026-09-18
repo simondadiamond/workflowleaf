@@ -20,6 +20,7 @@ import {
   discoverCursorModelsViaAcp,
   makeCursorModelDiscovery,
   makeCursorCommandCatalog,
+  getCursorAgentTooOldMessage,
   getCursorParameterizedModelPickerUnsupportedMessage,
   parseCursorAboutOutput,
   parseCursorCliConfigChannel,
@@ -109,7 +110,7 @@ const makeMockAgentWithAboutWrapper = Effect.fn("makeMockAgentWithAboutWrapper")
     name: "fake-agent",
     source: [
       'if (process.argv[2] === "about") {',
-      '  process.stdout.write("CLI Version         2026.04.09-f2b0fcd\\n");',
+      '  process.stdout.write("CLI Version         2026.09.15-d2fe57e\\n");',
       '  process.stdout.write("User Email          cursor@example.com\\n");',
       "  process.exit(0);",
       "}",
@@ -702,6 +703,46 @@ describe("checkCursorProviderStatus", () => {
     });
   });
 
+  it("rejects Cursor Agent builds that omit ACP tool-call inputs", async () => {
+    const wrapperPath = await runNode(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const dir = yield* fileSystem.makeTempDirectory({
+          directory: NodeOS.tmpdir(),
+          prefix: "cursor-provider-old-about-",
+        });
+        return writeFakeCli({
+          directory: dir,
+          name: "fake-agent",
+          source: [
+            'if (process.argv[2] === "about") {',
+            '  process.stdout.write("CLI Version         2026.08.04-aaa8809\\n");',
+            '  process.stdout.write("User Email          cursor@example.com\\n");',
+            "  process.exit(0);",
+            "}",
+            "process.exit(1);",
+          ].join("\n"),
+        });
+      }),
+    );
+
+    const provider = await runNode(
+      checkCursorProviderStatus({
+        enabled: true,
+        binaryPath: wrapperPath,
+        apiEndpoint: "",
+        customModels: [],
+      }),
+    );
+
+    expect(provider).toMatchObject({
+      installed: true,
+      version: "2026.08.04-aaa8809",
+      status: "error",
+    });
+    expect(provider.message).toContain("2026.08.25");
+  });
+
   it("passes the injected environment to ACP model discovery", async () => {
     const { requestLogPath, wrapperPath } = await runNode(makeProviderStatusEnvFixture());
 
@@ -903,6 +944,14 @@ describe("Cursor parameterized model picker preview gating", () => {
         channel: "lab",
       }),
     ).toContain("too old");
+  });
+
+  it("rejects Cursor Agent builds that omit ACP tool-call inputs", () => {
+    expect(getCursorAgentTooOldMessage("2026.08.04-aaa8809")).toContain("2026.08.25");
+    expect(getCursorAgentTooOldMessage("2026.08.11-e8db854")).toContain("2026.08.25");
+    expect(getCursorAgentTooOldMessage("2026.08.25-3e8eec8")).toBeUndefined();
+    expect(getCursorAgentTooOldMessage("2026.09.15-d2fe57e")).toBeUndefined();
+    expect(getCursorAgentTooOldMessage(null)).toBeUndefined();
   });
 
   it("explains when the Cursor Agent channel is not lab", () => {

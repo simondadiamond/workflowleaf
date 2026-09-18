@@ -18,6 +18,29 @@ function stripRelativePrefixes(path: string): string {
   return path.replace(/^\.\/+/, "").replace(/^\/+/, "");
 }
 
+export function formatAbsoluteWorkspacePath(
+  pathWithPosition: string,
+  workspaceRoot: string | undefined,
+): string {
+  const position = splitFilePathPosition(pathWithPosition);
+  const normalizedPath = stripSlashPrefixedWindowsDrive(normalizePathSeparators(position.path));
+  const isAbsolute =
+    normalizedPath.startsWith("/") ||
+    isWindowsAbsolutePath(stripSlashPrefixedWindowsDrive(normalizedPath));
+  if (isAbsolute || !workspaceRoot) {
+    return formatFilePathPosition({ ...position, path: normalizedPath });
+  }
+
+  const normalizedWorkspaceRoot = stripSlashPrefixedWindowsDrive(
+    normalizePathSeparators(trimTrailingPathSeparators(workspaceRoot)),
+  );
+  const relativePath = stripRelativePrefixes(normalizedPath);
+  return formatFilePathPosition({
+    ...position,
+    path: `${normalizedWorkspaceRoot}/${relativePath}`,
+  });
+}
+
 export function formatWorkspaceRelativePath(
   pathWithPosition: string,
   workspaceRoot: string | undefined,

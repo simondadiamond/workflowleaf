@@ -42,15 +42,7 @@ function stripTrailingExitCode(value: string | undefined): string | undefined {
   return output.length > 0 ? output : undefined;
 }
 
-function extractCommandFromTitle(title: string | undefined): string | undefined {
-  if (!title) {
-    return undefined;
-  }
-  const backtickMatch = /`([^`]+)`/u.exec(title);
-  return backtickMatch?.[1]?.trim() || undefined;
-}
-
-function extractToolCommand(data: Record<string, unknown> | undefined, title: string | undefined) {
+function extractToolCommand(data: Record<string, unknown> | undefined) {
   const item = asRecord(data?.item);
   const itemInput = asRecord(item?.input);
   const itemResult = asRecord(item?.result);
@@ -74,32 +66,89 @@ function extractToolCommand(data: Record<string, unknown> | undefined, title: st
   if (executable) {
     return executable;
   }
-  return extractCommandFromTitle(title);
-}
-
-function maybePathLike(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  if (
-    value.includes("/") ||
-    value.includes("\\") ||
-    value.startsWith(".") ||
-    /\.(?:[a-z0-9]{1,12})$/iu.test(value)
-  ) {
-    return value;
-  }
   return undefined;
 }
 
-function collectPaths(value: unknown, paths: string[], seen: Set<string>, depth: number): void {
-  if (depth > 4 || paths.length >= 8) {
+/** Values from ACP path fields (`rawInput.path`, `locations[].path`, diff `content[].path`). */
+export function filePathFromToolValue(value: unknown): string | undefined {
+  const trimmed = asTrimmedString(value);
+  if (!trimmed || trimmed.length > 1024 || /[\r\n]/u.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function normalizeToolFilePath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+export function rememberToolFilePath(target: string[], seen: Set<string>, value: unknown): void {
+  const path = filePathFromToolValue(value);
+  if (!path) {
+    return;
+  }
+  const normalized = normalizeToolFilePath(path);
+  if (seen.has(normalized)) {
+    return;
+  }
+  for (const existing of seen) {
+    if (existing.endsWith(`/${normalized}`)) {
+      return;
+    }
+    if (normalized.endsWith(`/${existing}`)) {
+      const index = target.indexOf(existing);
+      if (index >= 0) {
+        target[index] = normalized;
+      }
+      seen.delete(existing);
+      seen.add(normalized);
+      return;
+    }
+  }
+  seen.add(normalized);
+  target.push(normalized);
+}
+
+const TOOL_PATH_FIELD_KEYS = [
+  "path",
+  "filePath",
+  "file_path",
+  "relativePath",
+  "filename",
+  "newPath",
+  "oldPath",
+] as const;
+
+const TOOL_PATH_NEST_KEYS = [
+  "locations",
+  "item",
+  "input",
+  "result",
+  "rawInput",
+  "data",
+  "changes",
+  "files",
+  "edits",
+  "patch",
+  "patches",
+  "operations",
+  "content",
+] as const;
+
+function collectPaths(
+  value: unknown,
+  paths: string[],
+  seen: Set<string>,
+  depth: number,
+  limit: number,
+): void {
+  if (depth > 4 || paths.length >= limit) {
     return;
   }
   if (Array.isArray(value)) {
     for (const entry of value) {
-      collectPaths(entry, paths, seen, depth + 1);
-      if (paths.length >= 8) {
+      collectPaths(entry, paths, seen, depth + 1, limit);
+      if (paths.length >= limit) {
         return;
       }
     }
@@ -109,32 +158,72 @@ function collectPaths(value: unknown, paths: string[], seen: Set<string>, depth:
   if (!record) {
     return;
   }
-  for (const key of ["path", "filePath", "relativePath", "filename", "newPath", "oldPath"]) {
-    const candidate = maybePathLike(asTrimmedString(record[key]));
-    if (!candidate || seen.has(candidate)) {
-      continue;
-    }
-    seen.add(candidate);
-    paths.push(candidate);
-    if (paths.length >= 8) {
+  for (const key of TOOL_PATH_FIELD_KEYS) {
+    rememberToolFilePath(paths, seen, record[key]);
+    if (paths.length >= limit) {
       return;
     }
   }
-  for (const nestedKey of ["locations", "item", "input", "result", "rawInput", "data", "changes"]) {
+  const rawOutput = asRecord(record.rawOutput);
+  if (rawOutput) {
+    for (const key of TOOL_PATH_FIELD_KEYS) {
+      rememberToolFilePath(paths, seen, rawOutput[key]);
+      if (paths.length >= limit) {
+        return;
+      }
+    }
+  }
+  for (const nestedKey of TOOL_PATH_NEST_KEYS) {
     if (!(nestedKey in record)) {
       continue;
     }
-    collectPaths(record[nestedKey], paths, seen, depth + 1);
-    if (paths.length >= 8) {
+    collectPaths(record[nestedKey], paths, seen, depth + 1, limit);
+    if (paths.length >= limit) {
       return;
     }
   }
 }
 
+export function collectToolFilePaths(
+  value: unknown,
+  target: string[] = [],
+  seen: Set<string> = new Set<string>(),
+): string[] {
+  collectPaths(value, target, seen, 0, 12);
+  return target;
+}
+
+function recordHasKeys(value: Record<string, unknown> | undefined): boolean {
+  return value !== undefined && Object.keys(value).length > 0;
+}
+
+/** Later lifecycle events keep empty rawInput; keep the first parsed args. */
+export function mergeToolActivityData(
+  previous: unknown,
+  next: unknown,
+): Record<string, unknown> | undefined {
+  const previousRecord = asRecord(previous);
+  const nextRecord = asRecord(next);
+  if (!nextRecord) {
+    return previousRecord;
+  }
+  if (!previousRecord) {
+    return nextRecord;
+  }
+  const previousInput = asRecord(previousRecord.rawInput);
+  const nextInput = asRecord(nextRecord.rawInput);
+  const rawInput = recordHasKeys(nextInput) ? nextInput : (previousInput ?? nextInput);
+  const merged = { ...previousRecord, ...nextRecord };
+  if (recordHasKeys(rawInput)) {
+    merged.rawInput = rawInput;
+  } else {
+    delete merged.rawInput;
+  }
+  return merged;
+}
+
 function extractPrimaryPath(data: Record<string, unknown> | undefined): string | undefined {
-  const paths: string[] = [];
-  collectPaths(data, paths, new Set<string>(), 0);
-  return paths[0];
+  return collectToolFilePaths(data)[0];
 }
 
 function normalizeEquivalentValue(value: string | undefined): string | undefined {
@@ -154,22 +243,42 @@ function isEquivalent(left: string | undefined, right: string | undefined): bool
   return normalizedLeft !== undefined && normalizedLeft === normalizedRight;
 }
 
-function classifyToolAction(input: {
+export type ToolActivityAction = "command" | "read" | "file_change" | "search" | "other";
+
+function toolNameToken(value: string | undefined): string | undefined {
+  const trimmed = asTrimmedString(value);
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed
+    .split(/__|[./]/u)
+    .at(-1)
+    ?.replace(/[_\s-]/gu, "")
+    .toLowerCase();
+}
+
+export function classifyToolActivity(input: {
   readonly itemType?: ToolLifecycleItemType | null | undefined;
+  readonly requestKind?: string | null | undefined;
   readonly title?: string | undefined;
   readonly data?: Record<string, unknown> | undefined;
-}): "command" | "read" | "file_change" | "search" | "other" {
+}): ToolActivityAction {
   const itemType = input.itemType ?? undefined;
+  const requestKind = asTrimmedString(input.requestKind)?.toLowerCase();
   const kind = asTrimmedString(input.data?.kind)?.toLowerCase();
-  const title = asTrimmedString(input.title)?.toLowerCase();
-  if (itemType === "command_execution" || kind === "execute" || title === "terminal") {
+  const toolName = toolNameToken(
+    asTrimmedString(input.data?.toolName) ?? asTrimmedString(asRecord(input.data?.item)?.tool),
+  );
+
+  if (itemType === "command_execution" || requestKind === "command" || kind === "execute") {
     return "command";
   }
-  if (kind === "read" || title === "read file") {
+  if (itemType === "image_view" || requestKind === "file-read" || kind === "read") {
     return "read";
   }
   if (
     itemType === "file_change" ||
+    requestKind === "file-change" ||
     kind === "edit" ||
     kind === "move" ||
     kind === "delete" ||
@@ -177,10 +286,104 @@ function classifyToolAction(input: {
   ) {
     return "file_change";
   }
-  if (itemType === "web_search" || kind === "search" || title === "find" || title === "grep") {
+  if (itemType === "web_search" || kind === "search") {
+    return "search";
+  }
+  if (toolName === "terminal" || toolName === "bash" || toolName === "shell") {
+    return "command";
+  }
+  if (toolName === "read" || toolName === "readfile") {
+    return "read";
+  }
+  if (toolName === "find" || toolName === "grep" || toolName === "glob" || toolName === "rg") {
     return "search";
   }
   return "other";
+}
+
+const SEARCH_QUERY_KEYS = ["pattern", "query", "searchTerm", "regex", "grep", "needle"] as const;
+const SEARCH_GLOB_KEYS = [
+  "glob",
+  "glob_pattern",
+  "include",
+  "filePattern",
+  "file_pattern",
+] as const;
+const SEARCH_TARGET_KEYS = [
+  "path",
+  "target_directory",
+  "targetDirectory",
+  "directory",
+  "cwd",
+  "root",
+] as const;
+
+function firstInputString(
+  record: Record<string, unknown> | undefined,
+  keys: readonly string[],
+): string | undefined {
+  if (!record) {
+    return undefined;
+  }
+  for (const key of keys) {
+    const value = asTrimmedString(record[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function searchInputRecord(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  return asRecord(data?.rawInput) ?? asRecord(data?.input) ?? asRecord(asRecord(data?.item)?.input);
+}
+
+function searchTargetName(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value
+    .split(/[\\/]/u)
+    .filter((part) => part.length > 0 && part !== ".")
+    .at(-1);
+}
+
+/** Cursor-style row: "Searched files *.{ts,tsx} in t3chat-new". */
+export function formatSearchToolLabel(
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  const input = searchInputRecord(data);
+  const query = firstInputString(input, SEARCH_QUERY_KEYS);
+  const glob = firstInputString(input, SEARCH_GLOB_KEYS);
+  const target = searchTargetName(firstInputString(input, SEARCH_TARGET_KEYS));
+  if (glob && target) {
+    return `Searched files ${glob} in ${target}`;
+  }
+  if (query && target) {
+    return `Searched ${query} in ${target}`;
+  }
+  if (glob) {
+    return `Searched files ${glob}`;
+  }
+  if (query) {
+    return `Searched ${query}`;
+  }
+  if (target) {
+    return `Searched in ${target}`;
+  }
+  return undefined;
+}
+
+/** Work-log heading for a file read: verb plus the structured path, never the path alone. */
+export function formatReadToolLabel(path: string, extraCount = 0): string {
+  const trimmed = path.trim();
+  const suffix = extraCount > 0 ? ` +${extraCount} more` : "";
+  if (!trimmed) {
+    return `Read file${suffix}`;
+  }
+  return `Read ${trimmed}${suffix}`;
 }
 
 export interface ToolActivityPresentationInput {
@@ -203,13 +406,13 @@ export function deriveToolActivityPresentation(
   const detail = stripTrailingExitCode(asTrimmedString(input.detail));
   const fallbackSummary = asTrimmedString(input.fallbackSummary) ?? "Tool";
   const data = asRecord(input.data);
-  const command = extractToolCommand(data, title);
-  const primaryPath = extractPrimaryPath(data);
-  const action = classifyToolAction({
+  const command = extractToolCommand(data);
+  const action = classifyToolActivity({
     itemType: input.itemType,
     title,
     data,
   });
+  const primaryPath = extractPrimaryPath(data);
 
   if (action === "command") {
     return {
@@ -238,13 +441,9 @@ export function deriveToolActivityPresentation(
   }
 
   if (action === "search") {
-    const query =
-      asTrimmedString(asRecord(data?.rawInput)?.query) ??
-      asTrimmedString(asRecord(data?.rawInput)?.pattern) ??
-      asTrimmedString(asRecord(data?.rawInput)?.searchTerm);
+    const summary = formatSearchToolLabel(data) ?? "Searched files";
     return {
-      summary: "Searched files",
-      ...(query ? { detail: query } : {}),
+      summary,
     };
   }
 

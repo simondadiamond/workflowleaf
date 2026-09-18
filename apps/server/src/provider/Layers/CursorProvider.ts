@@ -155,6 +155,9 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 
 const CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 const CURSOR_PARAMETERIZED_MODEL_PICKER_MIN_VERSION_DATE = 2026_04_08;
+/** Earliest Cursor Agent that contains ACP `refreshToolCall` (2026.08.11 does not). */
+export const MINIMUM_CURSOR_AGENT_VERSION_DATE = 2026_08_25;
+export const MINIMUM_CURSOR_AGENT_VERSION_LABEL = "2026.08.25";
 const CURSOR_CLI_INSTALLATION_DOCS_URL = "https://cursor.com/docs/cli/installation";
 const CURSOR_ACP_MODEL_DISCOVERY_FAILED_MESSAGE = [
   "Cursor ACP model discovery failed.",
@@ -876,6 +879,20 @@ const readCursorCliConfigChannel = Effect.fn("readCursorCliConfigChannel")(funct
   return parseCursorCliConfigChannel(raw);
 });
 
+export function getCursorAgentTooOldMessage(
+  version: string | null | undefined,
+): string | undefined {
+  const versionDate = parseCursorVersionDate(version);
+  if (versionDate === undefined || versionDate >= MINIMUM_CURSOR_AGENT_VERSION_DATE) {
+    return undefined;
+  }
+  return [
+    `Cursor Agent CLI version ${version} is too old.`,
+    `T3 Code requires ${MINIMUM_CURSOR_AGENT_VERSION_LABEL} or newer so ACP tool calls include their inputs.`,
+    "Run `agent update`.",
+  ].join(" ");
+}
+
 export function getCursorParameterizedModelPickerUnsupportedMessage(input: {
   readonly version: string | null | undefined;
   readonly channel: string | null | undefined;
@@ -1169,6 +1186,25 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   }
 
   const parsed = parseCursorAboutOutput(aboutProbe.success.value);
+  const cursorAgentTooOldMessage = getCursorAgentTooOldMessage(parsed.version);
+  if (cursorAgentTooOldMessage) {
+    return buildServerProvider({
+      presentation: CURSOR_PRESENTATION,
+      enabled: cursorSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version: parsed.version,
+        status: "error",
+        auth: parsed.auth,
+        message:
+          parsed.auth.status === "unauthenticated" && parsed.message
+            ? `${cursorAgentTooOldMessage} ${parsed.message}`
+            : cursorAgentTooOldMessage,
+      },
+    });
+  }
   const cursorCliConfigChannel = yield* readCursorCliConfigChannel();
   const parameterizedModelPickerUnsupportedMessage =
     getCursorParameterizedModelPickerUnsupportedMessage({

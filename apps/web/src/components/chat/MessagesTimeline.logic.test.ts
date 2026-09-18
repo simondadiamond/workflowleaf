@@ -30,10 +30,12 @@ import {
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
   shouldPreserveAssistantLineBreaks,
+  toolGroupAction,
   type MessagesTimelineRow,
   type MessagesTimelineRowsProjection,
   WORKTREE_SETUP_ROW_ID,
   workEntryDisplayLabel,
+  workEntryReadOutput,
 } from "./MessagesTimeline.logic";
 import {
   createMessageAttachmentPreviewProjector,
@@ -755,6 +757,127 @@ describe("work entry labels", () => {
     expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running vp");
     expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe("Ran vp");
     expect(workEntryDisplayLabel(commandEntry, undefined)).toBe(command);
+  });
+
+  it("labels a read with Read plus the path, and keeps the path as inspect output", () => {
+    const readEntry = {
+      ...entry,
+      toolTitle: "Read File",
+      label: "Read File",
+      itemType: "dynamic_tool_call" as const,
+      requestKind: "file-read" as const,
+      changedFiles: ["/tmp/app.ts"],
+      detail: "/tmp/app.ts",
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(workEntryDisplayLabel(readEntry, undefined)).toBe("Read /tmp/app.ts");
+    expect(workEntryReadOutput(readEntry, undefined)).toBe("/tmp/app.ts");
+  });
+
+  it("labels a Cursor read that later received a path as Read plus the file path", () => {
+    const readEntry = {
+      ...entry,
+      toolTitle: "Read src/lib/openai-auth.ts",
+      label: "Read src/lib/openai-auth.ts",
+      itemType: "dynamic_tool_call" as const,
+      changedFiles: ["src/lib/openai-auth.ts"],
+      toolData: { kind: "read", rawInput: { path: "src/lib/openai-auth.ts" } },
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(workEntryDisplayLabel(readEntry, undefined)).toBe("Read src/lib/openai-auth.ts");
+    expect(workEntryReadOutput(readEntry, undefined)).toBe("src/lib/openai-auth.ts");
+  });
+
+  it("labels a settled read with Read plus the file path instead of the generic tool title", () => {
+    const readEntry = {
+      ...entry,
+      toolTitle: "Read File",
+      label: "Read File",
+      itemType: "dynamic_tool_call" as const,
+      requestKind: "file-read" as const,
+      changedFiles: [".claude/skills/unslop/SKILL.md"],
+      toolLifecycleStatus: "completed" as const,
+    };
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "read-entry",
+          kind: "work",
+          createdAt: entry.createdAt,
+          entry: readEntry,
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(workEntryDisplayLabel(readEntry, undefined)).toBe("Read .claude/skills/unslop/SKILL.md");
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      displayLabel: "Read .claude/skills/unslop/SKILL.md",
+    });
+  });
+
+  it("does not use file contents as a read-file label when the path is missing", () => {
+    const readEntry = {
+      ...entry,
+      toolTitle: "Read File",
+      label: "Read File",
+      itemType: "dynamic_tool_call" as const,
+      requestKind: "file-read" as const,
+      detail: "---\nname: unslop\ndescription: Cut AI tells from any writing.\n",
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(workEntryDisplayLabel(readEntry, undefined)).toBe("Read file");
+    expect(workEntryReadOutput(readEntry, undefined)).toBe(readEntry.detail!.trim());
+  });
+
+  it("uses a search icon action for Cursor file finds, not web search", () => {
+    const searchEntry = {
+      ...entry,
+      toolTitle: "Searched files",
+      label: "Searched files",
+      itemType: "web_search" as const,
+      detail: "237 files",
+      toolData: { kind: "search" },
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(toolGroupAction(searchEntry)).toBe("code-search");
+    expect(workEntryDisplayLabel(searchEntry, undefined)).toBe("237 files");
+  });
+
+  it("uses a Cursor-style search label from rawInput instead of the file count", () => {
+    const searchEntry = {
+      ...entry,
+      toolTitle: "Find",
+      label: "Find",
+      itemType: "web_search" as const,
+      detail: "28 files",
+      toolData: {
+        kind: "search",
+        rawInput: {
+          glob: "*.{ts,tsx,js,md,json}",
+          path: "/Users/yashsingh/p/projects/t3chat-new",
+        },
+      },
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(toolGroupAction(searchEntry)).toBe("code-search");
+    expect(workEntryDisplayLabel(searchEntry, undefined)).toBe(
+      "Searched files *.{ts,tsx,js,md,json} in t3chat-new",
+    );
+  });
+
+  it("does not use a path-like file body as the compact read label", () => {
+    const readEntry = {
+      ...entry,
+      toolTitle: "Read file",
+      label: "Read file",
+      detail: 'import * as Effect from "effect/Effect"',
+      toolData: { kind: "read" },
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(workEntryDisplayLabel(readEntry, undefined)).toBe("Read file");
   });
 
   it.each([

@@ -258,6 +258,110 @@ describe("AcpRuntimeModel", () => {
     }
   });
 
+  it("lifts the file path off an ACP content diff onto the tool-call locations", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-read-1",
+        title: "Read file",
+        kind: "read",
+        status: "completed",
+        rawInput: {},
+        content: [
+          {
+            type: "diff",
+            path: "/workspace/src/index.ts",
+            newText: 'import * as Effect from "effect/Effect"\n',
+          },
+        ],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    expect(result.events).toHaveLength(1);
+    const event = result.events[0];
+    if (event?._tag !== "ToolCallUpdated") {
+      throw new Error("expected a ToolCallUpdated event");
+    }
+    expect(event.toolCall).toMatchObject({
+      kind: "read",
+      title: "Read file",
+      detail: "/workspace/src/index.ts",
+      data: {
+        locations: [{ path: "/workspace/src/index.ts" }],
+      },
+    });
+  });
+
+  it("uses ACP rawInput and locations for a Cursor read path", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-read-title",
+        title: "Read src/lib/openai-auth.ts",
+        kind: "read",
+        status: "in_progress",
+        rawInput: { path: "src/lib/openai-auth.ts" },
+        locations: [{ path: "src/lib/openai-auth.ts" }],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const event = result.events[0];
+    if (event?._tag !== "ToolCallUpdated") {
+      throw new Error("expected a ToolCallUpdated event");
+    }
+    expect(event.toolCall.data.locations).toEqual([{ path: "src/lib/openai-auth.ts" }]);
+    expect(event.toolCall.detail).toBe("src/lib/openai-auth.ts");
+  });
+
+  it("lifts a path from rawInput onto the tool-call locations", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-read-raw-input",
+        title: "Read file",
+        kind: "read",
+        status: "pending",
+        rawInput: { path: "/workspace/src/index.ts" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const event = result.events[0];
+    if (event?._tag !== "ToolCallUpdated") {
+      throw new Error("expected a ToolCallUpdated event");
+    }
+    expect(event.toolCall.data.rawInput).toEqual({ path: "/workspace/src/index.ts" });
+    expect(event.toolCall.data.locations).toEqual([{ path: "/workspace/src/index.ts" }]);
+    expect(event.toolCall.detail).toBe("/workspace/src/index.ts");
+  });
+
+  it("lifts a path from rawOutput onto the tool-call locations", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-read-2",
+        title: "Read file",
+        kind: "read",
+        status: "completed",
+        rawInput: {},
+        rawOutput: {
+          path: "/tmp/app.ts",
+          content: "export const value = 1;\n",
+        },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const event = result.events[0];
+    if (event?._tag !== "ToolCallUpdated") {
+      throw new Error("expected a ToolCallUpdated event");
+    }
+    expect(event.toolCall.detail).toBe("/tmp/app.ts");
+    expect(event.toolCall.data.locations).toEqual([{ path: "/tmp/app.ts" }]);
+  });
+
   it("trims padded current mode updates before emitting a mode change", () => {
     const result = parseSessionUpdateEvent({
       sessionId: "session-1",
@@ -757,6 +861,29 @@ describe("AcpRuntimeModel", () => {
           skippedSinceEmit: 0,
         }),
       ).toEqual({ emit: false, skippedSinceEmit: 0 });
+    });
+
+    it("emits when Cursor backfills rawInput or locations without changing the title", () => {
+      const previous: AcpToolCallState = {
+        toolCallId: "tool-1",
+        title: "Read File",
+        status: "inProgress",
+        data: { rawInput: {} },
+      };
+      expect(
+        decideToolCallUpdateEmission({
+          previous,
+          next: {
+            ...previous,
+            data: {
+              rawInput: { path: "src/lib/openai-auth.ts" },
+              locations: [{ path: "src/lib/openai-auth.ts" }],
+            },
+          },
+          lastEmittedDetailLength: 0,
+          skippedSinceEmit: 0,
+        }),
+      ).toEqual({ emit: true, skippedSinceEmit: 0 });
     });
 
     it("coalesces command-tool updates whose content grew while detail stayed the command", () => {

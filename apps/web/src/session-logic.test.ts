@@ -7,7 +7,14 @@ import {
   type OrchestrationThreadActivity,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  resolveWorkEntryToolPresentation,
+  toolGroupAction,
+} from "@t3tools/client-runtime/work-log/presentation";
+import {
+  workEntryDisplayLabel,
+  workEntryReadOutput,
+} from "./components/chat/MessagesTimeline.logic";
 
 import {
   createMessageAttachmentPreviewProjector,
@@ -1311,7 +1318,68 @@ describe("deriveWorkLogEntries", () => {
     });
   });
 
-  it("uses completed read-file output previews and still collapses the same tool call", () => {
+  it("labels a Cursor file search from rawInput instead of the file count", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "find-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Find",
+        payload: {
+          itemType: "web_search",
+          title: "Find",
+          data: {
+            toolCallId: "tool-find-1",
+            kind: "search",
+            rawInput: {
+              glob: "*.{ts,tsx,js,md,json}",
+              path: "/Users/yashsingh/p/projects/t3chat-new",
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "find-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Find",
+        payload: {
+          itemType: "web_search",
+          title: "Find",
+          data: {
+            toolCallId: "tool-find-1",
+            kind: "search",
+            rawInput: {},
+            rawOutput: {
+              totalFiles: 28,
+              truncated: false,
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      id: "find-complete",
+      toolTitle: "Find",
+      detail: "28 files",
+      itemType: "web_search",
+      toolData: {
+        kind: "search",
+        rawInput: {
+          glob: "*.{ts,tsx,js,md,json}",
+          path: "/Users/yashsingh/p/projects/t3chat-new",
+        },
+      },
+    });
+    expect(entry?.changedFiles).toBeUndefined();
+    expect(entry && workEntryDisplayLabel(entry, undefined)).toBe(
+      "Searched files *.{ts,tsx,js,md,json} in t3chat-new",
+    );
+  });
+
+  it("uses structured read-file paths and still collapses the same tool call", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "read-update",
@@ -1325,6 +1393,7 @@ describe("deriveWorkLogEntries", () => {
           data: {
             toolCallId: "tool-read-1",
             kind: "read",
+            locations: [{ path: "/tmp/app.ts" }],
             rawInput: {},
           },
         },
@@ -1341,9 +1410,10 @@ describe("deriveWorkLogEntries", () => {
           data: {
             toolCallId: "tool-read-1",
             kind: "read",
+            locations: [{ path: "/tmp/app.ts" }],
             rawOutput: {
               content:
-                'import * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"\n',
+                '---\nname: unslop\nimport * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"\n',
             },
           },
         },
@@ -1355,9 +1425,149 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]).toMatchObject({
       id: "read-complete",
       toolTitle: "Read File",
-      detail: 'import * as Effect from "effect/Effect"',
       itemType: "dynamic_tool_call",
+      changedFiles: ["/tmp/app.ts"],
+      detail: "/tmp/app.ts",
     });
+  });
+
+  it("labels a Cursor 2026.09.15 refreshed read with the file path", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "read-pending",
+        createdAt: "2026-09-17T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          data: {
+            toolCallId: "tool-read-refresh",
+            kind: "read",
+            rawInput: {},
+          },
+        },
+      }),
+      makeActivity({
+        id: "read-refresh",
+        createdAt: "2026-09-17T00:00:02.000Z",
+        kind: "tool.updated",
+        summary: "Read src/env.ts",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read src/env.ts",
+          detail: "/Users/yashsingh/p/projects/ohseearr/src/env.ts",
+          data: {
+            toolCallId: "tool-read-refresh",
+            kind: "read",
+            rawInput: { path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" },
+            locations: [{ path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" }],
+          },
+        },
+      }),
+      makeActivity({
+        id: "read-complete",
+        createdAt: "2026-09-17T00:00:03.000Z",
+        kind: "tool.completed",
+        summary: "Read src/env.ts",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read src/env.ts",
+          detail: "/Users/yashsingh/p/projects/ohseearr/src/env.ts",
+          data: {
+            toolCallId: "tool-read-refresh",
+            kind: "read",
+            rawInput: { path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" },
+            locations: [{ path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" }],
+            rawOutput: { content: "export const env = {}\n" },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      id: "read-complete",
+      toolTitle: "Read src/env.ts",
+      changedFiles: ["/Users/yashsingh/p/projects/ohseearr/src/env.ts"],
+      detail: "/Users/yashsingh/p/projects/ohseearr/src/env.ts",
+    });
+    expect(entry && workEntryDisplayLabel(entry, undefined)).toBe(
+      "Read /Users/yashsingh/p/projects/ohseearr/src/env.ts",
+    );
+    expect(entry && workEntryReadOutput(entry, undefined)).toBe(
+      "/Users/yashsingh/p/projects/ohseearr/src/env.ts",
+    );
+  });
+
+  it("groups a Claude Read by tool name and labels it as Read plus the file path", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "claude-read",
+        createdAt: "2026-09-17T00:00:01.000Z",
+        kind: "tool.completed",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          detail:
+            'Read: {"file_path":"/Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts"}',
+          data: {
+            toolName: "Read",
+            input: {
+              file_path: "/Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts",
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      id: "claude-read",
+      itemType: "dynamic_tool_call",
+      toolData: { toolName: "Read" },
+      changedFiles: ["/Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts"],
+      detail: "/Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts",
+    });
+    expect(entry && toolGroupAction(entry)).toBe("read");
+    expect(entry && workEntryDisplayLabel(entry, undefined)).toBe(
+      "Read /Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts",
+    );
+  });
+
+  it("does not use file contents as the read-file label when no path is available", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "read-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          detail: "Read File",
+          data: {
+            toolCallId: "tool-read-1",
+            kind: "read",
+            rawInput: {},
+            rawOutput: {
+              content: "---\nname: unslop\ndescription: Cut AI tells from any writing.\n",
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      id: "read-complete",
+      toolTitle: "Read File",
+      itemType: "dynamic_tool_call",
+      detail: "---\nname: unslop\ndescription: Cut AI tells from any writing.",
+    });
+    expect(entry?.changedFiles).toBeUndefined();
+    expect(entry && workEntryDisplayLabel(entry, undefined)).toBe("Read file");
   });
 
   it("keeps viewed image metadata while collapsing a streamed Claude Read", () => {
@@ -1431,6 +1641,39 @@ describe("deriveWorkLogEntries", () => {
     });
     expect(entry?.detail).toBeUndefined();
     expect(entry?.command).toBeUndefined();
+  });
+
+  it("does not treat a find command as a changed file", () => {
+    const command =
+      "find scripts/pdf_remediation src/routes -type f \\( -name '*.py' -o -name '*.ts' \\) -mtime -1 -print0";
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "find-command-complete",
+        createdAt: "2026-09-17T08:52:17.890Z",
+        kind: "tool.completed",
+        summary: "Ran command",
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          detail: command,
+          data: {
+            toolCallId: "tool-find-1",
+            kind: "execute",
+            command,
+            rawInput: { command },
+            files: [{ path: command }],
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      id: "find-command-complete",
+      itemType: "command_execution",
+      command,
+    });
+    expect(entry?.changedFiles).toBeUndefined();
   });
 
   it("collapses legacy completed tool rows that are missing tool metadata", () => {

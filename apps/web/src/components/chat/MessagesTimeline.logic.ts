@@ -11,6 +11,7 @@ import {
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
   toolGroupAction,
+  compactWorkLogLabel,
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -37,7 +38,8 @@ import {
   type TurnId,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
-import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { formatAbsoluteWorkspacePath, formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
@@ -46,28 +48,71 @@ const TIMELINE_CONTENT_MAX_WIDTH = 768;
 const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
-  const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
-  if (toolPresentation) return toolPresentation.displayName;
-  const command = entry.command?.trim();
-  if (command) return command;
-  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
-  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+  return workEntryDisplayLabel(entry, undefined, "completed");
 }
 
-export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
-  const toolPresentation = resolveWorkEntryToolPresentation(entry);
+export function workEntryDisplayLabel(
+  entry: WorkLogEntry,
+  workspaceRoot: string | undefined,
+  fallbackStatus?: "inProgress" | "completed",
+) {
+  const toolPresentation = resolveWorkEntryToolPresentation(entry, fallbackStatus);
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command) return entry.command;
-  if (entry.detail) return entry.detail;
+  const action = toolGroupAction(entry);
+  if (action === "code-search" || action === "search") {
+    const toolData =
+      entry.toolData !== null &&
+      typeof entry.toolData === "object" &&
+      !Array.isArray(entry.toolData)
+        ? (entry.toolData as Record<string, unknown>)
+        : undefined;
+    const searchLabel = formatSearchToolLabel(toolData);
+    if (searchLabel) return searchLabel;
+  }
+  const readLike = action === "read";
   const [firstPath] = entry.changedFiles ?? [];
+  if (readLike && firstPath) {
+    return formatReadToolLabel(
+      formatWorkspaceRelativePath(firstPath, workspaceRoot),
+      entry.changedFiles!.length - 1,
+    );
+  }
+  const compactDetail = compactWorkLogLabel(entry.detail);
+  if (compactDetail && !readLike) return compactDetail;
   if (firstPath) {
     const path = formatWorkspaceRelativePath(firstPath, workspaceRoot);
     return entry.changedFiles!.length === 1
       ? path
       : `${path} +${entry.changedFiles!.length - 1} more`;
   }
+  if (readLike && entry.itemType !== "image_view" && !entry.viewedImagePath) {
+    return "Read file";
+  }
   const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
   return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+}
+
+/** Inspectable read-file output is the path when we have one, otherwise the body. */
+export function workEntryReadOutput(
+  entry: Pick<WorkLogEntry, "changedFiles" | "detail" | "viewedImagePath">,
+  workspaceRoot: string | undefined,
+): string | null {
+  const paths = [
+    ...new Set(
+      (entry.changedFiles ?? []).map((filePath) =>
+        formatAbsoluteWorkspacePath(filePath, workspaceRoot).trim(),
+      ),
+    ),
+  ].filter((path) => path.length > 0);
+  if (paths.length > 0) {
+    return paths.join("\n");
+  }
+  if (entry.viewedImagePath) {
+    return null;
+  }
+  const detail = entry.detail?.trim();
+  return detail && detail.length > 0 ? detail : null;
 }
 
 export function liveWorkEntryLabel(

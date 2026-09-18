@@ -187,7 +187,7 @@ function ShimmerWorkContent(props: {
       ) : null}
       <Text
         className={cn(
-          "min-w-0 shrink",
+          "min-w-0 flex-1",
           props.compact ? "text-xs" : "text-sm",
           props.highlighted ? "text-foreground" : "text-foreground-muted",
           props.textClassName,
@@ -359,12 +359,16 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
       return { ios: "square.and.pencil", android: "edit" };
     case "eye":
       return { ios: "eye", android: "visibility" };
+    case "file-text":
+      return "doc.text";
     case "globe":
       return { ios: "globe", android: "public" };
     case "hammer":
       return { ios: "hammer", android: "construction" };
     case "message":
       return { ios: "bubble.left", android: "chat_bubble" };
+    case "search":
+      return "magnifyingglass";
     case "warning":
       return { ios: "xmark", android: "close" };
     case "wrench":
@@ -753,7 +757,10 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
     ? getQuestionAnswerPreview(row.workEntry.questionAnswer)
     : null;
   const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
-  const displayText = workEntryRowLabel(row.workEntry, expanded);
+  const displayText =
+    expanded && row.workEntry.command?.trim()
+      ? workEntryRowLabel(row.workEntry, true)
+      : previewText;
   const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
   const failed = row.status === "failure";
   const toolIcon = row.workEntry.toolIcon ?? row.workEntry.toolSource?.icon;
@@ -1343,7 +1350,7 @@ function toolGroupSummarySymbolName(kind: ToolGroupSummaryKind): AppSymbolName {
     case "list-prs":
       return "arrow.triangle.pull";
     case "read":
-      return { ios: "eye", android: "visibility" };
+      return "doc.text";
     case "edit":
       return { ios: "square.and.pencil", android: "edit" };
     case "command":

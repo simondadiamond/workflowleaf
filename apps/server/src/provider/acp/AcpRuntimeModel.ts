@@ -4,7 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
+import {
+  deriveToolActivityPresentation,
+  filePathFromToolValue,
+} from "@t3tools/shared/toolActivity";
 import type { ToolLifecycleItemType } from "@t3tools/contracts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -253,15 +256,11 @@ function normalizeCommandValue(value: unknown): string | undefined {
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
-function extractCommandFromTitle(title: string | undefined): string | undefined {
-  if (!title) {
-    return undefined;
-  }
-  const match = /`([^`]+)`/.exec(title);
-  return match?.[1]?.trim() || undefined;
-}
-
-function extractToolCallCommand(rawInput: unknown, title: string | undefined): string | undefined {
+function extractToolCallCommand(
+  rawInput: unknown,
+  title: string | undefined,
+  kind: string | undefined,
+): string | undefined {
   if (isRecord(rawInput)) {
     const directCommand = normalizeCommandValue(rawInput.command);
     if (directCommand) {
@@ -276,7 +275,14 @@ function extractToolCallCommand(rawInput: unknown, title: string | undefined): s
       return executable;
     }
   }
-  return extractCommandFromTitle(title);
+  if (kind !== "execute" || !title) {
+    return undefined;
+  }
+  const backtickMatch = /`([^`]+)`/u.exec(title);
+  if (backtickMatch?.[1]?.trim()) {
+    return backtickMatch[1].trim();
+  }
+  return /^(terminal|tool call|ran command|command)$/iu.test(title) ? undefined : title;
 }
 
 // Some ACP agents (observed with Grok's CLI) resend the ENTIRE accumulated tool-call
@@ -441,6 +447,49 @@ function distributeRetainedTailAcrossContent(
   });
 }
 
+function locationsFromToolCallOutput(input: {
+  readonly locations?: ReadonlyArray<EffectAcpSchema.ToolCallLocation> | null | undefined;
+  readonly content?: ReadonlyArray<EffectAcpSchema.ToolCallContent> | null | undefined;
+  readonly rawInput?: unknown;
+  readonly rawOutput?: unknown;
+}): ReadonlyArray<EffectAcpSchema.ToolCallLocation> | undefined {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: unknown) => {
+    const path = filePathFromToolValue(value);
+    if (!path || seen.has(path)) {
+      return;
+    }
+    seen.add(path);
+    paths.push(path);
+  };
+
+  if (input.locations) {
+    for (const location of input.locations) {
+      push(location.path);
+    }
+  }
+  if (input.content) {
+    for (const entry of input.content) {
+      if (entry.type === "diff") {
+        push(entry.path);
+      }
+    }
+  }
+  if (isRecord(input.rawInput)) {
+    push(input.rawInput.path);
+    push(input.rawInput.filePath);
+    push(input.rawInput.file_path);
+  }
+  if (isRecord(input.rawOutput)) {
+    push(input.rawOutput.path);
+    push(input.rawOutput.filePath);
+    push(input.rawOutput.file_path);
+  }
+
+  return paths.length > 0 ? paths.map((path) => ({ path })) : undefined;
+}
+
 function normalizeToolKind(kind: unknown): string | undefined {
   return typeof kind === "string" && kind.trim().length > 0 ? kind.trim() : undefined;
 }
@@ -451,6 +500,8 @@ function normalizeToolKind(kind: unknown): string | undefined {
  */
 export function canonicalItemTypeFromAcpToolKind(kind: string | undefined): ToolLifecycleItemType {
   switch (kind) {
+    case "read":
+      return "dynamic_tool_call";
     case "execute":
       return "command_execution";
     case "edit":
@@ -485,15 +536,21 @@ function makeToolCallState(
     return undefined;
   }
   const title = input.title?.trim() || undefined;
-  const command = extractToolCallCommand(input.rawInput, title);
+  const kind = normalizeToolKind(input.kind);
+  const command = extractToolCallCommand(input.rawInput, title, kind);
   const extractedContent = extractTextContentFromToolCallContent(input.content);
+  const locations = locationsFromToolCallOutput({
+    locations: input.locations,
+    content: input.content,
+    rawInput: input.rawInput,
+    rawOutput: input.rawOutput,
+  });
   const textContent = extractedContent.text;
   const normalizedTitle =
     title && title.toLowerCase() !== "terminal" && title.toLowerCase() !== "tool call"
       ? title
       : undefined;
   const data: Record<string, unknown> = { toolCallId };
-  const kind = normalizeToolKind(input.kind);
   if (kind) {
     data.kind = kind;
   }
@@ -509,8 +566,8 @@ function makeToolCallState(
   if (input.content !== undefined) {
     data.content = extractedContent.content ?? input.content;
   }
-  if (input.locations !== undefined) {
-    data.locations = input.locations;
+  if (locations !== undefined) {
+    data.locations = locations;
   }
   const fallbackDetail = command ?? normalizedTitle ?? textContent;
   const hasPresentationSeed =
@@ -612,6 +669,12 @@ function toolCallOutputUnchanged(previous: AcpToolCallState, next: AcpToolCallSt
   );
 }
 
+function toolCallIdentityUnchanged(previous: AcpToolCallState, next: AcpToolCallState): boolean {
+  return (
+    previous.data.rawInput === next.data.rawInput && previous.data.locations === next.data.locations
+  );
+}
+
 // Command tools keep `detail` equal to the command, so live stdout lives on
 // `data.content` / `data.rawOutput`. Measure that too, otherwise coalescing never
 // sees growth and in-progress output is held until completed/failed.
@@ -650,6 +713,9 @@ export function decideToolCallUpdateEmission(
     return { emit: true, skippedSinceEmit: 0 };
   }
   if (previous === undefined || previous.title !== next.title || previous.status !== next.status) {
+    return { emit: true, skippedSinceEmit: 0 };
+  }
+  if (!toolCallIdentityUnchanged(previous, next)) {
     return { emit: true, skippedSinceEmit: 0 };
   }
   if (previous.detail === next.detail && toolCallOutputUnchanged(previous, next)) {

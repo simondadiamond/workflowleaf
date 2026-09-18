@@ -1,4 +1,5 @@
 import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { toolGroupAction } from "@t3tools/client-runtime/work-log/presentation";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
@@ -669,6 +670,200 @@ describe("buildThreadFeed", () => {
     expect(row?.canExpand).toBe(input.canExpand);
   });
 
+  it("does not use Cursor read-file contents as the compact row label", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-read-body-label"),
+      projectId: ProjectId.make("project-1"),
+      title: "Read body label",
+      activities: [
+        makeActivity({
+          id: EventId.make("read-body-label"),
+          createdAt: "2026-09-01T00:00:00.000Z",
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Read file",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Read file",
+            data: {
+              kind: "read",
+              rawInput: {},
+              rawOutput: {
+                content: 'import * as Effect from "effect/Effect"\nexport const value = 1;\n',
+              },
+            },
+          },
+        }),
+      ],
+    });
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(workEntryRowLabel(row!.workEntry)).toBe("Read file");
+    expect(workEntryRowLabel(row!.workEntry, true)).toBe("Read file");
+    expect(row?.workEntry.detail).toBe(
+      'import * as Effect from "effect/Effect"\nexport const value = 1;',
+    );
+    expect(row?.canExpand).toBe(true);
+    expect(row?.getFullDetail()).toBe(row?.workEntry.detail);
+  });
+
+  it("uses the file path as the expanded read-file output", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-read-path-output"),
+      projectId: ProjectId.make("project-1"),
+      title: "Read path output",
+      activities: [
+        makeActivity({
+          id: EventId.make("read-path-output"),
+          createdAt: "2026-09-01T00:00:00.000Z",
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Read file",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Read file",
+            data: {
+              kind: "read",
+              locations: [{ path: "/tmp/app.ts" }],
+              rawInput: {},
+              rawOutput: {
+                content: 'import * as Effect from "effect/Effect"\nexport const value = 1;\n',
+              },
+            },
+          },
+        }),
+      ],
+    });
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(workEntryRowLabel(row!.workEntry)).toBe("Read /tmp/app.ts");
+    expect(row?.workEntry.detail).toBe("/tmp/app.ts");
+    expect(row?.getFullDetail()).toBe("/tmp/app.ts");
+    expect(row?.canExpand).toBe(true);
+  });
+
+  it("groups a Claude Read as a read instead of an edit", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-claude-read"),
+      projectId: ProjectId.make("project-1"),
+      title: "Claude read",
+      activities: [
+        makeActivity({
+          id: EventId.make("claude-read"),
+          createdAt: "2026-09-17T00:00:00.000Z",
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Tool call",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Tool call",
+            detail:
+              'Read: {"file_path":"/Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts"}',
+            data: {
+              toolName: "Read",
+              input: {
+                file_path: "/Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts",
+              },
+            },
+          },
+        }),
+      ],
+    });
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(toolGroupAction(row!.workEntry)).toBe("read");
+    expect(row?.icon).toBe("file-text");
+    expect(workEntryRowLabel(row!.workEntry)).toBe(
+      "Read /Users/yashsingh/p/projects/ohseearr/src/routes/v1.chat.completions.ts",
+    );
+  });
+
+  it("labels a Cursor 2026.09.15 refreshed read with Read plus the file path", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-read-refresh"),
+      projectId: ProjectId.make("project-1"),
+      title: "Read refresh",
+      activities: [
+        makeActivity({
+          id: EventId.make("read-refresh"),
+          createdAt: "2026-09-17T00:00:00.000Z",
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Read src/env.ts",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Read src/env.ts",
+            data: {
+              kind: "read",
+              rawInput: { path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" },
+              locations: [{ path: "/Users/yashsingh/p/projects/ohseearr/src/env.ts" }],
+              rawOutput: { content: "export const env = {}\n" },
+            },
+          },
+        }),
+      ],
+    });
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(workEntryRowLabel(row!.workEntry)).toBe(
+      "Read /Users/yashsingh/p/projects/ohseearr/src/env.ts",
+    );
+    expect(row?.workEntry.changedFiles).toEqual([
+      "/Users/yashsingh/p/projects/ohseearr/src/env.ts",
+    ]);
+    expect(row?.getFullDetail()).toBe("/Users/yashsingh/p/projects/ohseearr/src/env.ts");
+    expect(row?.canExpand).toBe(true);
+  });
+
+  it("labels a Cursor file search from rawInput instead of the file count", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-find-label"),
+      projectId: ProjectId.make("project-1"),
+      title: "Find label",
+      activities: [
+        makeActivity({
+          id: EventId.make("find-complete"),
+          createdAt: "2026-09-17T00:00:00.000Z",
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Find",
+          payload: {
+            itemType: "web_search",
+            title: "Find",
+            data: {
+              kind: "search",
+              rawInput: {
+                glob: "*.{ts,tsx,js,md,json}",
+                path: "/Users/yashsingh/p/projects/t3chat-new",
+              },
+              rawOutput: { totalFiles: 28, truncated: false },
+            },
+          },
+        }),
+      ],
+    });
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(workEntryRowLabel(row!.workEntry)).toBe(
+      "Searched files *.{ts,tsx,js,md,json} in t3chat-new",
+    );
+    expect(workEntryRowLabel(row!.workEntry, true)).toBe(
+      "Searched files *.{ts,tsx,js,md,json} in t3chat-new",
+    );
+    expect(row?.workEntry.detail).toBe("28 files");
+    expect(row?.workEntry.changedFiles).toBeUndefined();
+  });
+
   it.each(["runtime.error", "runtime.warning"] as const)(
     "shows and copies the message of %s without a duplicate expanded body",
     (kind) => {
@@ -1199,6 +1394,7 @@ describe("buildThreadFeed", () => {
     });
     if (group?.type !== "activity-group") return;
     const row = group.activities[0]!;
+    expect(row.icon).toBe("eye");
     expect(row.canExpand).toBe(true);
     expect(row.getFullDetail()).toBeNull();
     expect(workEntryRowLabel(row.workEntry, true)).toBe(`${imagePath.slice(0, 177)}...`);

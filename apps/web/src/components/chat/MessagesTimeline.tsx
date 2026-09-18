@@ -114,6 +114,7 @@ import {
   CircleAlertIcon,
   DownloadIcon,
   EyeIcon,
+  FileTextIcon,
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
@@ -189,6 +190,7 @@ import {
   shouldPreserveAssistantLineBreaks,
   toolGroupAction,
   workEntryDisplayLabel,
+  workEntryReadOutput,
   workEntryIsVisibleInGroup,
   worktreeSetupAgentStarted,
   type StableMessagesTimelineRowsState,
@@ -249,7 +251,7 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 
 import { SkillInlineText } from "./SkillInlineText";
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
-import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { formatAbsoluteWorkspacePath, formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
   formatReviewCommentFence,
@@ -2297,6 +2299,19 @@ function RevertUserMessageButton({
  * during a fade-out. Place it before any trailing disclosure control so
  * revealing the time does not move the chevron.
  */
+function TimelineDisclosureChevron({ expanded }: { expanded: boolean }) {
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+      <ChevronRightIcon
+        className={cn(
+          "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+          expanded && "rotate-90",
+        )}
+      />
+    </span>
+  );
+}
+
 function TimelineRowTimestamp({
   createdAt,
   timestampFormat,
@@ -2650,24 +2665,28 @@ function ActivityGroupTimelineRow({
     }
   }
   return (
-    <div>
+    <div className="w-full min-w-0">
       <button
         type="button"
-        className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="group/timeline-row group/live-work flex min-h-6 w-full min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         aria-label={failed ? `${label}, tool call failed` : undefined}
         aria-expanded={row.expanded}
         onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
       >
-        <LiveActivityRow
-          label={label}
-          iconName={iconWork ? workEntryIconName(iconWork) : "brain"}
-          toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}
-          failed={failed}
-          active={row.active}
-          shimmer={thinking}
-        />
+        <span className="min-w-0 flex-1">
+          <LiveActivityRow
+            label={label}
+            iconName={iconWork ? workEntryIconName(iconWork) : "brain"}
+            toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}
+            failed={failed}
+            active={row.active}
+            shimmer={thinking}
+          />
+        </span>
+        <TimelineRowTimestamp createdAt={row.createdAt} timestampFormat={ctx.timestampFormat} />
+        <TimelineDisclosureChevron expanded={row.expanded} />
       </button>
-      {row.expanded ? <div className="mt-2 space-y-2">{details}</div> : null}
+      {row.expanded ? <div className="mt-1 w-full min-w-0 space-y-px">{details}</div> : null}
     </div>
   );
 }
@@ -2684,57 +2703,21 @@ function ThinkingTimelineRow() {
   );
 }
 
-/**
- * Thinking inside an expanded activity group: the trace is already one click
- * deep, so the text renders under its "Thought" header without another toggle.
- * A group whose row already reads "Thought" (no visible tool) skips the header.
- */
-function ReasoningTraceBlock({
+function ReasoningTraceBody({
   messages,
-  live,
-  showHeader,
+  streaming,
 }: {
   messages: ReadonlyArray<ChatMessage>;
-  live: boolean;
-  showHeader: boolean;
+  streaming: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
-  const { isWorking, unsettledTurnId } = use(TimelineRowActivityCtx);
-  const first = messages[0]!;
-  const streaming =
-    live &&
-    messages.some((reasoningMessage) => reasoningMessage.streaming) &&
-    isWorking &&
-    first.turnId !== null &&
-    first.turnId === unsettledTurnId;
-  if (
-    messages.every((reasoningMessage) => reasoningMessage.text.trim().length === 0) &&
-    !streaming
-  ) {
-    return null;
-  }
-  const label = streaming ? "Thinking" : "Thought";
   return (
-    <div className="flex flex-col">
-      {showHeader ? (
-        <div className="flex min-h-6 select-none items-center gap-1.5 px-0.5 py-0.5 text-sm leading-relaxed">
-          <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-            <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-[1.8] opacity-70" />
-          </span>
-          <span
-            ref={streaming ? observeVisibleAnimation : undefined}
-            className="relative min-w-0 flex-1 truncate text-secondary-label"
-          >
-            {label}
-            {streaming ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
-          </span>
-        </div>
-      ) : null}
-      <div className="ms-7 flex max-h-96 flex-col gap-3 overflow-auto px-0.5 py-1 select-text">
+    <div className={cn(inspectablePanelClassName, "max-h-96 overflow-auto select-text")}>
+      <div className="flex flex-col gap-3">
         {messages.map((reasoningMessage) => (
           <ChatMarkdown
             key={reasoningMessage.id}
-            className="text-foreground"
+            className={reasoningTraceClassName}
             text={reasoningMessage.text}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
@@ -2747,6 +2730,68 @@ function ReasoningTraceBlock({
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Thinking inside an expanded activity group. Mixed groups keep a Thought
+ * header with its own chevron so the trace can collapse without folding the
+ * tools. Collapsed by default, same as standalone reasoning rows. A
+ * thought-only group already toggles from the parent row.
+ */
+function ReasoningTraceBlock({
+  messages,
+  live,
+  showHeader,
+}: {
+  messages: ReadonlyArray<ChatMessage>;
+  live: boolean;
+  showHeader: boolean;
+}) {
+  const { timestampFormat } = use(TimelineRowCtx);
+  const { isWorking, unsettledTurnId } = use(TimelineRowActivityCtx);
+  const first = messages[0]!;
+  const streaming =
+    live &&
+    messages.some((reasoningMessage) => reasoningMessage.streaming) &&
+    isWorking &&
+    first.turnId !== null &&
+    first.turnId === unsettledTurnId;
+  const [expanded, setExpanded] = useState(false);
+  if (
+    messages.every((reasoningMessage) => reasoningMessage.text.trim().length === 0) &&
+    !streaming
+  ) {
+    return null;
+  }
+  const label = streaming ? "Thinking" : "Thought";
+  const body = <ReasoningTraceBody messages={messages} streaming={streaming} />;
+  if (!showHeader) {
+    return body;
+  }
+  return (
+    <div className="group/timeline-row flex w-full min-w-0 flex-col">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+        className="flex w-full min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 py-0 text-start transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
+          <BrainIcon aria-hidden className="block size-3.5 shrink-0 stroke-[1.8] opacity-70" />
+        </span>
+        <span
+          ref={streaming ? observeVisibleAnimation : undefined}
+          className="relative min-w-0 flex-1 truncate text-start text-secondary-label text-sm leading-relaxed"
+        >
+          {label}
+          {streaming ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
+        </span>
+        <TimelineRowTimestamp createdAt={first.createdAt} timestampFormat={timestampFormat} />
+        <TimelineDisclosureChevron expanded={expanded} />
+      </button>
+      {expanded ? <div className="mt-1">{body}</div> : null}
     </div>
   );
 }
@@ -2774,43 +2819,25 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
   }
 
   return (
-    <div className={cn("flex flex-col", expanded && "mb-1")}>
+    <div className={cn("group/timeline-row flex w-full min-w-0 flex-col", expanded && "mb-1")}>
       <button
         type="button"
         aria-expanded={expanded}
         onClick={toggle}
-        className="flex cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 py-0.5 text-start transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="flex w-full min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 py-0.5 text-start transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-[1.8] opacity-70" />
+          <BrainIcon aria-hidden className="block size-3.5 shrink-0 stroke-[1.8] opacity-70" />
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="relative min-w-0 flex-1 truncate text-secondary-label text-sm leading-relaxed">
-            Thought
-          </span>
-          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-            <ChevronRightIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-90",
-              )}
-            />
-          </span>
+        <span className="relative min-w-0 flex-1 truncate text-start text-secondary-label text-sm leading-relaxed">
+          Thought
         </span>
+        <TimelineRowTimestamp createdAt={message.createdAt} timestampFormat={ctx.timestampFormat} />
+        <TimelineDisclosureChevron expanded={expanded} />
       </button>
       {expanded ? (
-        <div className="mt-1 ms-7 flex max-h-96 flex-col gap-3 overflow-auto px-0.5 py-1 select-text">
-          <ChatMarkdown
-            className="text-foreground"
-            text={message.text}
-            cwd={ctx.markdownCwd}
-            threadRef={ctx.threadRef ?? undefined}
-            lineBreaks
-            skills={ctx.skills}
-            headingLevelOffset={MESSAGE_HEADING_LEVEL}
-            onUseArtifactTemplate={ctx.onUseArtifactTemplate}
-            onImageExpand={ctx.onImageExpand}
-          />
+        <div className="mt-1">
+          <ReasoningTraceBody messages={[message]} streaming={false} />
         </div>
       ) : null}
     </div>
@@ -2873,10 +2900,18 @@ const WorkGroupSection = memo(function WorkGroupSection({
   isExpandedToolGroup: boolean;
   displayLabel?: string | undefined;
 }) {
-  const { workspaceRoot, routeThreadKey, onToggleWorkEntry } = use(TimelineRowCtx);
+  const { workspaceRoot, routeThreadKey, onToggleWorkEntry, workGroupViewState } =
+    use(TimelineRowCtx);
   const onToggleStandaloneEntry = useCallback(
     (collapsed: boolean) => onToggleWorkEntry(disclosureAnchorKey, collapsed),
     [disclosureAnchorKey, onToggleWorkEntry],
+  );
+  const groupView = useMemo(
+    () => ({
+      state: workGroupViewState,
+      onToggleEntry: (collapsed: boolean) => onToggleWorkEntry(disclosureAnchorKey, collapsed),
+    }),
+    [disclosureAnchorKey, onToggleWorkEntry, workGroupViewState],
   );
   const nonEmptyEntries = useMemo(
     () => groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, isExpandedToolGroup)),
@@ -2884,7 +2919,10 @@ const WorkGroupSection = memo(function WorkGroupSection({
   );
 
   if (nonEmptyEntries.length === 0) return null;
-  if (isExpandedToolGroup) {
+  // Small expanded groups stay in normal block layout so Thought and tool
+  // chevrons share the same trailing edge. LegendList measures item width
+  // from content and parks each chevron after its label.
+  if (isExpandedToolGroup && nonEmptyEntries.length > 16) {
     return (
       <ExpandedWorkGroupEntries
         key={`${routeThreadKey}:${anchorKey}`}
@@ -2893,6 +2931,22 @@ const WorkGroupSection = memo(function WorkGroupSection({
         entries={nonEmptyEntries}
         workspaceRoot={workspaceRoot}
       />
+    );
+  }
+  if (isExpandedToolGroup) {
+    return (
+      <WorkGroupViewCtx value={groupView}>
+        <div className="flex w-full min-w-0 flex-col space-y-px">
+          {nonEmptyEntries.map((workEntry) => (
+            <SimpleWorkEntryRow
+              key={workEntry.id}
+              workEntry={workEntry}
+              workspaceRoot={workspaceRoot}
+              isExpandedToolGroupEntry
+            />
+          ))}
+        </div>
+      </WorkGroupViewCtx>
     );
   }
 
@@ -3047,8 +3101,9 @@ function ExpandedWorkGroupEntries({
         role="region"
         aria-label="Tool calls"
         data-tool-group-scroll
+        style={{ width: "100%" }}
         className={cn(
-          "scrollbar-gutter-stable max-h-[min(18rem,50dvh)] scroll-py-6 overflow-x-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          "w-full min-w-0 scrollbar-gutter-stable max-h-[min(18rem,50dvh)] scroll-py-6 overflow-x-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
           getVirtualizedScrollFadeClassName(fades),
         )}
       />
@@ -3235,7 +3290,7 @@ function toolGroupSummaryIconName(
     case "list-prs":
       return "pull-request";
     case "read":
-      return "eye";
+      return "file-text";
     case "edit":
       return "square-pen";
     case "command":
@@ -4124,6 +4179,7 @@ type WorkEntryIconName =
   | "computer"
   | "device"
   | "eye"
+  | "file-text"
   | "globe"
   | "hammer"
   | "message-circle"
@@ -4355,6 +4411,8 @@ function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className
       return <CircleAlertIcon className={className} aria-hidden />;
     case "eye":
       return <EyeIcon className={className} aria-hidden />;
+    case "file-text":
+      return <FileTextIcon className={className} aria-hidden />;
     case "globe":
       return <GlobeIcon className={className} aria-hidden />;
     case "hammer":
@@ -4420,6 +4478,9 @@ function buildToolCallExpandedBody(
   visibleLabel: string,
   viewedImagePath: string | null,
 ): string | null {
+  if (toolGroupAction(workEntry) === "read") {
+    return workEntryReadOutput(workEntry, workspaceRoot);
+  }
   const blocks: string[] = [];
   const seen = new Set<string>([visibleLabel.trim()]);
   const addBlock = (value: string | null | undefined) => {
@@ -4448,7 +4509,7 @@ function buildToolCallExpandedBody(
       : [],
   );
   const changedFiles = (workEntry.changedFiles ?? []).flatMap((filePath) => {
-    const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
+    const formattedPath = formatAbsoluteWorkspacePath(filePath, workspaceRoot);
     return viewedImagePaths.has(filePath) ||
       viewedImagePaths.has(formattedPath) ||
       filePath.trim() === detail ||
@@ -4462,8 +4523,13 @@ function buildToolCallExpandedBody(
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 
+const inspectablePanelClassName =
+  "rounded-md border-0 bg-secondary px-3 py-2 shadow-none dark:bg-input/20";
+const toolCallExpandedPanelClassName = cn("cursor-default", inspectablePanelClassName);
+const toolCallExpandedPanelFrameClassName = "px-1 pt-1";
 const toolCallExpandedBodyClassName =
   "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[length:var(--font-size-code,0.6875rem)] leading-relaxed select-text";
+const reasoningTraceClassName = "text-foreground/85";
 
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (
@@ -4476,6 +4542,9 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (workEntry.toolSurface) return workEntry.toolSurface;
   const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
   if (toolPresentation) return toolPresentation.icon;
+  if (workEntry.itemType === "image_view" || workEntry.viewedImagePath) {
+    return "eye";
+  }
   const action = toolGroupAction(workEntry);
   if (action !== "other") return toolGroupSummaryIconName(action);
 
@@ -4497,18 +4566,6 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
 }
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
-
-/**
- * Click handler for expanded row labels, which turn text selection back on.
- * Only a click that ends a real selection is withheld from the row toggle, so
- * an ordinary click on the label still bubbles and collapses the row it opened.
- */
-const stopRowToggleWhileSelectingText = (e: MouseEvent<HTMLElement>) => {
-  const selection = e.currentTarget.ownerDocument.getSelection();
-  if (selection && !selection.isCollapsed) {
-    e.stopPropagation();
-  }
-};
 
 /** One tool row per batch, with member results available on expansion. */
 const AgentSpawnRow = memo(function AgentSpawnRow(props: {
@@ -4640,59 +4697,65 @@ function AgentSpawnMemberRow({
     setOpen((value) => !value);
   };
 
-  return (
-    <div
-      role={canExpand ? "button" : undefined}
-      tabIndex={canExpand ? 0 : undefined}
-      aria-label={canExpand ? `${agent.title}, ${statusLabel}` : undefined}
-      aria-expanded={canExpand ? open : undefined}
-      onClick={canExpand ? toggleOpen : undefined}
-      onKeyDown={
-        canExpand
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                toggleOpen();
-              }
-            }
-          : undefined
+  const rowToggleProps = canExpand
+    ? {
+        role: "button" as const,
+        tabIndex: 0 as const,
+        "aria-label": `${agent.title}, ${statusLabel}`,
+        "aria-expanded": open,
+        onClick: toggleOpen,
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleOpen();
+          }
+        },
       }
-      className={cn(
-        "flex flex-col rounded-md px-1 py-0.5 transition-colors",
-        canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-      )}
-    >
-      <div className="flex select-none items-center gap-1.5">
-        <p className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm leading-relaxed">
-          <span
-            className={cn(
-              "min-w-0 truncate",
-              agent.status === "failed" ? failedToolIconClassName : "text-foreground/80",
-            )}
-          >
-            {agent.title}
-          </span>
-          {role ? (
-            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
-              {role}
+    : {};
+
+  return (
+    <div className="flex flex-col">
+      <div
+        className={cn(
+          "flex flex-col rounded-md px-1 py-0.5 transition-colors",
+          canExpand &&
+            "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+        )}
+        {...rowToggleProps}
+      >
+        <div className="flex select-none items-center gap-1.5">
+          <p className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm leading-relaxed">
+            <span
+              className={cn(
+                "min-w-0 truncate",
+                agent.status === "failed" ? failedToolIconClassName : "text-foreground/80",
+              )}
+            >
+              {agent.title}
             </span>
-          ) : null}
-        </p>
-        <span className="shrink-0 font-mono text-[.7rem] tabular-nums text-muted-foreground">
-          {statusLabel}
-        </span>
+            {role ? (
+              <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
+                {role}
+              </span>
+            ) : null}
+          </p>
+          <span className="shrink-0 font-mono text-[.7rem] tabular-nums text-muted-foreground">
+            {statusLabel}
+          </span>
+        </div>
+        {!open && firstLine ? (
+          <p className="truncate text-xs text-muted-foreground">{firstLine}</p>
+        ) : null}
       </div>
-      {!open && firstLine ? (
-        <p className="truncate text-xs text-muted-foreground">{firstLine}</p>
-      ) : null}
       {open ? (
         <div
-          className="mt-1 cursor-default rounded-md bg-muted/40 px-3 py-2"
+          className={toolCallExpandedPanelFrameClassName}
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          <pre className={toolCallExpandedBodyClassName}>{body}</pre>
+          <div className={toolCallExpandedPanelClassName}>
+            <pre className={toolCallExpandedBodyClassName}>{body}</pre>
+          </div>
         </div>
       ) : null}
     </div>
@@ -4836,40 +4899,37 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     : {};
 
   return (
-    <div
-      className={cn(
-        "group/timeline-row relative flex flex-col rounded-md px-0.5 transition-colors",
-        isExpandedToolGroupEntry ? "py-0" : "py-0.5",
-        expanded && "mb-1",
-        canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-      )}
-      {...rowToggleProps}
-    >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
-        <span
-          className={iconWrapperClass}
-          role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-        >
-          <ToolActivityIconView
-            icon={entryToolIcon}
-            fallbackName={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8]"
-            muted
-          />
-        </span>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+    <div className={cn("group/timeline-row relative flex w-full flex-col", expanded && "mb-1")}>
+      <div
+        className={cn(
+          "relative flex w-full flex-col rounded-md px-0.5 transition-colors",
+          isExpandedToolGroupEntry ? "py-0" : "py-0.5",
+          canExpand &&
+            "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+        )}
+        {...rowToggleProps}
+      >
+        <div className="flex w-full min-w-0 max-w-full select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
+          <span
+            className={iconWrapperClass}
+            role={showFailedIndicator ? "img" : undefined}
+            aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+          >
+            <ToolActivityIconView
+              icon={entryToolIcon}
+              fallbackName={entryIconName}
+              className="block size-4 shrink-0 stroke-[1.8]"
+              muted
+            />
+          </span>
           <div className="min-w-0 flex-1 overflow-hidden">
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span
                 className={cn(
                   answerPreview ? "shrink-0" : "min-w-0 flex-1",
-                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  expanded ? "whitespace-normal break-words" : "truncate",
                   headingClass,
                 )}
-                onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
-                onPointerDown={expanded ? stopRowToggle : undefined}
               >
                 {previewText}
               </span>
@@ -4895,25 +4955,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
-          <span
-            className={cn(
-              "flex size-4 shrink-0 items-center justify-center",
-              !canExpand && "invisible",
-            )}
-            aria-hidden
-          >
-            <ChevronRightIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-90",
-              )}
-            />
+          <span className={cn(!canExpand && "invisible")}>
+            <TimelineDisclosureChevron expanded={expanded} />
           </span>
         </div>
       </div>
       {expanded && viewedImage && threadRef ? (
         <div
-          className="mt-1 ms-7 cursor-default"
+          className="mt-1 ms-7 cursor-default px-1"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
@@ -4933,11 +4982,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       ) : null}
       {expanded && canExpand && expandedBody && !workEntry.questionAnswer ? (
         <div
-          className="mt-1 ms-7 cursor-default rounded-md bg-muted/40 px-3 py-2"
+          className={toolCallExpandedPanelFrameClassName}
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          <div className={toolCallExpandedPanelClassName}>
+            <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          </div>
         </div>
       ) : null}
     </div>

@@ -517,6 +517,7 @@ describe("workEntryViewedImagePath", () => {
         ...entry,
         itemType: "dynamic_tool_call",
         toolTitle: "Read file",
+        toolData: { kind: "read" },
         detail: "C:\\workspace\\a.webp",
       }),
     ).toBe("C:\\workspace\\a.webp");
@@ -551,6 +552,112 @@ describe("toolGroupAction", () => {
         viewedImagePath: "/workspace/reference.png",
       }),
     ).toBe("read");
+  });
+
+  it("groups Claude Read by tool name instead of treating the path as an edit", () => {
+    expect(
+      toolGroupAction({
+        label: "Tool call",
+        tone: "tool",
+        itemType: "dynamic_tool_call",
+        toolTitle: "Tool call",
+        detail: 'Read: {"file_path":"/Users/yashsingh/p/projects/ohseearr/src/env.ts"}',
+        changedFiles: ["/Users/yashsingh/p/projects/ohseearr/src/env.ts"],
+        toolData: { toolName: "Read" },
+      }),
+    ).toBe("read");
+  });
+
+  it("groups Cursor ACP reads by kind, not by title", () => {
+    expect(
+      toolGroupAction({
+        label: "Read file",
+        tone: "tool",
+        toolTitle: "Read file",
+        detail: 'import * as Effect from "effect/Effect"\n',
+        toolData: { kind: "read" },
+      }),
+    ).toBe("read");
+    expect(
+      toolGroupAction({
+        label: "Read file",
+        tone: "tool",
+        toolTitle: "Read file",
+        detail: 'import * as Effect from "effect/Effect"\n',
+      }),
+    ).toBe("other");
+  });
+
+  it("groups refreshed Cursor reads by path title and kind instead of treating them as edits", () => {
+    expect(
+      toolGroupAction({
+        label: "Read src/lib/openai-auth.ts",
+        tone: "tool",
+        toolTitle: "Read src/lib/openai-auth.ts",
+        changedFiles: ["src/lib/openai-auth.ts"],
+        toolData: { kind: "read", rawInput: { path: "src/lib/openai-auth.ts" } },
+      }),
+    ).toBe("read");
+  });
+
+  it("treats Cursor file finds as code search instead of web search", () => {
+    expect(
+      toolGroupAction({
+        label: "Searched files",
+        tone: "tool",
+        toolTitle: "Searched files",
+        itemType: "web_search",
+        detail: "237 files",
+        toolData: { kind: "search" },
+      }),
+    ).toBe("code-search");
+    expect(
+      toolGroupAction({
+        label: "Find",
+        tone: "tool",
+        toolTitle: "Find",
+        itemType: "web_search",
+        toolData: { kind: "search" },
+      }),
+    ).toBe("code-search");
+  });
+
+  it("does not treat a search target path as a file edit", () => {
+    expect(
+      toolGroupAction({
+        label: "Find",
+        tone: "tool",
+        toolTitle: "Find",
+        itemType: "web_search",
+        changedFiles: ["/Users/yashsingh/p/projects/t3chat-new"],
+        toolData: {
+          kind: "search",
+          rawInput: { glob: "*.ts", path: "/Users/yashsingh/p/projects/t3chat-new" },
+        },
+      }),
+    ).toBe("code-search");
+  });
+
+  it("keeps generic web searches on the web", () => {
+    expect(
+      toolGroupAction({
+        label: "Search",
+        tone: "tool",
+        itemType: "web_search",
+      }),
+    ).toBe("search");
+  });
+
+  it("keeps command executions as commands even if a path-like detail leaked into changedFiles", () => {
+    expect(
+      toolGroupAction({
+        label: "Ran command",
+        tone: "tool",
+        itemType: "command_execution",
+        command: "find scripts -type f",
+        changedFiles: ["find scripts/pdf_remediation -type f"],
+      }),
+    ).toBe("command");
   });
 });
 

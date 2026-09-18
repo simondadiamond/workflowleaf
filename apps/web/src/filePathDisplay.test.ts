@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { formatWorkspaceRelativePath } from "./filePathDisplay";
+import { formatAbsoluteWorkspacePath, formatWorkspaceRelativePath } from "./filePathDisplay";
 
 describe("formatWorkspaceRelativePath", () => {
   it("formats absolute workspace paths from the workspace root", () => {
@@ -37,6 +37,24 @@ describe("formatWorkspaceRelativePath", () => {
         "C:/Users/mike/dev-stuff/t3code",
       ),
     ).toBe("t3code/apps/web/src/session-logic.ts:501:9");
+  });
+
+  it("joins a relative path onto the workspace root", () => {
+    expect(
+      formatAbsoluteWorkspacePath(
+        ".claude/skills/unslop/SKILL.md",
+        "/Users/yashsingh/p/projects/ohseearr",
+      ),
+    ).toBe("/Users/yashsingh/p/projects/ohseearr/.claude/skills/unslop/SKILL.md");
+  });
+
+  it("keeps an already-absolute path intact", () => {
+    expect(
+      formatAbsoluteWorkspacePath(
+        "/Users/yashsingh/p/projects/ohseearr/.claude/skills/unslop/SKILL.md",
+        "/Users/yashsingh/p/projects/ohseearr",
+      ),
+    ).toBe("/Users/yashsingh/p/projects/ohseearr/.claude/skills/unslop/SKILL.md");
   });
 
   it("keeps double-slash POSIX paths case-sensitive", () => {
