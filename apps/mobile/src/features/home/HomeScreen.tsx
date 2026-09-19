@@ -22,7 +22,7 @@ import {
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,7 +32,9 @@ import { EmptyState } from "../../components/EmptyState";
 import { MaterialFloatingActionButton } from "../../components/MaterialFloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
 import type { SavedRemoteConnection } from "../../lib/connection";
-import { scopedProjectKey } from "../../lib/scopedEntities";
+import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
+import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
+import { useNativeColumnLayoutMetrics } from "../layout/native-layout-metrics";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useThreadSearch } from "../../state/queries";
@@ -220,6 +222,10 @@ function HomeTopContentSpacer() {
 /* ─── Main screen ────────────────────────────────────────────────────── */
 
 export function HomeScreen(props: HomeScreenProps) {
+  const primaryColumn = use(NativePrimaryColumnContext);
+  const columnMetrics = useNativeColumnLayoutMetrics();
+  const selectedThreadKey = primaryColumn?.selectedThreadKey ?? null;
+  const fullSwipeWidth = primaryColumn && columnMetrics ? columnMetrics.width - 20 : undefined;
   const [groupDisplayStates, setGroupDisplayStates] = useState<
     ReadonlyMap<string, HomeGroupDisplayState>
   >(() => new Map());
@@ -718,10 +724,11 @@ export function HomeScreen(props: HomeScreenProps) {
       now: new Date().toISOString(),
       snoozedShelfExpanded,
       settledShelfExpanded,
-      selectedThreadKey: null,
+      selectedThreadKey,
     });
   }, [
     pendingOrder,
+    selectedThreadKey,
     queuedThreadKeys,
     nowMinute,
     snoozeWakeTick,
@@ -847,6 +854,9 @@ export function HomeScreen(props: HomeScreenProps) {
       const movedId = `${thread.environmentId}:${thread.id}`;
       return (
         <ThreadListV2Row
+          pane={primaryColumn ? "sidebar" : "screen"}
+          selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
+          fullSwipeWidth={fullSwipeWidth}
           onNewThreadOnBranch={props.onNewThreadOnBranch}
           thread={thread}
           variant={item.item.variant}
@@ -929,6 +939,9 @@ export function HomeScreen(props: HomeScreenProps) {
       props.onDeletePendingTask,
       props.onSelectPendingTask,
       props.onSelectThread,
+      primaryColumn,
+      selectedThreadKey,
+      fullSwipeWidth,
       props.onNewThreadOnBranch,
       props.savedConnectionsById,
       serverConfigs,
@@ -958,11 +971,13 @@ export function HomeScreen(props: HomeScreenProps) {
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
       snoozePresetMinute: nowMinute,
+      selectedThreadKey,
       threadSearchMatchByKey,
     }),
     [
       projectByKey,
       props.searchQuery,
+      selectedThreadKey,
       props.savedConnectionsById,
       serverConfigs,
       nowMinute,
@@ -975,9 +990,10 @@ export function HomeScreen(props: HomeScreenProps) {
     () => ({
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
+      selectedThreadKey,
       threadSearchMatchByKey,
     }),
-    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
+    [props.savedConnectionsById, props.searchQuery, selectedThreadKey, threadSearchMatchByKey],
   );
 
   const renderItem = useCallback(
@@ -1020,8 +1036,10 @@ export function HomeScreen(props: HomeScreenProps) {
           const thread = item.thread;
           return (
             <ThreadListRow
+              selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
+              fullSwipeWidth={fullSwipeWidth}
               onNewThreadOnBranch={props.onNewThreadOnBranch}
-              variant="compact"
+              variant={primaryColumn ? "sidebar" : "compact"}
               thread={thread}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               environmentLabel={
@@ -1072,6 +1090,9 @@ export function HomeScreen(props: HomeScreenProps) {
       props.onNewThreadInProject,
       props.onSelectPendingTask,
       props.onSelectThread,
+      primaryColumn,
+      selectedThreadKey,
+      fullSwipeWidth,
       props.onNewThreadOnBranch,
       props.searchQuery,
       props.savedConnectionsById,
