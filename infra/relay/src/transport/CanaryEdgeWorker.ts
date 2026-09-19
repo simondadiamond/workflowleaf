@@ -24,10 +24,10 @@ export const CanaryEdgeLive = CanaryEdge.make(
   },
   Effect.gen(function* () {
     const environments = yield* RelayEnvironment;
-    const endpointKey = yield* Config.string("T3_RELAY_CANARY_ENDPOINT_KEY");
-    const connectorToken = yield* Config.redacted("T3_RELAY_CANARY_CONNECTOR_TOKEN");
-    const connectorLeaseId = yield* Config.string("T3_RELAY_CANARY_CONNECTOR_LEASE_ID");
-    const controlToken = yield* Config.redacted("T3_RELAY_CANARY_CONTROL_TOKEN");
+    const endpointKey = yield* Config.String("T3_RELAY_CANARY_ENDPOINT_KEY");
+    const connectorToken = yield* Config.Redacted("T3_RELAY_CANARY_CONNECTOR_TOKEN");
+    const connectorLeaseId = yield* Config.String("T3_RELAY_CANARY_CONNECTOR_LEASE_ID");
+    const controlToken = yield* Config.Redacted("T3_RELAY_CANARY_CONTROL_TOKEN");
     const relay = yield* makeRelayEdgeRuntime((url) => ({
       kind: url.pathname === relayConnectorPath ? "connector" : "public",
       endpointKey,
