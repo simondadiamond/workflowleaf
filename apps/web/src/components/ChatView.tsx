@@ -6480,10 +6480,10 @@ export default function ChatView(props: ChatViewProps) {
     ? !canOperateThread
       ? "This connection cannot change threads."
       : !activeProject
-      ? "Choose a project before compacting"
-      : !manualCompactionProviderAvailable
-        ? "Compaction is unavailable for this provider"
-        : "Compacting is unavailable right now"
+        ? "Choose a project before compacting"
+        : !manualCompactionProviderAvailable
+          ? "Compaction is unavailable for this provider"
+          : "Compacting is unavailable right now"
     : null;
   const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (
@@ -8735,6 +8735,7 @@ export default function ChatView(props: ChatViewProps) {
   // leaves the message queued. Re-run when any of them clear so a due message
   // does not wait for an unrelated phase change.
   const queueSendGate =
+    !canOperateThread ||
     activeEnvironmentUnavailable ||
     !clientSettingsHydrated ||
     isRevertingCheckpoint ||
@@ -10170,15 +10171,17 @@ export default function ChatView(props: ChatViewProps) {
                             canOperateThread={canOperateThread}
                             isRevertingCheckpoint={isRevertingCheckpoint}
                             sendDisabledReason={
-                              !canOperateThread ? "This connection cannot change threads." : isRevertingCheckpoint
-                                ? "Rewinding conversation"
-                                : feedbackUploading
-                                  ? "Sending feedback"
-                                  : threadDetailLoading
-                                    ? "Messages loading"
-                                    : worktreeSetupBlocksSend
-                                      ? "Preparing worktree"
-                                      : projectCloneSendBlockReason
+                              !canOperateThread
+                                ? "This connection cannot change threads."
+                                : isRevertingCheckpoint
+                                  ? "Rewinding conversation"
+                                  : feedbackUploading
+                                    ? "Sending feedback"
+                                    : threadDetailLoading
+                                      ? "Messages loading"
+                                      : worktreeSetupBlocksSend
+                                        ? "Preparing worktree"
+                                        : projectCloneSendBlockReason
                             }
                             isPreparingWorktree={isPreparingWorktree}
                             bannerItems={composerBannerItems}
