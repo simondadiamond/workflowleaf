@@ -11,6 +11,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import type * as DateTime from "effect/DateTime";
+import * as Cause from "effect/Cause";
 
 import type { IdAllocatorV2Shape } from "./IdAllocator.ts";
 
@@ -18,6 +19,29 @@ export const MAX_PROVIDER_FAILURE_MESSAGE_LENGTH = 4_096;
 export const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
 
 const DEFAULT_PROVIDER_FAILURE_MESSAGE = "Provider turn failed.";
+
+/** Unwrap adapter errors without serializing stacks, request payloads, or arbitrary objects. */
+function causeMessage(cause: unknown): string | undefined {
+  const seen = new Set<unknown>();
+  let message: string | undefined;
+  for (let depth = 0; depth < 16 && cause != null && !seen.has(cause); depth++) {
+    seen.add(cause);
+    if (typeof cause === "string") return cause.trim() || message;
+    if (Cause.isCause(cause)) {
+      cause = Cause.squash(cause);
+      continue;
+    }
+    if (typeof cause !== "object") break;
+    try {
+      const candidate = stringField(cause, "message");
+      if (candidate?.trim()) message = candidate;
+      cause = (cause as Record<string, unknown>).cause;
+    } catch {
+      break;
+    }
+  }
+  return message;
+}
 
 function stringField(value: unknown, key: "message" | "code"): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
@@ -95,7 +119,7 @@ export function makeProviderFailure(input: {
   readonly class?: OrchestrationV2ProviderFailureClass;
   readonly retryable?: boolean | null;
 }): OrchestrationV2ProviderFailure {
-  const rawMessage = input.message ?? DEFAULT_PROVIDER_FAILURE_MESSAGE;
+  const rawMessage = input.message ?? causeMessage(input.cause) ?? DEFAULT_PROVIDER_FAILURE_MESSAGE;
   const message = boundedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
   const rawCode = input.code ?? stringField(input.cause, "code") ?? null;
   const code =
