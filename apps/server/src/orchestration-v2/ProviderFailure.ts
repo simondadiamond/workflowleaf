@@ -14,27 +14,47 @@ import type * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 
 import type { IdAllocatorV2Shape } from "./IdAllocator.ts";
+import { ContextHandoffBudgetError } from "./ContextHandoffDelivery.ts";
 
 export const MAX_PROVIDER_FAILURE_MESSAGE_LENGTH = 4_096;
 export const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
 
 const DEFAULT_PROVIDER_FAILURE_MESSAGE = "Provider turn failed.";
 
-/** Unwrap adapter errors without serializing stacks, request payloads, or arbitrary objects. */
+/** Translate known categories without exposing arbitrary provider defect text. */
 function causeMessage(cause: unknown): string | undefined {
   const seen = new Set<unknown>();
   let message: string | undefined;
   for (let depth = 0; depth < 16 && cause != null && !seen.has(cause); depth++) {
     seen.add(cause);
-    if (typeof cause === "string") return cause.trim() || message;
     try {
       if (Cause.isCause(cause)) {
         cause = Cause.squash(cause);
         continue;
       }
       if (typeof cause !== "object") break;
-      const candidate = stringField(cause, "message");
-      if (candidate?.trim()) message = candidate;
+      switch ((cause as Record<string, unknown>)._tag) {
+        case "ContextHandoffBudgetError":
+          return new ContextHandoffBudgetError().message;
+        case "ContextHandoffDeliveryUncertainError":
+          return "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.";
+        case "ProviderAdapterTurnStartError":
+          message =
+            "The provider could not start this turn. Retry the turn; if it keeps failing, check the provider setup and server logs.";
+          break;
+        case "ProviderAdapterEventStreamError":
+          message =
+            "The provider event stream closed unexpectedly. Retry the turn; if it keeps failing, check the provider and server logs.";
+          break;
+        case "ProviderAdapterOpenSessionError":
+          message =
+            "The provider session could not be opened. Check that the provider is installed and signed in, then retry the turn.";
+          break;
+        case "ProviderAdapterResumeThreadError":
+          message =
+            "The provider conversation could not be resumed. Retry the turn; if it keeps failing, check the provider and server logs.";
+          break;
+      }
       cause = (cause as Record<string, unknown>).cause;
     } catch {
       break;

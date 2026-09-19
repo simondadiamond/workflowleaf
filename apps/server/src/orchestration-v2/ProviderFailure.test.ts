@@ -69,7 +69,7 @@ it("does not split a surrogate pair at the truncation boundary", () => {
   assert.notMatch(failure.message.slice(0, -1), /[\uD800-\uDBFF]$/u);
 });
 
-it("uses the underlying error message while preserving explicit messages", () => {
+it("does not expose arbitrary cause messages and preserves explicit messages", () => {
   const cause = new Error("Adapter failed", {
     cause: new Error("Session expired. Sign in again."),
   });
@@ -79,7 +79,7 @@ it("uses the underlying error message while preserving explicit messages", () =>
     "Session expired. Sign in again.",
     { message: "Session expired. Sign in again." },
   ]) {
-    assert.equal(makeProviderFailure({ cause: value }).message, "Session expired. Sign in again.");
+    assert.equal(makeProviderFailure({ cause: value }).message, "Provider turn failed.");
     assert.equal(
       makeProviderFailure({ cause: value, message: "Provider connection closed." }).message,
       "Provider connection closed.",
@@ -101,19 +101,21 @@ it("preserves actionable handoff errors wrapped by turn startup", () => {
   );
 });
 
-it("redacts and bounds messages extracted from nested causes", () => {
+it("does not expose defect text nested inside a known error category", () => {
   const failure = makeProviderFailure({
-    cause: new Error("Adapter failed", {
+    cause: {
+      _tag: "ProviderAdapterEventStreamError",
       cause: new Error(
         `Session rejected: Bearer nested-secret https://user:pass@example.test/path?token=secret ${"x".repeat(5000)}`,
       ),
-    }),
+    },
   });
-  assert.include(failure.message, "Session rejected:");
+  assert.include(failure.message, "provider event stream closed unexpectedly");
+  assert.notInclude(failure.message, "Session rejected:");
   assert.notInclude(failure.message, "nested-secret");
   assert.notInclude(failure.message, "user:pass");
   assert.notInclude(failure.message, "token=secret");
-  assert.equal(failure.message.length, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
+  assert.isBelow(failure.message.length, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
 });
 
 it("handles cyclic causes and throwing accessors", () => {
@@ -121,7 +123,7 @@ it("handles cyclic causes and throwing accessors", () => {
     message: "Provider disconnected. Retry the turn.",
   };
   cyclic.cause = cyclic;
-  assert.equal(makeProviderFailure({ cause: cyclic }).message, cyclic.message);
+  assert.equal(makeProviderFailure({ cause: cyclic }).message, "Provider turn failed.");
   assert.equal(
     makeProviderFailure({
       cause: {

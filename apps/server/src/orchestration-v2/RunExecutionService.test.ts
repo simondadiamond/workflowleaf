@@ -2940,7 +2940,7 @@ it.effect("refreshes pull requests after a provider stream exits with an error",
       ["error"],
     );
     const error = written.find((item) => item.type === "error");
-    assert.equal(error?.failure.message, "provider process exited");
+    assert.include(error?.failure.message ?? "", "provider event stream closed unexpectedly");
   }),
 );
 
@@ -2970,7 +2970,7 @@ it.effect("refreshes pull requests only once when startup failure closes its eve
     assert.equal(observed.filter((item) => item === "pull-requests-refreshed").length, 1);
     assert.equal(observed[0], "run:failed");
     const error = written.find((item) => item.type === "error");
-    assert.equal(error?.failure.message, "provider rejected the turn");
+    assert.include(error?.failure.message ?? "", "provider could not start this turn");
   }),
 );
 
