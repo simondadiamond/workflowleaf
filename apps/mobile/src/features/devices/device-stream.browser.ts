@@ -12,16 +12,10 @@ declare global {
 }
 
 let activeClient: ReturnType<typeof createDeviceStreamClient> | null = null;
-let activeImage: HTMLImageElement | null = null;
-let imageFrameTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function stop() {
-  if (imageFrameTimer !== null) clearTimeout(imageFrameTimer);
-  imageFrameTimer = null;
   activeClient?.stop();
   activeClient = null;
-  activeImage?.removeAttribute("src");
-  activeImage = null;
 }
 
 export function command(button: "home" | "back" | "appSwitcher" | "rotate") {
@@ -94,27 +88,11 @@ export function start(configuration: DeviceStreamConfiguration) {
   let pointerId: number | null = null;
   let inputConnected = false;
   let streaming = false;
-  let usingMjpeg = false;
-  let imageReady = false;
   const reportStatus = (status: "connecting" | "streaming" | "error", detail?: string) => {
     if (activeClient !== client) return;
-    // The transport has opened MJPEG, but WebKit may not have received an image yet.
-    const visibleStatus =
-      status === "streaming" && usingMjpeg && !imageReady ? "connecting" : status;
-    streaming = visibleStatus === "streaming";
+    streaming = status === "streaming";
     inputStatus.style.display = streaming && !inputConnected ? "block" : "none";
-    post({ type: "status", status: visibleStatus, detail });
-  };
-  const checkImage = () => {
-    imageFrameTimer = null;
-    if (activeClient !== client) return;
-    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-      imageReady = true;
-      reportStatus("streaming");
-    } else {
-      // Multipart images may not fire load until the response ends. Only check until the first frame.
-      imageFrameTimer = setTimeout(checkImage, 250);
-    }
+    post({ type: "status", status, detail });
   };
   const layout = (screen: DeviceScreenSize | null) => {
     const landscape =
@@ -159,12 +137,9 @@ export function start(configuration: DeviceStreamConfiguration) {
     {
       onStatus: reportStatus,
       onScreen: layout,
-      onMjpegFallback: (url) => {
-        usingMjpeg = true;
+      onMjpegFallback: () => {
         canvas.style.display = "none";
         image.style.display = "block";
-        image.src = url;
-        checkImage();
       },
       onUnauthorized: unauthorized,
       onInputConnected: (connected) => {
@@ -175,16 +150,7 @@ export function start(configuration: DeviceStreamConfiguration) {
     },
   );
   activeClient = client;
-  activeImage = image;
-  image.addEventListener("error", () => {
-    reportStatus("error", "Could not receive the device stream.");
-    if (activeClient === client) stop();
-  });
-  image.addEventListener("load", () => {
-    if (activeClient !== client) return;
-    if (imageFrameTimer !== null) clearTimeout(imageFrameTimer);
-    checkImage();
-  });
+  client.setMjpegImage(image);
   const touch = (event: PointerEvent, phase: "begin" | "move" | "end") => {
     const rect = frame.getBoundingClientRect();
     client.sendTouch(

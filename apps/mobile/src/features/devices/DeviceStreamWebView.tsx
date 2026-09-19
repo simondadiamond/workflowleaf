@@ -94,6 +94,7 @@ function DeviceStreamDocumentView({
   const failed = useRef(false);
   const [status, setStatus] = useState<DeviceStreamStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [started, setStarted] = useState(false);
   const fail = (message: string) => {
     if (!active.current || failed.current) return;
     failed.current = true;
@@ -102,14 +103,15 @@ function DeviceStreamDocumentView({
     setError(message);
     setStatus("error");
   };
-  const connectionTimedOut = useEffectEvent(() =>
-    fail("No video received from the device. Reconnect to try again."),
+  // The shared transport owns video timeouts once the document acknowledges startup.
+  const bootstrapTimedOut = useEffectEvent(() =>
+    fail("Device viewer could not start. Reconnect to try again."),
   );
   useEffect(() => {
-    if (status !== "connecting") return;
-    const timer = setTimeout(connectionTimedOut, 15_000);
+    if (started) return;
+    const timer = setTimeout(bootstrapTimedOut, 15_000);
     return () => clearTimeout(timer);
-  }, [status]);
+  }, [started]);
   const source = useMemo(
     () => ({
       html: deviceStreamDocument(configuration, deviceStreamScript),
@@ -171,6 +173,7 @@ function DeviceStreamDocumentView({
           else if (message?.type === "input") void onInputConnected(message.connected);
           else if (message?.type === "retry") onRetry();
           else if (message?.type === "status") {
+            setStarted(true);
             if (message.status === "error") fail(message.detail ?? "Device stream failed.");
             else {
               setStatus(message.status);
