@@ -137,6 +137,18 @@ it("handles cyclic causes and throwing accessors", () => {
   );
 });
 
+it("falls back when inspecting a provider cause throws", () => {
+  const cause = new Proxy(
+    {},
+    {
+      has() {
+        throw new Error("unreadable provider cause");
+      },
+    },
+  );
+  assert.equal(makeProviderFailure({ cause }).message, "Provider turn failed.");
+});
+
 it("does not serialize arbitrary provider causes", () => {
   const failure = makeProviderFailure({
     cause: {

@@ -27,12 +27,12 @@ function causeMessage(cause: unknown): string | undefined {
   for (let depth = 0; depth < 16 && cause != null && !seen.has(cause); depth++) {
     seen.add(cause);
     if (typeof cause === "string") return cause.trim() || message;
-    if (Cause.isCause(cause)) {
-      cause = Cause.squash(cause);
-      continue;
-    }
-    if (typeof cause !== "object") break;
     try {
+      if (Cause.isCause(cause)) {
+        cause = Cause.squash(cause);
+        continue;
+      }
+      if (typeof cause !== "object") break;
       const candidate = stringField(cause, "message");
       if (candidate?.trim()) message = candidate;
       cause = (cause as Record<string, unknown>).cause;
