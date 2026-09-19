@@ -207,7 +207,10 @@ export class AvccDemuxer {
 export interface DeviceStreamClient {
   readonly start: () => void;
   readonly stop: () => void;
-  /** Attach the displayed MJPEG image; the client owns its source and frame/error observation. */
+  /**
+   * Own the displayed MJPEG image's source and frame/error observation.
+   * `stop()` detaches it; attach a fresh image for each restart.
+   */
   readonly setMjpegImage: (image: HTMLImageElement | null) => void;
   /** Normalized 0..1 coordinates in the displayed frame. */
   readonly sendTouch: (phase: "begin" | "move" | "end", x: number, y: number) => void;
