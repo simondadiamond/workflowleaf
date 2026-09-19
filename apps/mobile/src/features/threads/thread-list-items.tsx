@@ -678,7 +678,9 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               : "bg-user-bubble-foreground"
             : "bg-primary"
         }
-        accessibilityHint={canOperateThread ? "Swipe left for archive and delete actions" : "Opens the thread"}
+        accessibilityHint={
+          canOperateThread ? "Swipe left for archive and delete actions" : "Opens the thread"
+        }
         accessibilityLabel={threadAccessibilityLabel}
         accessibilityRole="button"
         className="bg-screen"

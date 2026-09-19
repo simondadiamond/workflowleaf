@@ -59,7 +59,9 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
                   ? "danger"
                   : "secondary"
             }
-            disabled={!props.canOperateThread || props.respondingApprovalId === props.approval.requestId}
+            disabled={
+              !props.canOperateThread || props.respondingApprovalId === props.approval.requestId
+            }
             onPress={() => void props.onRespond(props.approval.requestId, option.decision)}
           />
         ))}
