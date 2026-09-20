@@ -1293,7 +1293,7 @@ export function HomeScreen(props: HomeScreenProps) {
         >
           <SwipeableScrollGateProvider enabled={swipeEnabled}>
             <FlatList
-              renderScrollComponent={renderHomeScrollView}
+              renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
               data={threadListV2Items}
               renderItem={renderV2Item}
               keyExtractor={v2KeyExtractor}
@@ -1346,7 +1346,7 @@ export function HomeScreen(props: HomeScreenProps) {
           `stickyHeaderIndices` if this gets revisited. */}
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <LegendList
-            renderScrollComponent={renderHomeScrollView}
+            renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
             ref={listRef}
             data={listLayout.items}
             renderItem={renderItem}
