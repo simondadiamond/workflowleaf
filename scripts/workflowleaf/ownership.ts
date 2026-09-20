@@ -28,6 +28,8 @@ export interface ImportBoundary {
   readonly forbidInSource?: readonly string[];
   readonly forbidSymbolsInSource?: readonly string[];
   readonly exemptPrefixes?: readonly string[];
+  /** Exact specifiers permitted despite matching a forbidden prefix. */
+  readonly allowSpecifiers?: readonly string[];
   readonly reason: string;
 }
 

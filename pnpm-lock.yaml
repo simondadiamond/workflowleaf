@@ -1044,6 +1044,9 @@ importers:
       '@noble/hashes':
         specifier: 'catalog:'
         version: 1.8.0
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@t3tools/workflowleaf-core':
         specifier: workspace:*
         version: link:../workflowleaf-core

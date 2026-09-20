@@ -39,7 +39,8 @@
       "root": "packages/workflowleaf-runtime/src",
       "forbid": ["@t3tools/contracts", "@t3tools/shared"],
       "exemptPrefixes": ["packages/workflowleaf-runtime/src/adapters/t3/"],
-      "reason": "Only the T3 adapter may know that T3 exists."
+      "reason": "Only the T3 adapter may know that T3 exists. The one exception is @t3tools/shared/nodeSqliteClient, a generic node:sqlite port of the Effect SQL client with no T3 domain in it; the plan says to reuse the repository's SQLite conventions rather than vendor a second copy.",
+      "allowSpecifiers": ["@t3tools/shared/nodeSqliteClient"]
     }
   ]
 }

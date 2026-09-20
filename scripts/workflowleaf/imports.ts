@@ -71,7 +71,10 @@ export function findImportViolations(
 
       const forbidden = isTestFile(file.path) ? always : [...always, ...sourceOnly];
 
+      const allowed = new Set(boundary.allowSpecifiers ?? []);
+
       for (const { specifier, line } of extractSpecifiers(file.text)) {
+        if (allowed.has(specifier)) continue;
         const offender = forbidden.find((needle) => specifier.startsWith(needle));
         if (offender === undefined) continue;
         violations.push({
