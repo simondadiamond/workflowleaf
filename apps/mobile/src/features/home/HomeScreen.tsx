@@ -22,8 +22,16 @@ import {
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useFocusEffect } from "@react-navigation/native";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Platform, View } from "react-native";
+import { use, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  ScrollView,
+  View,
+  type ScrollViewProps,
+} from "react-native";
+import { ScrollViewMarker } from "react-native-screens";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -217,6 +225,37 @@ function deriveEmptyState(props: {
 
 function HomeTopContentSpacer() {
   return <View className="h-4" />;
+}
+
+function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
+  const insets = useSafeAreaInsets();
+  if (Platform.OS !== "ios") return <ScrollView {...props} />;
+
+  // v5 needs the actual content scroll view registered with its screen controller.
+  // The layout observer and header siblings prevent UIKit from finding it implicitly.
+  return (
+    <ScrollViewMarker
+      style={{ flex: 1 }}
+      // With v5's custom title slot, automatic fades only the status area.
+      // UIKit's soft effect also protects the title and header buttons.
+      scrollEdgeEffects={{ top: "soft", bottom: "hidden", left: "hidden", right: "hidden" }}
+    >
+      <ScrollView
+        {...props}
+        // v5 sits inside a presentation stack. Automatic scroll insets can
+        // disappear after scrolling; use the owning column's native safe area.
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[props.contentContainerStyle, { paddingTop: insets.top }]}
+      />
+    </ScrollViewMarker>
+  );
+}
+
+function renderHomeScrollView(props: ScrollViewProps) {
+  // FlatList clones this element with its cells and ref. Keep the marker inside
+  // the component so those cells remain children of the actual ScrollView.
+  return <HomeScrollView {...props} />;
 }
 
 /* ─── Main screen ────────────────────────────────────────────────────── */
@@ -1254,6 +1293,7 @@ export function HomeScreen(props: HomeScreenProps) {
         >
           <SwipeableScrollGateProvider enabled={swipeEnabled}>
             <FlatList
+              renderScrollComponent={renderHomeScrollView}
               data={threadListV2Items}
               renderItem={renderV2Item}
               keyExtractor={v2KeyExtractor}
@@ -1306,6 +1346,7 @@ export function HomeScreen(props: HomeScreenProps) {
           `stickyHeaderIndices` if this gets revisited. */}
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <LegendList
+            renderScrollComponent={renderHomeScrollView}
             ref={listRef}
             data={listLayout.items}
             renderItem={renderItem}
