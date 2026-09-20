@@ -10,18 +10,36 @@ import { formatDiagnostics } from "@t3tools/workflowleaf-core";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { prettyJson } from "./canonical.ts";
 import { loadPlaybook } from "./load.ts";
+import { describeRun, executorFor, resumeRun, startRun, summarizeRuns } from "./run.ts";
 import { loadProfile, PROFILE_TEMPLATE, profilePath, workflowleafHome } from "./profile.ts";
+import { RunStore } from "./store/RunStore.ts";
 import { loadSkillCatalog } from "./skillCatalog.ts";
 
 export class PlaybookInvalid extends Schema.TaggedError<PlaybookInvalid>()("WlPlaybookInvalid", {
   report: Schema.String,
-}) {}
+}) {
+  override get message(): string {
+    return this.report;
+  }
+}
+
+/** The run moved on between the caller reading it and acting on it. */
+export class StaleRevision extends Schema.TaggedError<StaleRevision>()("WlStaleRevision", {
+  runId: Schema.String,
+  expected: Schema.Int,
+  actual: Schema.Int,
+}) {
+  override get message(): string {
+    return `Run ${this.runId} is on revision ${this.actual}, not ${this.expected}. Look again before acting.`;
+  }
+}
 
 const profileFlag = Flag.String("profile").pipe(
   Flag.withDescription("Execution profile: skill roots, target repository, executor, permissions."),
@@ -148,7 +166,242 @@ const profileCommand = Command.make(
   Command.withDescription("Create or inspect a local execution profile. Never holds secrets."),
 );
 
+const runIdArgument = Argument.String("run").pipe(
+  Argument.withDescription("The run id. Mutating commands never guess which run you meant."),
+);
+
+const revisionFlag = Flag.Int("revision").pipe(
+  Flag.withDescription(
+    "The revision you believe the run is on. The command refuses if it has moved since you looked.",
+  ),
+  Flag.optional,
+);
+
+const ownerFlag = Flag.String("owner").pipe(
+  Flag.withDescription("Who is driving this run. Recorded on the lease."),
+  Flag.withDefault("cli"),
+);
+
+/** Fails when the run has moved on since the caller last looked at it. */
+const assertRevision = Effect.fnUntraced(function* (
+  runId: string,
+  expected: Option.Option<number>,
+) {
+  if (Option.isNone(expected)) return;
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId as never);
+  if (Option.isNone(loaded)) return;
+  if (loaded.value.record.revision !== expected.value) {
+    return yield* new StaleRevision({
+      runId,
+      expected: expected.value,
+      actual: loaded.value.record.revision,
+    });
+  }
+});
+
+const reportResult = Effect.fnUntraced(function* (runId: string, stopped: string) {
+  const detail = yield* describeRun(runId as never);
+  if (Option.isNone(detail)) {
+    yield* Console.log(`${runId}: ${stopped}`);
+    return;
+  }
+  yield* Console.log(`${runId} ${detail.value.state} (${stopped})`);
+  if (detail.value.stage !== null) yield* Console.log(`  stage: ${detail.value.stage}`);
+  if (detail.value.attention !== null) yield* Console.log(`  needs you: ${detail.value.attention}`);
+  for (const limitation of detail.value.limitations) {
+    yield* Console.log(`  limitation at ${limitation.stageId}: ${limitation.detail}`);
+  }
+});
+
+const runCommand = Command.make(
+  "run",
+  {
+    playbook: playbookArgument,
+    profile: profileFlag,
+    input: inputFlag,
+    owner: ownerFlag,
+    base: Flag.String("base").pipe(
+      Flag.withDescription("Revision the run's worktree branches from."),
+      Flag.withDefault("HEAD"),
+    ),
+    id: Flag.String("id").pipe(
+      Flag.withDescription("Run id. Defaults to a timestamped one."),
+      Flag.optional,
+    ),
+  },
+  Effect.fnUntraced(function* ({ playbook, profile: profileName, input, owner, base, id }) {
+    const path = yield* Path.Path;
+    const profile = yield* loadProfile(profileName);
+    const executor = yield* executorFor(profile);
+    const now = yield* DateTime.now;
+
+    const runId = Option.getOrElse(
+      id,
+      () => `${DateTime.formatIso(now).replace(/[:.]/g, "-")}-${path.basename(playbook)}`,
+    );
+
+    const started = yield* startRun({
+      runId: runId as never,
+      profile,
+      playbookDir: path.resolve(playbook),
+      inputs: input,
+      baseRef: base,
+      executor,
+      owner,
+    });
+
+    yield* reportResult(runId, started.result.stopped);
+  }),
+).pipe(Command.withDescription("Compile a playbook and drive a run until it needs you."));
+
+const statusCommand = Command.make(
+  "status",
+  {
+    run: Argument.String("run").pipe(Argument.optional),
+    state: Flag.String("state").pipe(
+      Flag.withDescription("Only runs in this state."),
+      Flag.optional,
+    ),
+  },
+  Effect.fnUntraced(function* ({ run, state }) {
+    if (Option.isSome(run)) {
+      const detail = yield* describeRun(run.value as never);
+      if (Option.isNone(detail)) {
+        yield* Console.error(`No run ${run.value}.`);
+        return;
+      }
+      yield* Console.log(prettyJson(detail.value));
+      return;
+    }
+
+    const summaries = yield* summarizeRuns(Option.getOrUndefined(state));
+    if (summaries.length === 0) {
+      yield* Console.log("No runs.");
+      return;
+    }
+    for (const summary of summaries) {
+      const attention = summary.attention === null ? "" : `  ${summary.attention}`;
+      yield* Console.log(
+        `${summary.state.padEnd(16)} ${summary.runId.padEnd(40)} ${summary.stage ?? "-"}${attention}`,
+      );
+    }
+  }),
+).pipe(Command.withDescription("List runs, or show one in full."));
+
+const resumeCommand = Command.make(
+  "resume",
+  { run: runIdArgument, profile: profileFlag, owner: ownerFlag, revision: revisionFlag },
+  Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision }) {
+    yield* assertRevision(run, revision);
+    const profile = yield* loadProfile(profileName);
+    const executor = yield* executorFor(profile);
+    const result = yield* resumeRun({
+      runId: run as never,
+      executor,
+      owner,
+      inputs: [{ type: "resume" }],
+    });
+    yield* reportResult(run, result.stopped);
+  }),
+).pipe(Command.withDescription("Pick a paused run back up."));
+
+const pauseCommand = Command.make(
+  "pause",
+  { run: runIdArgument, profile: profileFlag, owner: ownerFlag, revision: revisionFlag },
+  Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision }) {
+    yield* assertRevision(run, revision);
+    const profile = yield* loadProfile(profileName);
+    const executor = yield* executorFor(profile);
+    const result = yield* resumeRun({
+      runId: run as never,
+      executor,
+      owner,
+      inputs: [{ type: "pause" }],
+    });
+    yield* reportResult(run, result.stopped);
+  }),
+).pipe(Command.withDescription("Stop driving a run without losing its state."));
+
+const cancelCommand = Command.make(
+  "cancel",
+  {
+    run: runIdArgument,
+    profile: profileFlag,
+    owner: ownerFlag,
+    revision: revisionFlag,
+    reason: Flag.String("reason").pipe(Flag.withDefault("cancelled from the command line")),
+  },
+  Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision, reason }) {
+    yield* assertRevision(run, revision);
+    const profile = yield* loadProfile(profileName);
+    const executor = yield* executorFor(profile);
+    const result = yield* resumeRun({
+      runId: run as never,
+      executor,
+      owner,
+      inputs: [{ type: "cancel", reason }],
+    });
+    yield* reportResult(run, result.stopped);
+  }),
+).pipe(Command.withDescription("Cancel a run, interrupting whatever it is doing."));
+
+const decideCommand = Command.make(
+  "decide",
+  {
+    run: runIdArgument,
+    answer: Argument.String("answer").pipe(Argument.withDescription("proceed | waive | abort")),
+    profile: profileFlag,
+    owner: ownerFlag,
+    revision: revisionFlag,
+  },
+  Effect.fnUntraced(function* ({ run, answer, profile: profileName, owner, revision }) {
+    yield* assertRevision(run, revision);
+    if (answer !== "proceed" && answer !== "waive" && answer !== "abort") {
+      yield* Console.error("The answer must be proceed, waive or abort.");
+      return;
+    }
+
+    const store = yield* RunStore;
+    const loaded = yield* store.loadRun(run as never);
+    if (Option.isNone(loaded) || loaded.value.record.decision === null) {
+      yield* Console.error(`Run ${run} is not waiting on a decision.`);
+      return;
+    }
+
+    const profile = yield* loadProfile(profileName);
+    const executor = yield* executorFor(profile);
+    const result = yield* resumeRun({
+      runId: run as never,
+      executor,
+      owner,
+      inputs: [
+        {
+          type: "decision-answered",
+          decisionId: loaded.value.record.decision.decisionId,
+          answer,
+          // The decision is answered against the plan it was raised on; a run
+          // that has been replanned since will refuse it.
+          planDigest: loaded.value.record.planDigest,
+        },
+      ],
+    });
+    yield* reportResult(run, result.stopped);
+  }),
+).pipe(Command.withDescription("Answer the decision a run is waiting on."));
+
 export const wlCommand = Command.make("wl").pipe(
   Command.withDescription("WorkflowLeaf: run playbooks as staged, gated, evidence-backed work."),
-  Command.withSubcommands([validateCommand, compileCommand, skillsCommand, profileCommand]),
+  Command.withSubcommands([
+    validateCommand,
+    compileCommand,
+    runCommand,
+    statusCommand,
+    resumeCommand,
+    pauseCommand,
+    cancelCommand,
+    decideCommand,
+    skillsCommand,
+    profileCommand,
+  ]),
 );

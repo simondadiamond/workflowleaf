@@ -8,3 +8,7 @@ export * from "./store/RunStore.ts";
 export * from "./store/Sqlite.ts";
 export * from "./workspaces.ts";
 export * from "./gates.ts";
+export * from "./adapters/assisted.ts";
+export * from "./prompt.ts";
+export * from "./run.ts";
+export * from "./worker.ts";
