@@ -7,3 +7,4 @@ export * from "./skillCatalog.ts";
 export * from "./store/RunStore.ts";
 export * from "./store/Sqlite.ts";
 export * from "./workspaces.ts";
+export * from "./gates.ts";
