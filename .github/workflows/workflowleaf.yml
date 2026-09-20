@@ -1,0 +1,84 @@
+name: WorkflowLeaf
+
+# Fork-only checks. The upstream CI covers T3; this covers the layer added on
+# top of it and, more importantly, that the layer stayed a layer: no upstream
+# file edited without a written reason, no T3 import outside the one adapter.
+#
+# Public synthetic fixtures only. No private skills, no repositories, no
+# provider credentials. Live provider conformance is opt-in and runs elsewhere.
+
+on:
+  pull_request:
+    paths:
+      - "packages/workflowleaf-core/**"
+      - "packages/workflowleaf-runtime/**"
+      - "scripts/workflowleaf/**"
+      - ".github/workflows/workflowleaf.yml"
+  push:
+    branches:
+      - "workflowleaf/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflowleaf-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Ownership, types and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # The ownership check diffs against the recorded upstream base, so it
+          # needs history rather than a shallow clone.
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Check fork ownership and import boundaries
+        run: node scripts/workflowleaf/check.ts
+
+      - name: Typecheck
+        run: |
+          vp run --filter @t3tools/workflowleaf-core typecheck
+          vp run --filter @t3tools/workflowleaf-runtime typecheck
+
+      - name: Test
+        run: vp test run packages/workflowleaf-core packages/workflowleaf-runtime scripts/workflowleaf
+
+      - name: Check that a WorkflowLeaf playbook still compiles
+        run: |
+          export WORKFLOWLEAF_HOME="$RUNNER_TEMP/workflowleaf"
+          mkdir -p "$WORKFLOWLEAF_HOME/profiles"
+          cat > "$WORKFLOWLEAF_HOME/profiles/ci.json" <<JSON
+          {
+            "executor": { "kind": "fake" },
+            "repoRoot": "$GITHUB_WORKSPACE/packages/workflowleaf-runtime/test/fixtures/repo",
+            "skillRoots": ["$GITHUB_WORKSPACE/packages/workflowleaf-runtime/test/fixtures/skills"],
+            "budgets": { "maxRepairCycles": 2, "runDeadlineMs": null },
+            "permissions": {
+              "createPullRequest": false,
+              "commentOnPullRequest": false,
+              "merge": false,
+              "deploy": false,
+              "liveCanary": false
+            }
+          }
+          JSON
+          node packages/workflowleaf-runtime/src/bin.ts validate \
+            packages/workflowleaf-runtime/test/fixtures/playbooks/two-stage \
+            --profile ci --input topic=ci
