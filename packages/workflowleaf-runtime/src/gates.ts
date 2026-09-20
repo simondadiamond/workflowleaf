@@ -21,6 +21,7 @@ import {
   type RunId,
   type VisitId,
 } from "@t3tools/workflowleaf-core";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -129,7 +130,21 @@ const runCommandGate = Effect.fnUntraced(function* (
     yield* Fiber.interrupt(killer);
 
     return { stdout, stderr, exit, timedOut: yield* Ref.get(killed) };
-  }).pipe(Effect.scoped);
+  }).pipe(
+    Effect.scoped,
+    // A gate that cannot be started at all is a gate that could not run, which
+    // the contract already distinguishes from one whose assertion failed.
+    // Letting the spawn error escape would take the whole run down over a
+    // mistyped executable, and record no verdict for the thing that broke.
+    Effect.catchCause((cause) =>
+      Effect.succeed({
+        stdout: "",
+        stderr: `${gate.executable} could not be started: ${Cause.pretty(cause)}`,
+        exit: null,
+        timedOut: false,
+      }),
+    ),
+  );
 
   yield* fs.makeDirectory(context.logDir, { recursive: true });
   const logRef = path.join(context.logDir, `${gate.id}.${context.attemptId}.log`);
@@ -138,7 +153,7 @@ const runCommandGate = Effect.fnUntraced(function* (
     `$ ${gate.executable} ${gate.args.join(" ")}\n\n${outcome.stdout}\n${outcome.stderr}`,
   );
 
-  if (outcome.timedOut || outcome.exit._tag === "Failure") {
+  if (outcome.timedOut || outcome.exit === null || outcome.exit._tag === "Failure") {
     return {
       detail: {
         kind: "command",
@@ -181,10 +196,12 @@ const runFileGate = Effect.fnUntraced(function* (
   const path = yield* Path.Path;
   const target = path.join(context.workspacePath, gate.path);
 
+  const minBytes = gate.minBytes ?? null;
+
   const exists = yield* fs.exists(target);
   if (!exists) {
     return {
-      detail: { kind: "file", exists: false, bytes: null, missingContent: [] },
+      detail: { kind: "file", exists: false, bytes: null, missingContent: [], minBytes },
       outcome: gate.mustExist ? "failed" : "passed",
       logRef: null,
     } satisfies GateRun;
@@ -193,10 +210,10 @@ const runFileGate = Effect.fnUntraced(function* (
   const text = yield* fs.readFileString(target);
   const bytes = new TextEncoder().encode(text).length;
   const missingContent = (gate.mustContain ?? []).filter((needle) => !text.includes(needle));
-  const bigEnough = gate.minBytes === undefined || bytes >= gate.minBytes;
+  const bigEnough = minBytes === null || bytes >= minBytes;
 
   return {
-    detail: { kind: "file", exists: true, bytes, missingContent },
+    detail: { kind: "file", exists: true, bytes, missingContent, minBytes },
     outcome: bigEnough && missingContent.length === 0 ? "passed" : "failed",
     logRef: null,
   } satisfies GateRun;

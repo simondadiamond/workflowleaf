@@ -121,6 +121,56 @@ export function twoStagePlan(): RunPlan {
   };
 }
 
+export const GATE_ARTIFACT_REVIEWED = "artifact-is-reviewed" as GateId;
+
+/**
+ * One stage behind a command gate that fails until `ok.txt` exists.
+ *
+ * A command gate is the only kind whose requirement the compiled prompt does
+ * not spell out, so it is how a first-attempt failure gets arranged without
+ * asking a stage to fail on purpose. `/bin/sh` is the executable rather than a
+ * shell the gate runner opened: gates spawn an argument list, never a pipeline.
+ */
+export function commandGatePlan(): RunPlan {
+  const gate: GateDefinition = {
+    id: GATE_ARTIFACT_REVIEWED,
+    type: "command",
+    executable: "/bin/sh",
+    args: ["-c", "test -f ok.txt || { echo 'ok.txt is missing'; exit 1; }"],
+    cwd: undefined,
+    parse: "none",
+    expect: { exitCode: 0 },
+    timeoutMs: 30_000,
+  };
+
+  const contract = stage(STAGE_A, {
+    consumes: ["topic"],
+    produces: ["ok.txt"],
+    gates: [GATE_ARTIFACT_REVIEWED],
+  });
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    planDigest: digest("plan-command-gate-v1"),
+    playbookId: "synthetic-command-gate",
+    playbookVersion: "0.1",
+    outcome: "ok",
+    inputs: { topic: "a made-up topic" },
+    stages: [
+      {
+        contract,
+        instruction: { text: `Do the ${contract.id} stage.`, digest: digest("instr-command") },
+        contextFiles: [],
+        requiredSkills: [],
+        lazySkills: [],
+        gates: [{ definition: gate, digest: digest("gate-command") }],
+      },
+    ],
+    policy: { humanRequired: ["merge"] },
+    compiledAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
 /**
  * Deterministic ids. A test that has to match on a random uuid is a test that
  * will eventually be rewritten to assert nothing.

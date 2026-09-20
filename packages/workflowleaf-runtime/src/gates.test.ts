@@ -79,6 +79,7 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("gate runner", (it) 
         exists: false,
         bytes: null,
         missingContent: [],
+        minBytes: 8,
       });
     }).pipe(Effect.scoped),
   );
@@ -179,6 +180,37 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("gate runner", (it) 
       assert.strictEqual(evidence.outcome, "failed");
       if (evidence.detail.kind !== "command") return;
       assert.strictEqual(evidence.detail.exitCode, 3);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("records a gate that cannot be started rather than taking the run down", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { workspace, logDir } = yield* makeWorkspace();
+
+      const evidence = yield* evaluateGate(
+        {
+          id: "build" as GateId,
+          // A playbook that ships its own check script and gets the path wrong
+          // used to abort the whole run with an ENOENT from the spawner.
+          type: "command",
+          executable: "gates/not-a-real-script.sh",
+          args: [],
+          timeoutMs: 30_000,
+          expect: { exitCode: 0 },
+        },
+        yield* contextFor(workspace, logDir),
+      );
+
+      assert.strictEqual(evidence.outcome, "error");
+      if (evidence.detail.kind !== "command") return;
+      assert.isNull(evidence.detail.exitCode);
+      assert.isFalse(evidence.detail.timedOut);
+      assert.isNotNull(evidence.logRef);
+      assert.include(
+        yield* fs.readFileString(evidence.logRef!),
+        "gates/not-a-real-script.sh could not be started",
+      );
     }).pipe(Effect.scoped),
   );
 

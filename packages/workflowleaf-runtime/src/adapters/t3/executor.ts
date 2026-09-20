@@ -177,36 +177,76 @@ export class T3Executor implements ExecutorPort {
     return Promise.resolve(T3_V1_CAPABILITIES);
   }
 
+  /**
+   * Attaches the settlement watch, waits for it, then starts the turn.
+   *
+   * Both halves of that order are load-bearing, and each one was learned from a
+   * hang rather than from the handler. A subscription opened after the dispatch
+   * finds our own `thread.message-sent` already folded into the snapshot and
+   * has nothing left to correlate the turn by. A subscription opened before the
+   * thread exists yields no items at all, so waiting for it to attach never
+   * returns. The thread is created first, the watch second, the turn last.
+   */
+  #startTurn(input: {
+    readonly operationId: OperationId;
+    readonly handle: T3Handle;
+    readonly text: string;
+  }) {
+    const options = this.#options;
+    const begin = () => this.#beginWatch(input.operationId, input.handle);
+    const remember = (settlement: Promise<StageSettlement>) => {
+      this.#watches.set(input.operationId as string, settlement);
+      this.#threads.set(input.operationId as string, encodeHandle(input.handle));
+    };
+
+    return Effect.gen(function* () {
+      const watching = begin();
+      remember(watching.settlement);
+      yield* Effect.promise(() => watching.attached);
+
+      yield* options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+        type: "thread.turn.start",
+        commandId: input.handle.commandId,
+        threadId: input.handle.threadId,
+        message: {
+          messageId: input.handle.messageId,
+          role: "user",
+          text: input.text,
+          attachments: [],
+        },
+        runtimeMode: options.runtimeMode,
+        interactionMode: "default",
+        createdAt: options.now(),
+      } as never);
+
+      return {
+        operationId: input.operationId,
+        handle: encodeHandle(input.handle),
+      } satisfies StageHandle;
+    });
+  }
+
   startStage(request: StageRequest): Promise<StageHandle> {
     const options = this.#options;
-    const threadId = threadIdFor(request);
-    const messageId = `${request.operationId}-msg`;
+    const handle: T3Handle = {
+      threadId: threadIdFor(request),
+      messageId: `${request.operationId}-msg`,
+      commandId: `${request.operationId}-turn`,
+    };
     const createCommandId = `${request.operationId}-create`;
-    const turnCommandId = `${request.operationId}-turn`;
-
-    // Attach the settlement watch first. T3 replays a snapshot and then only
-    // events newer than it, so a subscription opened after the dispatch finds
-    // our own `thread.message-sent` already folded into the snapshot and has
-    // nothing left to correlate the turn by.
-    const watching = this.#beginWatch(request.operationId, {
-      threadId,
-      messageId,
-      commandId: turnCommandId,
-    });
+    const startTurn = () =>
+      this.#startTurn({ operationId: request.operationId, handle, text: request.input });
 
     return this.#run(
       "startStage",
       Effect.gen(function* () {
-        yield* Effect.promise(() => watching.attached);
-        const createdAt = options.now();
-
         // The thread is created against the worktree the run already owns.
         // `bootstrap` is deliberately omitted: letting T3 prepare a worktree
         // per stage would give each stage its own working directory.
         yield* options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
           type: "thread.create",
           commandId: createCommandId,
-          threadId,
+          threadId: handle.threadId,
           projectId: options.projectId,
           title: `WorkflowLeaf ${request.stage.contract.id}`,
           modelSelection: { instanceId: options.instanceId, model: options.model },
@@ -214,29 +254,12 @@ export class T3Executor implements ExecutorPort {
           interactionMode: "default",
           branch: options.branch,
           worktreePath: options.worktreePath,
-          createdAt,
+          createdAt: options.now(),
         } as never);
 
-        yield* options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
-          type: "thread.turn.start",
-          commandId: turnCommandId,
-          threadId,
-          message: { messageId, role: "user", text: request.input, attachments: [] },
-          runtimeMode: options.runtimeMode,
-          interactionMode: "default",
-          createdAt,
-        } as never);
-
-        return {
-          operationId: request.operationId,
-          handle: encodeHandle({ threadId, messageId, commandId: turnCommandId }),
-        } satisfies StageHandle;
+        return yield* startTurn();
       }),
-    ).then((handle) => {
-      this.#threads.set(request.operationId as string, handle.handle);
-      this.#watches.set(request.operationId as string, watching.settlement);
-      return handle;
-    });
+    );
   }
 
   continueStage(handle: StageHandle, correction: string): Promise<ContinueOutcome> {
@@ -245,34 +268,22 @@ export class T3Executor implements ExecutorPort {
       return Promise.resolve({ kind: "lost-context", reason: "The stage handle is unreadable." });
     }
 
-    const options = this.#options;
-    const messageId = `${handle.operationId}-msg`;
-    const commandId = `${handle.operationId}-turn`;
-
+    // Another turn on the same thread. T3 keeps the provider session, so the
+    // stage continues rather than starting over. The thread already exists, so
+    // the watch goes up before this turn is dispatched, exactly as it does for
+    // the first one.
     return this.#run(
       "continueStage",
-      Effect.gen(function* () {
-        // Another turn on the same thread. T3 keeps the provider session, so
-        // the stage continues rather than starting over.
-        yield* options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
-          type: "thread.turn.start",
-          commandId,
+      this.#startTurn({
+        operationId: handle.operationId,
+        handle: {
           threadId: decoded.threadId,
-          message: { messageId, role: "user", text: correction, attachments: [] },
-          runtimeMode: options.runtimeMode,
-          interactionMode: "default",
-          createdAt: options.now(),
-        } as never);
-
-        return {
-          kind: "continued",
-          handle: {
-            operationId: handle.operationId,
-            handle: encodeHandle({ threadId: decoded.threadId, messageId, commandId }),
-          },
-        } satisfies ContinueOutcome;
+          messageId: `${handle.operationId}-msg`,
+          commandId: `${handle.operationId}-turn`,
+        },
+        text: correction,
       }),
-    );
+    ).then((started) => ({ kind: "continued", handle: started }) satisfies ContinueOutcome);
   }
 
   interrupt(handle: StageHandle): Promise<void> {
@@ -319,6 +330,10 @@ export class T3Executor implements ExecutorPort {
       markAttached = resolve;
     });
     const settlement = this.#watch(operationId, handle, 0, markAttached);
+    // A subscription that fails before it delivers anything would otherwise
+    // leave the dispatch waiting on a signal that can no longer arrive. Let the
+    // caller through and report the failure where it belongs, on settlement.
+    settlement.then(markAttached, markAttached);
     return { attached, settlement };
   }
 

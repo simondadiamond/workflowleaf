@@ -20,7 +20,12 @@ import {
   type StageSettlement,
   type WorkspaceId,
 } from "@t3tools/workflowleaf-core";
-import { capabilities, sequentialIds, twoStagePlan } from "@t3tools/workflowleaf-core/testing";
+import {
+  capabilities,
+  commandGatePlan,
+  sequentialIds,
+  twoStagePlan,
+} from "@t3tools/workflowleaf-core/testing";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -34,6 +39,7 @@ import { drive } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 const plan: RunPlan = twoStagePlan();
+const commandPlan: RunPlan = commandGatePlan();
 
 const testLayer = RunStore.layer.pipe(
   Layer.provide(layerMemory),
@@ -157,6 +163,7 @@ class WritingExecutor implements ExecutorPort {
 const setUpRun = Effect.fnUntraced(function* (
   runId: string,
   runCapabilities: ExecutorCapabilities = capabilities(),
+  runPlan: RunPlan = plan,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -176,14 +183,14 @@ const setUpRun = Effect.fnUntraced(function* (
   yield* store.createRun({
     record: initialRun({
       runId: runId as RunId,
-      planDigest: plan.planDigest,
+      planDigest: runPlan.planDigest,
       workspaceId: "pending" as WorkspaceId,
       capabilities: runCapabilities,
       maxRepairCycles: 2,
       deadlineAt: null,
       now: "2026-01-01T00:00:00.000Z",
     }),
-    plan,
+    plan: runPlan,
     profileName: "test",
     origin: { trigger: "manual", by: "test" },
     repoRoot: repo,
@@ -239,6 +246,76 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.lengthOf(executor.continues, 1);
       assert.strictEqual(executor.continues[0]?.stageId, "produce");
       assert.include(executor.continues[0]?.correction ?? "", "artifact-has-content");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("tells the corrected stage what the gate wanted, not just that it failed", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-correction-detail");
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          // Short enough to fail the gate's minimum, long enough that a count
+          // of missing fragments would say nothing at all.
+          produce: [write("artifact.md", "tiny\n"), write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      yield* drive({
+        runId: "run-correction-detail" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      const correction = executor.continues[0]?.correction ?? "";
+      assert.include(correction, "5 bytes");
+      assert.include(correction, "shorter than the required 8");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("carries a failing command gate's output into the correction", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun(
+        "run-command-gate",
+        capabilities(),
+        commandPlan,
+      );
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        // The gate wants `ok.txt`, which the first attempt does not produce.
+        actions: { produce: [doNothing, write("ok.txt", "ok\n")] },
+      });
+
+      const result = yield* drive({
+        runId: "run-command-gate" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      assert.lengthOf(executor.continues, 1);
+      // `exit 1` on its own is not something a stage can act on. What the check
+      // printed is the part that makes the correction a correction.
+      assert.include(executor.continues[0]?.correction ?? "", "ok.txt is missing");
     }).pipe(Effect.scoped),
   );
 

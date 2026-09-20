@@ -11,6 +11,7 @@
  * lease stops the loop; it does not race the new owner.
  */
 import {
+  SATISFYING,
   decide,
   findStage,
   satisfies,
@@ -29,6 +30,7 @@ import {
 } from "@t3tools/workflowleaf-core";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -137,15 +139,72 @@ const runGates = Effect.fnUntraced(function* (input: {
     const evidence = yield* evaluateGate(pinned.definition, context);
     yield* store.putEvidence(evidence);
 
+    const summary = summarize(evidence.detail);
+    const tail = SATISFYING.includes(evidence.outcome)
+      ? null
+      : yield* failureOutput(evidence.logRef);
+
     verdicts.push({
       gateId: pinned.definition.id,
       outcome: evidence.outcome,
-      summary: summarize(evidence.detail),
+      summary: tail === null ? summary : `${summary}\n${tail}`,
     });
   }
 
   return verdicts as readonly GateVerdict[];
 });
+
+/**
+ * How much of a failing gate's output is worth carrying into the correction.
+ * Enough for a stack trace or a handful of assertion failures, and not so much
+ * that a chatty test runner becomes the prompt.
+ */
+const GATE_OUTPUT_TAIL = 4000;
+
+/**
+ * The tail of what a failing gate printed.
+ *
+ * The gate runner already writes stdout and stderr to a log. Without this the
+ * stage being corrected is told `exit 1` and nothing else, which for the gates
+ * a real playbook uses (tests, typecheck, lint) is not something anyone can
+ * act on. Evidence stays small; the correction reads the log that exists.
+ */
+const failureOutput = Effect.fnUntraced(function* (logRef: string | null) {
+  if (logRef === null) return null;
+  const fs = yield* FileSystem.FileSystem;
+
+  const text = yield* fs.readFileString(logRef).pipe(Effect.catchCause(() => Effect.succeed("")));
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+
+  return trimmed.length <= GATE_OUTPUT_TAIL
+    ? trimmed
+    : `…\n${trimmed.slice(trimmed.length - GATE_OUTPUT_TAIL)}`;
+});
+
+/**
+ * What a failed file gate wanted, in words the stage being corrected can act on.
+ *
+ * A count is not evidence. "missing 1 required fragment(s)" leaves the stage
+ * guessing which one, and a file that is merely too short reads as a clean pass
+ * with a byte count attached. Both are named here instead.
+ */
+function summarizeFile(detail: Record<string, unknown>): string {
+  if (detail.exists !== true) return "the file does not exist";
+
+  const bytes = detail.bytes as number | null;
+  const minBytes = (detail.minBytes ?? null) as number | null;
+  const missing = detail.missingContent as readonly string[];
+
+  const parts = [`${String(bytes)} bytes`];
+  if (minBytes !== null && bytes !== null && bytes < minBytes) {
+    parts.push(`shorter than the required ${String(minBytes)}`);
+  }
+  if (missing.length > 0) {
+    parts.push(`missing ${missing.map((needle) => `"${needle}"`).join(", ")}`);
+  }
+  return parts.join("; ");
+}
 
 function summarize(detail: { readonly kind: string } & Record<string, unknown>): string {
   switch (detail.kind) {
@@ -154,9 +213,7 @@ function summarize(detail: { readonly kind: string } & Record<string, unknown>):
         ? "the check timed out"
         : `exit ${String(detail.exitCode)}${detail.failedCount === null ? "" : `, ${String(detail.failedCount)} failing`}`;
     case "file":
-      return detail.exists === true
-        ? `${String(detail.bytes)} bytes, missing ${(detail.missingContent as string[]).length} required fragment(s)`
-        : "the file does not exist";
+      return summarizeFile(detail);
     case "diff":
       return `${(detail.changedFiles as string[]).length} changed, ${(detail.outsideScope as string[]).length} outside the plan`;
     case "review":

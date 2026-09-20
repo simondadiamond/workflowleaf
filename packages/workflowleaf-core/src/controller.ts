@@ -129,7 +129,8 @@ export interface ControllerContext {
 
 // ---------------------------------------------------------------- helpers
 
-const SATISFYING: readonly GateOutcome[] = ["passed", "waived"];
+/** Gate outcomes that let a stage advance. Everything else needs correcting. */
+export const SATISFYING: readonly GateOutcome[] = ["passed", "waived"];
 
 function touch(run: RunRecord, now: Instant, patch: Partial<RunRecord>): RunRecord {
   return { ...run, ...patch, revision: run.revision + 1, updatedAt: now };

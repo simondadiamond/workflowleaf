@@ -1,0 +1,14 @@
+id: artifact-is-reviewed
+type: command
+executable: /bin/sh
+args:
+  - "-c"
+  - |
+    test -f artifact.md || { echo "artifact.md does not exist."; exit 1; }
+    grep -q '^Reviewed-By: WorkflowLeaf$' artifact.md && exit 0
+    echo "artifact.md is missing its review line."
+    echo "Add a line reading exactly: Reviewed-By: WorkflowLeaf"
+    exit 1
+expect:
+  exitCode: 0
+timeoutMs: 30000

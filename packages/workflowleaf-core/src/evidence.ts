@@ -31,6 +31,13 @@ export const FileResult = Schema.Struct({
   exists: Schema.Boolean,
   bytes: Schema.NullOr(Schema.Int),
   missingContent: Schema.Array(Schema.String),
+  /**
+   * The size the gate required. Without it a too-short file records as "142
+   * bytes" with nothing missing, and neither a reader nor the stage being
+   * corrected can tell what was wrong. Optional so evidence written before this
+   * field existed still decodes.
+   */
+  minBytes: Schema.optional(Schema.NullOr(Schema.Int)),
 });
 
 export const DiffResult = Schema.Struct({
