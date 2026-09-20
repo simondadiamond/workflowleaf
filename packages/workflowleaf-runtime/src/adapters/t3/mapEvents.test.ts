@@ -36,15 +36,60 @@ function fold(items: readonly StreamItem[], from: WatchState = initialWatch()): 
   return items.reduce((state, item) => applyStreamItem(state, item, input), from);
 }
 
+// These fixtures are the shapes observed on a live T3 server on 2026-09-20,
+// not shapes inferred from the schema. Our own message-sent arrives with a null
+// turn id; the assistant's messages carry the real one; the session lives
+// nested under the payload.
 describe("adopting our turn", () => {
   it("stays unsettled until something says the turn ended", () => {
     const state = fold([
       event("thread.turn-start-requested", 1, {}, "cmd-1"),
-      event("thread.message-sent", 2, { messageId: "msg-1", turnId: "turn-1" }),
+      event("thread.message-sent", 2, { messageId: "msg-1", turnId: null }),
+      event("thread.message-sent", 3, { messageId: "assistant:x", turnId: "turn-1" }),
     ]);
 
     assert.strictEqual(state.turnId, "turn-1");
     assert.isNull(settlementOf(state));
+  });
+
+  it("takes the turn id from the assistant's reply, since ours arrives null", () => {
+    const state = fold([
+      event("thread.message-sent", 1, { messageId: "msg-1", turnId: null }),
+      event("thread.message-sent", 2, { messageId: "assistant:x", turnId: "turn-1" }),
+    ]);
+
+    assert.strictEqual(state.ourMessageAt, 1);
+    assert.strictEqual(state.turnId, "turn-1");
+  });
+
+  it("ignores an assistant message from a turn that started before ours", () => {
+    const state = fold([
+      event("thread.message-sent", 1, { messageId: "assistant:earlier", turnId: "turn-0" }),
+      event("thread.message-sent", 2, { messageId: "msg-1", turnId: null }),
+    ]);
+
+    assert.isNull(state.turnId);
+  });
+
+  it("settles on the real event sequence a live turn produces", () => {
+    // Captured from a live server: our message, session updates, the
+    // assistant's replies, activity, then the checkpoint diff.
+    const state = fold([
+      event("thread.message-sent", 21721, { messageId: "msg-1", turnId: null }, "cmd-1"),
+      event("thread.session-set", 21723, { session: { status: "running", lastError: null } }),
+      event("thread.message-sent", 21726, { messageId: "assistant:a", turnId: "turn-1" }),
+      event("thread.message-sent", 21727, { messageId: "assistant:a", turnId: "turn-1" }),
+      event("thread.activity-appended", 21728, {}),
+      event("thread.session-set", 21730, { session: { status: "ready", lastError: null } }),
+      event("thread.turn-diff-completed", 21731, { turnId: "turn-1" }),
+    ]);
+
+    assert.strictEqual(state.turnId, "turn-1");
+    assert.deepStrictEqual(settlementOf(state), {
+      outcome: "completed",
+      settled: true,
+      detail: null,
+    });
   });
 
   it("ignores another client's message on the same thread", () => {
@@ -84,7 +129,9 @@ describe("settlement", () => {
   it("reports a session error as an error settlement", () => {
     const state = fold([
       event("thread.message-sent", 1, { messageId: "msg-1", turnId: "turn-1" }),
-      event("thread.session-set", 2, { status: "error", lastError: "provider exited" }),
+      event("thread.session-set", 2, {
+        session: { status: "error", lastError: "provider exited" },
+      }),
     ]);
 
     assert.deepStrictEqual(settlementOf(state), {
@@ -164,7 +211,7 @@ describe("replay and ordering", () => {
     const state = fold([
       event("thread.message-sent", 1, { messageId: "msg-1", turnId: "turn-1" }),
       event("thread.turn-diff-completed", 2, { turnId: "turn-1" }),
-      event("thread.session-set", 3, { status: "error", lastError: "late noise" }),
+      event("thread.session-set", 3, { session: { status: "error", lastError: "late noise" } }),
     ]);
 
     // The session going to error after the turn's diff landed belongs to

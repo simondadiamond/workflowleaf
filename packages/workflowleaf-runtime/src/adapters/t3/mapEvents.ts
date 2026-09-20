@@ -113,13 +113,26 @@ export function applyStreamItem(
 
   switch (event.type) {
     case "thread.message-sent": {
-      if (payload.messageId !== input.messageId) return next;
       const turnId = typeof payload.turnId === "string" ? payload.turnId : null;
-      return {
-        ...next,
-        ourMessageAt: next.ourMessageAt ?? event.sequence,
-        turnId: next.turnId ?? turnId,
-      };
+
+      if (payload.messageId === input.messageId) {
+        // Our own message arrives with a null turn id: the turn has not been
+        // created yet at that point. All this establishes is where our work
+        // starts in the stream.
+        return {
+          ...next,
+          ourMessageAt: next.ourMessageAt ?? event.sequence,
+          turnId: next.turnId ?? turnId,
+        };
+      }
+
+      // The assistant's messages on our turn do carry the turn id, and they are
+      // the first place it appears. Anything before our own message belongs to
+      // an earlier turn on this thread.
+      if (next.turnId === null && turnId !== null && next.ourMessageAt !== null) {
+        return { ...next, turnId };
+      }
+      return next;
     }
 
     case "thread.turn-start-requested": {
@@ -151,9 +164,12 @@ export function applyStreamItem(
 
     case "thread.session-set": {
       if (next.ourMessageAt === null) return next;
-      const status = typeof payload.status === "string" ? payload.status : null;
-      if (status !== "error") return next;
-      const lastError = typeof payload.lastError === "string" ? payload.lastError : null;
+      // The session is nested under the payload, not spread across it. Reading
+      // `payload.status` here looked right and matched nothing, which is the
+      // kind of mistake only a real stream catches.
+      const session = payload.session as { status?: unknown; lastError?: unknown } | undefined;
+      if (session?.status !== "error") return next;
+      const lastError = typeof session.lastError === "string" ? session.lastError : null;
       return { ...next, outcome: "error", settled: true, detail: lastError };
     }
 
@@ -170,9 +186,7 @@ export function applyStreamItem(
  * finished writing, and running a gate between those two points reads a tree
  * something else is still touching.
  */
-export function settlementOf(
-  state: WatchState,
-): {
+export function settlementOf(state: WatchState): {
   readonly outcome: "completed" | "error" | "interrupted";
   readonly settled: boolean;
   readonly detail: string | null;
