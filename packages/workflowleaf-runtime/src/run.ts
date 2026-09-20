@@ -26,10 +26,12 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { AssistedExecutor } from "./adapters/assisted.ts";
+import { connect } from "./adapters/t3/connection.ts";
+import { T3Executor } from "./adapters/t3/executor.ts";
 import { digestOf } from "./digest.ts";
 import { revParse } from "./git.ts";
 import { loadPlaybook } from "./load.ts";
-import { workflowleafHome, type Profile } from "./profile.ts";
+import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import { drive, type DriveResult, type WorkerDeps } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
@@ -54,12 +56,55 @@ export function idSourceFor(runId: string, seed: number): IdSource {
   };
 }
 
-/** The executor a profile asks for. Assisted mode is the honest fallback. */
-export const executorFor = Effect.fnUntraced(function* (profile: Profile) {
+/** Where a run executes: the worktree it owns and how to recall past dispatches. */
+export interface ExecutorBinding {
+  readonly workspacePath: string;
+  readonly branch: string;
+}
+
+/**
+ * The executor a profile asks for, bound to this run's worktree.
+ *
+ * The T3 connection is scoped to the caller, so a run that ends closes its
+ * socket. Assisted mode needs no binding and is the honest fallback when no
+ * provider is reachable.
+ */
+export const executorFor = Effect.fnUntraced(function* (
+  profile: Profile,
+  binding: ExecutorBinding | null,
+) {
   if (profile.executor.kind === "fake") return new AssistedExecutor() as ExecutorPort;
-  return yield* new RunError({
-    message: `The ${profile.executor.kind} executor is not wired up in this build. Use an assisted profile, or finish the adapter.`,
-  });
+
+  if (binding === null) {
+    return yield* new RunError({
+      message: "A T3 executor needs the run's worktree, which is only known once the run exists.",
+    });
+  }
+
+  const store = yield* RunStore;
+  const token = yield* executorToken(profile.executor);
+  const client = yield* connect(profile.executor.origin, token);
+
+  return new T3Executor({
+    client,
+    runEffect: (effect) => Effect.runPromise(effect),
+    projectId: profile.executor.projectId,
+    instanceId: profile.executor.provider,
+    model: profile.executor.model ?? "default",
+    runtimeMode: profile.executor.runtimeMode,
+    worktreePath: binding.workspacePath,
+    branch: binding.branch,
+    // Recovery reads the handle from the store rather than from memory, so a
+    // worker that has just started can still ask what its predecessor did.
+    handleFor: (operationId) =>
+      Effect.runPromise(
+        store.findOperation(operationId).pipe(
+          Effect.map((found) => (Option.isSome(found) ? found.value.handle : null)),
+          Effect.catchCause(() => Effect.succeed(null)),
+        ),
+      ),
+    now: () => DateTime.formatIso(DateTime.nowUnsafe()),
+  }) as ExecutorPort;
 });
 
 const runDirFor = Effect.fnUntraced(function* (runId: string) {
@@ -73,7 +118,6 @@ export interface StartRunInput {
   readonly playbookDir: string;
   readonly inputs: Readonly<Record<string, string>>;
   readonly baseRef: string;
-  readonly executor: ExecutorPort;
   readonly owner: string;
 }
 
@@ -104,13 +148,27 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
   }
 
   const baseRevision = yield* revParse(input.profile.repoRoot, input.baseRef);
-  const capabilities = yield* Effect.promise(() => input.executor.capabilities());
+
+  // The worktree comes first: an executor is bound to the directory its stages
+  // will run in, and the run record should name a workspace that exists.
+  const workspace = yield* ensureWorkspace({
+    runId: input.runId,
+    repoRoot: input.profile.repoRoot,
+    worktreeRoot: input.profile.worktreeRoot,
+    baseRevision,
+  });
+
+  const executor = yield* executorFor(input.profile, {
+    workspacePath: workspace.path,
+    branch: workspace.branch,
+  });
+  const capabilities = yield* Effect.promise(() => executor.capabilities());
 
   yield* store.createRun({
     record: initialRun({
       runId: input.runId,
       planDigest: loaded.value.plan.planDigest,
-      workspaceId: "pending" as never,
+      workspaceId: workspace.workspaceId,
       capabilities,
       maxRepairCycles: input.profile.budgets.maxRepairCycles,
       deadlineAt: null,
@@ -123,38 +181,12 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     baseRevision,
   });
 
-  const workspace = yield* ensureWorkspace({
-    runId: input.runId,
-    repoRoot: input.profile.repoRoot,
-    worktreeRoot: input.profile.worktreeRoot,
-    baseRevision,
-  });
-
-  // The workspace id is only known once the worktree exists, so the run record
-  // written above is corrected before anything is dispatched into it.
-  const created = yield* store.loadRun(input.runId);
-  if (Option.isNone(created)) {
-    return yield* new RunError({ message: `Run ${input.runId} vanished during creation.` });
-  }
-
   const lease = yield* takeLease(input.runId, input.owner);
-  yield* store.commit({
-    previous: created.value.record,
-    next: {
-      ...created.value.record,
-      workspaceId: workspace.workspaceId,
-      revision: created.value.record.revision + 1,
-      updatedAt: compiledAt,
-    },
-    transitionInput: { type: "workspace-attached", path: workspace.path },
-    effects: [],
-    lease,
-  });
 
   const result = yield* drive({
     runId: input.runId,
     deps: {
-      executor: input.executor,
+      executor,
       ids: idSourceFor(input.runId as string, 0),
       workspacePath: workspace.path,
       logDir: path.join(yield* runDirFor(input.runId as string), "logs"),
@@ -181,7 +213,7 @@ const takeLease = Effect.fnUntraced(function* (runId: RunId, owner: string) {
 
 export interface ResumeRunInput {
   readonly runId: RunId;
-  readonly executor: ExecutorPort;
+  readonly profile: Profile;
   readonly owner: string;
   readonly inputs: readonly ControllerInput[];
 }
@@ -201,12 +233,16 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
     return yield* new RunError({ message: `Run ${input.runId} has no workspace on record.` });
   }
 
+  const executor = yield* executorFor(input.profile, {
+    workspacePath: workspace.value.path,
+    branch: workspace.value.branch,
+  });
   const lease = yield* takeLease(input.runId, input.owner);
 
   return yield* drive({
     runId: input.runId,
     deps: {
-      executor: input.executor,
+      executor,
       ids: idSourceFor(input.runId as string, loaded.value.record.visits.length),
       workspacePath: workspace.value.path,
       logDir: path.join(yield* runDirFor(input.runId as string), "logs"),

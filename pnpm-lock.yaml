@@ -1044,6 +1044,12 @@ importers:
       '@noble/hashes':
         specifier: 'catalog:'
         version: 1.8.0
+      '@t3tools/client-runtime':
+        specifier: workspace:*
+        version: link:../client-runtime
+      '@t3tools/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@t3tools/shared':
         specifier: workspace:*
         version: link:../shared

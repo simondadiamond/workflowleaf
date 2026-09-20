@@ -17,7 +17,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { prettyJson } from "./canonical.ts";
 import { loadPlaybook } from "./load.ts";
-import { describeRun, executorFor, resumeRun, startRun, summarizeRuns } from "./run.ts";
+import { describeRun, resumeRun, startRun, summarizeRuns } from "./run.ts";
 import { loadProfile, PROFILE_TEMPLATE, profilePath, workflowleafHome } from "./profile.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { loadSkillCatalog } from "./skillCatalog.ts";
@@ -233,7 +233,6 @@ const runCommand = Command.make(
   Effect.fnUntraced(function* ({ playbook, profile: profileName, input, owner, base, id }) {
     const path = yield* Path.Path;
     const profile = yield* loadProfile(profileName);
-    const executor = yield* executorFor(profile);
     const now = yield* DateTime.now;
 
     const runId = Option.getOrElse(
@@ -247,7 +246,6 @@ const runCommand = Command.make(
       playbookDir: path.resolve(playbook),
       inputs: input,
       baseRef: base,
-      executor,
       owner,
     });
 
@@ -295,10 +293,9 @@ const resumeCommand = Command.make(
   Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const executor = yield* executorFor(profile);
     const result = yield* resumeRun({
       runId: run as never,
-      executor,
+      profile,
       owner,
       inputs: [{ type: "resume" }],
     });
@@ -312,10 +309,9 @@ const pauseCommand = Command.make(
   Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const executor = yield* executorFor(profile);
     const result = yield* resumeRun({
       runId: run as never,
-      executor,
+      profile,
       owner,
       inputs: [{ type: "pause" }],
     });
@@ -335,10 +331,9 @@ const cancelCommand = Command.make(
   Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision, reason }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const executor = yield* executorFor(profile);
     const result = yield* resumeRun({
       runId: run as never,
-      executor,
+      profile,
       owner,
       inputs: [{ type: "cancel", reason }],
     });
@@ -370,10 +365,9 @@ const decideCommand = Command.make(
     }
 
     const profile = yield* loadProfile(profileName);
-    const executor = yield* executorFor(profile);
     const result = yield* resumeRun({
       runId: run as never,
-      executor,
+      profile,
       owner,
       inputs: [
         {
