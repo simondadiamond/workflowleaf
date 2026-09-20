@@ -237,11 +237,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
     <ScrollViewMarker
       style={{ flex: 1 }}
-      scrollEdgeEffects={{
-        ...nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version),
-        // Retain the existing sidebar fade on iOS 26; iOS 27 uses the native bar material.
-        top: Number.parseInt(String(Platform.Version), 10) >= 27 ? "automatic" : "soft",
-      }}
+      scrollEdgeEffects={nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version)}
     >
       <ScrollView
         {...props}
