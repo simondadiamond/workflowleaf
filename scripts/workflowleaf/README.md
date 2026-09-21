@@ -8,6 +8,11 @@ written reason and a condition for removing the edit again.
 `ownership.json` records those lists plus the import boundaries, the
 orientation rule and the enablement rule. `check.ts` enforces all of them.
 
+`FORK-RULES.md` states the additive rule in short form. `CLAUDE.md` imports it,
+so an agent working anywhere in this repository is told the fork stays additive
+without having to find this directory first. That import is itself one of the
+two recorded upstream edits.
+
 ```bash
 node scripts/workflowleaf/check.ts              # against the recorded upstream base
 node scripts/workflowleaf/check.ts --base HEAD~1

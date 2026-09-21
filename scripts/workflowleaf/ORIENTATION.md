@@ -19,6 +19,7 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Code, branch `main`                         | any worktree under `~/.t3/worktrees/t3code/`                                                 |
 | This document                               | `scripts/workflowleaf/ORIENTATION.md`, the source of truth                                   |
+| The additive rule, for every agent          | `scripts/workflowleaf/FORK-RULES.md`, imported by `CLAUDE.md`                                |
 | Fork remote                                 | `origin` = `simondadiamond/workflowleaf`, `upstream` = `pingdotgg/t3code` (never push there) |
 | Backlog                                     | issues on `simondadiamond/workflowleaf`, labelled `workflowleaf` + `p0`–`p3`                 |
 | Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                      |
@@ -67,8 +68,11 @@ and AGENTS.md says so.
 2. **The ownership gate fails any upstream file you edit** without an entry in
    `scripts/workflowleaf/ownership.json` giving a purpose and a removal
    condition, and `maxUpstreamEdits` caps how many such entries may exist at
-   all. Today exactly one upstream file is touched: `pnpm-lock.yaml`. Keep it
-   that way; the whole fork strategy rests on it.
+   all. Today two upstream files are touched: `pnpm-lock.yaml`, which pnpm
+   regenerates, and one `@import` line in `CLAUDE.md` that carries
+   `FORK-RULES.md` to every agent in the repository. Adding a third is a
+   decision, not a detail; the whole fork strategy rests on that number staying
+   small.
 3. **Core must import nothing.** No T3, no filesystem, no environment, no
    clock, no provider name. A test asserts this against the source with
    comments and strings stripped. Digests and timestamps are inputs.
@@ -89,7 +93,9 @@ and AGENTS.md says so.
   judgment as the escalation path.
 - **Additive on top of T3.** No provider-adapter edits, no new orchestration
   events, no decider or projector changes. A change that needs one of those
-  ends the experiment that asked for it.
+  ends the experiment that asked for it. This is the rule the fork rests on,
+  so it also lives in `FORK-RULES.md`, which `CLAUDE.md` imports for agents
+  that never load this file.
 - **No model writes evidence.** Gates are run by code and their results
   recorded by code. There is deliberately no "mark passed" path.
 - **Evidence is bound to inputs**, never to a timestamp: a snapshot id, a gate
@@ -161,6 +167,11 @@ Push work to `origin` as it lands rather than sitting on it. Work branches are
 named by the worktree, `t3code/<something>`, and nothing depends on the name.
 The fork checks run on pull requests and on pushes to `main`, so a pushed branch
 gets no CI until it has a pull request open.
+
+**Opening a pull request against `main` is pre-authorized here.** AGENTS.md
+tells agents never to open one unless asked; Simon has asked, standingly, for
+this fork. Open it once the work is ready and let CI run the gates. This covers
+`origin` only. Never open one against `upstream`, and merging stays his call.
 
 WorkflowLeaf is `main` now. It is the branch the work lands on, and
 `git merge upstream/main` into it stays a normal merge: what keeps upstream
