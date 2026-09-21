@@ -35,7 +35,7 @@ import * as Path from "effect/Path";
 import { git } from "./git.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
-import { drive } from "./worker.ts";
+import { drive, SCOPE_SPLIT_PATH } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 const plan: RunPlan = twoStagePlan();
@@ -52,6 +52,15 @@ const write =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
     NodeFs.writeFileSync(NodePath.join(workspacePath, relativePath), content);
+  };
+
+/** Writes into a directory the stage may not have created yet. */
+const writeUnder =
+  (relativePath: string, content: string): Action =>
+  (workspacePath) => {
+    const target = NodePath.join(workspacePath, relativePath);
+    NodeFs.mkdirSync(NodePath.dirname(target), { recursive: true });
+    NodeFs.writeFileSync(target, content);
   };
 
 const doNothing: Action = () => {};
@@ -191,6 +200,7 @@ const setUpRun = Effect.fnUntraced(function* (
       now: "2026-01-01T00:00:00.000Z",
     }),
     plan: runPlan,
+    story: "story",
     profileName: "test",
     origin: { trigger: "manual", by: "test" },
     repoRoot: repo,
@@ -246,6 +256,105 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.lengthOf(executor.continues, 1);
       assert.strictEqual(executor.continues[0]?.stageId, "produce");
       assert.include(executor.continues[0]?.correction ?? "", "artifact-has-content");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops and asks when a stage says the story outgrew one pull request", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-scope-split");
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder(
+                SCOPE_SPLIT_PATH,
+                "The retry fix needs its own pull request.\n",
+              )(workspacePath);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-scope-split" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.stopped, "needs-decision");
+      assert.strictEqual(result.record.decision?.kind, "scope-split");
+      assert.include(result.record.scopeSplit?.detail ?? "", "retry fix");
+      // The stage that declared it still finished and had its gate checked.
+      assert.strictEqual(result.record.visits[0]?.state, "passed");
+      // The next stage never launched.
+      assert.deepStrictEqual(executor.starts, ["produce"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("carries on to the next stage once the split is answered", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-scope-split-answered");
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder(SCOPE_SPLIT_PATH, "and the migration too\n")(workspacePath);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      const deps = {
+        executor,
+        ids: sequentialIds("w"),
+        workspacePath: workspace.path,
+        logDir,
+        owner: "worker-a",
+        leaseSeconds: 60,
+      };
+
+      const stopped = yield* drive({
+        runId: "run-scope-split-answered" as RunId,
+        deps,
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      const result = yield* drive({
+        runId: "run-scope-split-answered" as RunId,
+        deps,
+        lease,
+        initial: [
+          {
+            type: "decision-answered",
+            decisionId: stopped.record.decision!.decisionId,
+            answer: "proceed",
+            planDigest: stopped.record.planDigest,
+          },
+        ],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      assert.deepStrictEqual(executor.starts, ["produce", "summarize"]);
+      // The declaration is still on disk, and re-reading it does not re-ask.
+      assert.strictEqual(result.record.decision, null);
+      assert.isNotNull(result.record.scopeSplit?.acknowledgedAt ?? null);
     }).pipe(Effect.scoped),
   );
 

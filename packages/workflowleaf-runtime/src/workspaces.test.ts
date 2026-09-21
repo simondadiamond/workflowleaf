@@ -57,6 +57,7 @@ const seedRun = Effect.fnUntraced(function* (
   yield* store.createRun({
     record,
     plan,
+    story: "story",
     profileName: "test",
     origin: { trigger: "manual", by: "test" },
     repoRoot,

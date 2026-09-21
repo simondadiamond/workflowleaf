@@ -17,7 +17,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { prettyJson } from "./canonical.ts";
 import { loadPlaybook } from "./load.ts";
-import { describeRun, resumeRun, startRun, summarizeRuns } from "./run.ts";
+import { describeRun, nextRunId, resumeRun, startRun, summarizeRuns } from "./run.ts";
 import { loadProfile, PROFILE_TEMPLATE, profilePath, workflowleafHome } from "./profile.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { loadSkillCatalog } from "./skillCatalog.ts";
@@ -207,12 +207,26 @@ const reportResult = Effect.fnUntraced(function* (runId: string, stopped: string
     return;
   }
   yield* Console.log(`${runId} ${detail.value.state} (${stopped})`);
+  if (detail.value.pullRequest !== null) {
+    yield* Console.log(
+      `  pull request: #${String(detail.value.pullRequest.number)} ${detail.value.pullRequest.url}`,
+    );
+  }
   if (detail.value.stage !== null) yield* Console.log(`  stage: ${detail.value.stage}`);
   if (detail.value.attention !== null) yield* Console.log(`  needs you: ${detail.value.attention}`);
   for (const limitation of detail.value.limitations) {
     yield* Console.log(`  limitation at ${limitation.stageId}: ${limitation.detail}`);
   }
 });
+
+/** A story id safe to use as a branch name, a directory name and a run id. */
+export function slugify(story: string): string {
+  return story
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 const runCommand = Command.make(
   "run",
@@ -225,31 +239,41 @@ const runCommand = Command.make(
       Flag.withDescription("Revision the run's worktree branches from."),
       Flag.withDefault("HEAD"),
     ),
-    id: Flag.String("id").pipe(
-      Flag.withDescription("Run id. Defaults to a timestamped one."),
+    story: Flag.String("story").pipe(
+      Flag.withDescription(
+        "The story this run delivers, e.g. issue-42. Defaults to the `issue` input. The run id is this plus its ordinal.",
+      ),
       Flag.optional,
     ),
   },
-  Effect.fnUntraced(function* ({ playbook, profile: profileName, input, owner, base, id }) {
+  Effect.fnUntraced(function* ({ playbook, profile: profileName, input, owner, base, story }) {
     const path = yield* Path.Path;
     const profile = yield* loadProfile(profileName);
-    const now = yield* DateTime.now;
 
-    const runId = Option.getOrElse(
-      id,
-      () => `${DateTime.formatIso(now).replace(/[:.]/g, "-")}-${path.basename(playbook)}`,
-    );
+    const inputs = input as Readonly<Record<string, string>>;
+    const named = Option.getOrElse(story, () => inputs.issue ?? "");
+    if (named.trim().length === 0) {
+      yield* Console.error(
+        "This run needs a story: pass --story, or an --input issue=<id> for the playbook to consume.",
+      );
+      return;
+    }
+
+    // A story that turns out to need a second pull request gets a second run,
+    // so the id carries the ordinal and the two sort together.
+    const runId = yield* nextRunId(slugify(named));
 
     const started = yield* startRun({
-      runId: runId as never,
+      runId,
+      story: slugify(named),
       profile,
       playbookDir: path.resolve(playbook),
-      inputs: input,
+      inputs,
       baseRef: base,
       owner,
     });
 
-    yield* reportResult(runId, started.result.stopped);
+    yield* reportResult(runId as string, started.result.stopped);
   }),
 ).pipe(Command.withDescription("Compile a playbook and drive a run until it needs you."));
 
@@ -261,8 +285,24 @@ const statusCommand = Command.make(
       Flag.withDescription("Only runs in this state."),
       Flag.optional,
     ),
+    pr: Flag.Int("pr").pipe(
+      Flag.withDescription("Show the run that owns this pull request number."),
+      Flag.optional,
+    ),
   },
-  Effect.fnUntraced(function* ({ run, state }) {
+  Effect.fnUntraced(function* ({ run, state, pr }) {
+    if (Option.isSome(pr)) {
+      const store = yield* RunStore;
+      const found = yield* store.findRunByPullRequest(pr.value);
+      if (Option.isNone(found)) {
+        yield* Console.error(`No run owns pull request #${String(pr.value)}.`);
+        return;
+      }
+      const detail = yield* describeRun(found.value.record.runId);
+      if (Option.isSome(detail)) yield* Console.log(prettyJson(detail.value));
+      return;
+    }
+
     if (Option.isSome(run)) {
       const detail = yield* describeRun(run.value as never);
       if (Option.isNone(detail)) {
@@ -280,8 +320,12 @@ const statusCommand = Command.make(
     }
     for (const summary of summaries) {
       const attention = summary.attention === null ? "" : `  ${summary.attention}`;
+      // Every run shows its pull request, including the runs that have none:
+      // "no pull request" is a fact about the run, not a blank.
+      const pullRequest =
+        summary.pullRequest === null ? "no PR" : `#${String(summary.pullRequest.number)}`;
       yield* Console.log(
-        `${summary.state.padEnd(16)} ${summary.runId.padEnd(40)} ${summary.stage ?? "-"}${attention}`,
+        `${summary.state.padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}`,
       );
     }
   }),

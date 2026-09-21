@@ -115,6 +115,7 @@ export const PendingDecision = Schema.Struct({
     "lost-context",
     "unsupported-capability",
     "reconciliation",
+    "scope-split",
   ]),
   detail: Schema.String,
   raisedAt: Instant,
@@ -125,6 +126,39 @@ export const PendingDecision = Schema.Struct({
   planDigest: Digest,
 });
 export type PendingDecision = typeof PendingDecision.Type;
+
+/**
+ * The pull request a run delivers into.
+ *
+ * A run is one story and ends with one pull request, so this is part of the
+ * run's identity rather than something the last stage reports. It is recorded
+ * when the pull request is opened, which is at the start of the run.
+ */
+export const PullRequestRef = Schema.Struct({
+  number: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  url: Schema.String.check(Schema.isNonEmpty()),
+  /** The branch the run pushes. The run's worktree is checked out on it. */
+  headBranch: Schema.String.check(Schema.isNonEmpty()),
+  baseBranch: Schema.String.check(Schema.isNonEmpty()),
+  openedAt: Instant,
+});
+export type PullRequestRef = typeof PullRequestRef.Type;
+
+/**
+ * A stage's declaration that findings grew the story past this pull request.
+ *
+ * Only the stage doing the work can notice this, so it declares it and code
+ * detects the declaration; nothing infers a split from the size of a diff. The
+ * digest binds the question to the declaration's content, so acknowledging one
+ * split does not silently acknowledge a later, different one.
+ */
+export const ScopeSplit = Schema.Struct({
+  digest: Digest,
+  detail: Schema.String,
+  declaredAt: Instant,
+  acknowledgedAt: Schema.NullOr(Instant),
+});
+export type ScopeSplit = typeof ScopeSplit.Type;
 
 export const RunBudget = Schema.Struct({
   /** Backward repair cycles used across the whole run. */
@@ -138,6 +172,10 @@ export const RunRecord = Schema.Struct({
   runId: RunId,
   planDigest: Digest,
   workspaceId: WorkspaceId,
+  /** The pull request this run delivers into. Null only while none was opened. */
+  pullRequest: Schema.NullOr(PullRequestRef),
+  /** Set once a stage declares the story has outgrown that pull request. */
+  scopeSplit: Schema.NullOr(ScopeSplit),
   state: RunState,
   /** Optimistic concurrency. One writer owns a run; this is how a stale one is caught. */
   revision: NonNegativeInt,
