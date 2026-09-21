@@ -3,7 +3,7 @@ schemaVersion: 1
 id: synthetic-correction
 name: Synthetic correction
 version: "0.1"
-outcome: artifact
+outcome: summary
 inputs:
   - topic
 stages:
@@ -26,6 +26,25 @@ stages:
     budgets:
       attempts: 3
     requiresCapabilities: [fresh-context, same-context-continuation]
+  - id: summarize
+    kind: agent
+    instruction: stages/summarize.md
+    consumes: [artifact.md]
+    produces: [summary.md]
+    context:
+      files: []
+    skills:
+      required: []
+      lazy: []
+      lazyRules: []
+    gates: [summary-has-content]
+    correction:
+      mode: route-to
+      stage: produce
+      maxCycles: 2
+    budgets:
+      attempts: 2
+    requiresCapabilities: [fresh-context]
 policy:
   humanRequired: [merge]
 ---
@@ -33,14 +52,17 @@ policy:
 # Synthetic correction
 
 A public fixture for the correction path, and the one the live T3 seam is
-checked against. Its gate is a command, so the compiled prompt describes it
-only by the command line it runs and not by what that command checks. The stage writes what its instruction asked for,
-the gate disagrees, and the correction has to carry enough for the same
-provider context to fix it on a second turn.
+checked against. The first stage's gate fails on its first attempt no matter
+what the stage produced, so the run has to correct on the same provider thread
+before it can move on. A second stage follows, so one run covers a correction
+and a later stage opening a fresh context on the same worktree.
 
-A `file` gate cannot do this job: the prompt spells out every fragment and byte
-count a file gate wants, so the first attempt passes.
+The gate ignores the stage's output on purpose. A stage is shown its gates in
+the prompt, and for a command gate that means the whole argument list, so an
+inline check is no more opaque than a file gate's `mustContain`. A fixture that
+asks a model to fail proves nothing on the turn the model decides to comply.
+What is under test here is the control flow, not the model.
 
-The check is inline rather than a script in this directory because a command
-gate's executable resolves against the run's worktree, not against the
-playbook. A playbook cannot ship its own check script yet.
+A check that lives in its own script beside the playbook would be genuinely
+opaque, and is the better shape for this. It is not available yet: a command
+gate's executable resolves against the run's worktree, not the playbook.
