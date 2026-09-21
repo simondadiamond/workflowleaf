@@ -1,0 +1,5 @@
+id: summary-has-content
+type: file
+path: summary.md
+mustExist: true
+minBytes: 4

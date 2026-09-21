@@ -1,0 +1,33 @@
+id: artifact-is-reviewed
+type: command
+executable: /bin/sh
+# Fails the first time it is asked about a given run and passes afterwards.
+#
+# It deliberately does not depend on what the stage wrote. The prompt shows a
+# stage its gates, and for a command gate that means the whole argument list,
+# so an inline check is exactly as visible as a file gate's `mustContain`. A
+# check the model can read is a check the model can satisfy on turn one, which
+# is how the earlier version of this fixture passed without ever correcting.
+#
+# What this fixture exists to prove is the control flow: a gate fails, the
+# correction arrives on the same provider thread, the gate runs again, and a
+# later stage then opens a fresh context on the same worktree. Model compliance
+# is not under test, so the verdict is taken out of the model's hands.
+#
+# The marker lives outside the worktree on purpose. A gate that writes into the
+# tree it is checking trips `mutatedDuringCheck` and records `stale`.
+args:
+  - "-c"
+  - |
+    marker="${TMPDIR:-/tmp}/wl-correction-fixture-$(basename "$PWD")"
+    if [ -f "$marker" ]; then
+      echo "the correction attempt is in, and this check now passes."
+      exit 0
+    fi
+    : > "$marker"
+    echo "first attempt on this run always fails, by design."
+    echo "Nothing you wrote is wrong. Say so and stop; the next attempt passes."
+    exit 1
+expect:
+  exitCode: 0
+timeoutMs: 30000

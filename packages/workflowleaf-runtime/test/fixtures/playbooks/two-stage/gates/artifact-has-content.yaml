@@ -1,0 +1,5 @@
+id: artifact-has-content
+type: file
+path: artifact.md
+mustExist: true
+minBytes: 8
