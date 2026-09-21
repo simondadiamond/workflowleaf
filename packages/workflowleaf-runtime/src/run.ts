@@ -39,7 +39,7 @@ import { loadPlaybook } from "./load.ts";
 import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
 import { openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
-import { drive, type DriveResult, type WorkerDeps } from "./worker.ts";
+import { drive, type DriveResult, type ProgressSink, type WorkerDeps } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 export class RunError extends Schema.TaggedError<RunError>()("WlRunError", {
@@ -140,6 +140,8 @@ export interface StartRunInput {
   readonly inputs: Readonly<Record<string, string>>;
   readonly baseRef: string;
   readonly owner: string;
+  /** Optional: told what the run is doing while it does it. */
+  readonly progress?: ProgressSink | undefined;
 }
 
 export interface StartedRun {
@@ -227,6 +229,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
       logDir: path.join(yield* runDirFor(input.runId as string), "logs"),
       owner: input.owner,
       leaseSeconds: 300,
+      progress: input.progress,
     },
     lease,
     initial: [{ type: "start" }],
@@ -284,6 +287,7 @@ export interface ResumeRunInput {
   readonly profile: Profile;
   readonly owner: string;
   readonly inputs: readonly ControllerInput[];
+  readonly progress?: ProgressSink | undefined;
 }
 
 /** Picks a run back up: reattaches to its worktree, reconciles, then drives. */
@@ -316,6 +320,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
       logDir: path.join(yield* runDirFor(input.runId as string), "logs"),
       owner: input.owner,
       leaseSeconds: 300,
+      progress: input.progress,
     },
     lease,
     initial: input.inputs,
@@ -331,6 +336,11 @@ export interface RunSummary {
   readonly runId: string;
   readonly story: string;
   readonly state: string;
+  /**
+   * What the mutating commands want in `--revision`. Without it here, the only
+   * way to use that flag would be to guess at the number it is there to check.
+   */
+  readonly revision: number;
   readonly stage: string | null;
   readonly attention: string | null;
   /** Null only for a run started under a profile that may not open one. */
@@ -348,6 +358,7 @@ function summaryOf(run: {
     runId: run.record.runId as string,
     story: run.story,
     state: run.record.state,
+    revision: run.record.revision,
     stage: run.record.currentStageId as string | null,
     attention:
       run.record.decision === null

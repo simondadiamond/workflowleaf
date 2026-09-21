@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { slugify } from "./cli.ts";
-import { nextRunId } from "./run.ts";
+import { nextRunId, summarizeRuns } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
 
@@ -55,6 +55,15 @@ it.layer(testLayer)("run ids", (it) => {
 
       yield* seed("issue-43-2", "issue-43");
       assert.strictEqual((yield* nextRunId("issue-43")) as string, "issue-43-3");
+    }),
+  );
+
+  it.effect("a summary carries the revision the mutating commands check", () =>
+    Effect.gen(function* () {
+      yield* seed("issue-46-1", "issue-46");
+      const summaries = yield* summarizeRuns();
+      const summary = summaries.find((candidate) => candidate.runId === "issue-46-1");
+      assert.strictEqual(summary?.revision, record("issue-46-1").revision);
     }),
   );
 

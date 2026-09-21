@@ -35,7 +35,7 @@ import * as Path from "effect/Path";
 import { git } from "./git.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
-import { drive, SCOPE_SPLIT_PATH } from "./worker.ts";
+import { drive, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 const plan: RunPlan = twoStagePlan();
@@ -666,6 +666,66 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
 
       assert.strictEqual(result.record.state, "cancelled");
       assert.deepStrictEqual(executor.starts, []);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("reports every stage and gate verdict while it drives, not only at the end", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-progress");
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          // The first attempt produces nothing, so a watcher should see the
+          // failing gate and the correction, not just a stage that took a while.
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      const seen: RunProgress[] = [];
+
+      yield* drive({
+        runId: "run-progress" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          progress: (event) =>
+            Effect.sync(() => {
+              seen.push(event);
+            }),
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.deepStrictEqual(
+        seen.map((event) => `${event.kind} ${event.stageId}`),
+        [
+          "stage-started produce",
+          "gates produce",
+          "stage-started produce",
+          "gates produce",
+          "stage-settled produce",
+          "stage-started summarize",
+          "gates summarize",
+          "stage-settled summarize",
+        ],
+      );
+
+      const gates = seen.filter((event) => event.kind === "gates");
+      assert.deepStrictEqual(
+        gates.map((event) => event.verdicts.map((verdict) => verdict.outcome)),
+        [["failed"], ["passed"], ["passed"]],
+      );
+
+      const corrections = seen.filter(
+        (event) => event.kind === "stage-started" && event.correcting,
+      );
+      assert.lengthOf(corrections, 1);
     }).pipe(Effect.scoped),
   );
 });

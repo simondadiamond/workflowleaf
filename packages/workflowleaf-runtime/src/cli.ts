@@ -18,9 +18,16 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { prettyJson } from "./canonical.ts";
 import { loadPlaybook } from "./load.ts";
 import { describeRun, nextRunId, resumeRun, startRun, summarizeRuns } from "./run.ts";
-import { loadProfile, PROFILE_TEMPLATE, profilePath, workflowleafHome } from "./profile.ts";
+import {
+  loadProfile,
+  PROFILE_TEMPLATE,
+  profilePath,
+  workflowleafHome,
+  type Profile,
+} from "./profile.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { loadSkillCatalog } from "./skillCatalog.ts";
+import type { RunProgress } from "./worker.ts";
 
 export class PlaybookInvalid extends Schema.TaggedError<PlaybookInvalid>()("WlPlaybookInvalid", {
   report: Schema.String,
@@ -51,20 +58,43 @@ const inputFlag = Flag.KeyValuePair("input").pipe(
 );
 
 const playbookArgument = Argument.String("playbook").pipe(
-  Argument.withDescription("Directory containing PLAYBOOK.md."),
+  Argument.withDescription(
+    "Directory containing PLAYBOOK.md. Defaults to the profile's defaultPlaybook.",
+  ),
+  Argument.optional,
 );
 
+/**
+ * Which playbook this command means.
+ *
+ * A playbook is portable and knows nothing about where it was copied to, so
+ * the path is either typed here or read from the profile, which is the local
+ * half of the pair. Neither one present is an error rather than a guess.
+ */
+export const playbookDirFor = Effect.fnUntraced(function* (
+  given: Option.Option<string>,
+  profile: Profile,
+) {
+  const path = yield* Path.Path;
+  const named = Option.getOrElse(given, () => profile.defaultPlaybook ?? "");
+  if (named.trim().length === 0) {
+    return yield* new PlaybookInvalid({
+      report: `Profile ${profile.name} has no defaultPlaybook, so this command needs a playbook directory.`,
+    });
+  }
+  return path.resolve(named);
+});
+
 const loadForCli = Effect.fnUntraced(function* (
-  playbook: string,
+  playbook: Option.Option<string>,
   profileName: string,
   inputs: Readonly<Record<string, string>>,
 ) {
-  const path = yield* Path.Path;
   const profile = yield* loadProfile(profileName);
   const now = yield* DateTime.now;
 
   const loaded = yield* loadPlaybook({
-    playbookDir: path.resolve(playbook),
+    playbookDir: yield* playbookDirFor(playbook, profile),
     repoRoot: profile.repoRoot,
     skillRoots: profile.skillRoots,
     inputs,
@@ -200,6 +230,36 @@ const assertRevision = Effect.fnUntraced(function* (
   }
 });
 
+/**
+ * One line per visible moment, printed while the run is still going.
+ *
+ * A stage can take twenty minutes. Without this the only output is where the
+ * run stopped, and the person who started it cannot tell a long build from a
+ * hung one.
+ */
+export function formatProgress(event: RunProgress): string {
+  switch (event.kind) {
+    case "stage-started":
+      return `  ${event.stageId}: ${event.correcting ? "correcting" : "started"} (attempt ${String(event.attempt)})`;
+    case "gates": {
+      const verdicts = event.verdicts
+        .map((verdict) => `${verdict.gateId} ${verdict.outcome}`)
+        .join(", ");
+      // A failing gate's first line of detail is what makes the verdict
+      // actionable; the rest of it is already in the evidence log.
+      const detail = event.verdicts
+        .filter((verdict) => verdict.outcome !== "passed" && verdict.outcome !== "waived")
+        .map((verdict) => `\n    ${verdict.gateId}: ${verdict.summary.split("\n")[0] ?? ""}`)
+        .join("");
+      return `  ${event.stageId}: gates ${verdicts || "none"}${detail}`;
+    }
+    case "stage-settled":
+      return `  ${event.stageId}: ${event.state}`;
+  }
+}
+
+const printProgress = (event: RunProgress) => Console.log(formatProgress(event));
+
 const reportResult = Effect.fnUntraced(function* (runId: string, stopped: string) {
   const detail = yield* describeRun(runId as never);
   if (Option.isNone(detail)) {
@@ -247,8 +307,8 @@ const runCommand = Command.make(
     ),
   },
   Effect.fnUntraced(function* ({ playbook, profile: profileName, input, owner, base, story }) {
-    const path = yield* Path.Path;
     const profile = yield* loadProfile(profileName);
+    const playbookDir = yield* playbookDirFor(playbook, profile);
 
     const inputs = input as Readonly<Record<string, string>>;
     const named = Option.getOrElse(story, () => inputs.issue ?? "");
@@ -267,10 +327,11 @@ const runCommand = Command.make(
       runId,
       story: slugify(named),
       profile,
-      playbookDir: path.resolve(playbook),
+      playbookDir,
       inputs,
       baseRef: base,
       owner,
+      progress: printProgress,
     });
 
     yield* reportResult(runId as string, started.result.stopped);
@@ -342,6 +403,7 @@ const resumeCommand = Command.make(
       profile,
       owner,
       inputs: [{ type: "resume" }],
+      progress: printProgress,
     });
     yield* reportResult(run, result.stopped);
   }),
@@ -413,6 +475,7 @@ const decideCommand = Command.make(
       runId: run as never,
       profile,
       owner,
+      progress: printProgress,
       inputs: [
         {
           type: "decision-answered",
