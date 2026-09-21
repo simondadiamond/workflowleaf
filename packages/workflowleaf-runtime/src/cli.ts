@@ -6,7 +6,7 @@
  * terminal that has been sitting open cannot advance a run that moved on
  * without it.
  */
-import { formatDiagnostics } from "@t3tools/workflowleaf-core";
+import { formatDiagnostics, SATISFYING } from "@t3tools/workflowleaf-core";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -248,7 +248,7 @@ export function formatProgress(event: RunProgress): string {
       // A failing gate's first line of detail is what makes the verdict
       // actionable; the rest of it is already in the evidence log.
       const detail = event.verdicts
-        .filter((verdict) => verdict.outcome !== "passed" && verdict.outcome !== "waived")
+        .filter((verdict) => !SATISFYING.includes(verdict.outcome))
         .map((verdict) => `\n    ${verdict.gateId}: ${verdict.summary.split("\n")[0] ?? ""}`)
         .join("");
       return `  ${event.stageId}: gates ${verdicts || "none"}${detail}`;
@@ -420,6 +420,7 @@ const pauseCommand = Command.make(
       profile,
       owner,
       inputs: [{ type: "pause" }],
+      progress: printProgress,
     });
     yield* reportResult(run, result.stopped);
   }),
@@ -442,6 +443,7 @@ const cancelCommand = Command.make(
       profile,
       owner,
       inputs: [{ type: "cancel", reason }],
+      progress: printProgress,
     });
     yield* reportResult(run, result.stopped);
   }),

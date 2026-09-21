@@ -32,3 +32,18 @@ Adding an upstream edit means adding an `allowedUpstreamEdits` entry that says
 what it is for and when it goes away. Provider adapters and the orchestration
 decider, projector and persistence are never on that list; a change that needs
 one of them ends the experiment that asked for it instead.
+
+## skills/
+
+Skills that drive WorkflowLeaf live here rather than in a home directory, so a
+flag rename and the file that types that flag move in one commit. Claude Code
+only discovers skills under `~/.claude/skills`, so each one is linked into
+place once:
+
+```bash
+ln -sfn "$PWD/scripts/workflowleaf/skills/wl-story" ~/.claude/skills/wl-story
+```
+
+Point the link at a checkout that outlives the work. A link into a throwaway
+worktree stops resolving the day the worktree is removed, and a skill that
+silently stops existing is worse than one that was never installed.
