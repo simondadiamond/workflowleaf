@@ -120,6 +120,23 @@ export const MIGRATIONS: readonly {
        )`,
     ],
   },
+  {
+    id: 2,
+    name: "run-is-a-story",
+    sql: [
+      // The run id is now the story plus its ordinal, so the story is what
+      // groups a split one, and the pull request is how a person finds it.
+      `ALTER TABLE wl_runs ADD COLUMN story TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE wl_runs ADD COLUMN pull_request_number INTEGER`,
+      `CREATE INDEX IF NOT EXISTS wl_runs_story ON wl_runs (story, run_id)`,
+      `CREATE INDEX IF NOT EXISTS wl_runs_pull_request ON wl_runs (pull_request_number)`,
+      // Runs recorded before this migration have no pull request and no
+      // declared split. Writing that in leaves every stored document readable
+      // by the current schema instead of failing to decode on first read.
+      `UPDATE wl_runs
+         SET document = json_set(document, '$.pullRequest', json('null'), '$.scopeSplit', json('null'))`,
+    ],
+  },
 ];
 
 export const runMigrations = Effect.fnUntraced(function* () {

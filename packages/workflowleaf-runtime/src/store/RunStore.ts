@@ -73,6 +73,8 @@ export interface RunOrigin {
 export interface CreateRunInput {
   readonly record: RunRecord;
   readonly plan: RunPlan;
+  /** The story this run delivers. Runs of the same story share it; run ids do not. */
+  readonly story: string;
   readonly profileName: string;
   readonly origin: RunOrigin;
   readonly repoRoot: string;
@@ -82,6 +84,7 @@ export interface CreateRunInput {
 export interface LoadedRun {
   readonly record: RunRecord;
   readonly plan: RunPlan;
+  readonly story: string;
   readonly profileName: string;
   readonly repoRoot: string;
   readonly baseRevision: string;
@@ -146,6 +149,11 @@ export class RunStore extends Context.Service<
     readonly listRuns: (filter?: {
       readonly state?: string;
     }) => Effect.Effect<readonly LoadedRun[], RunStoreError>;
+    /** How many runs this story already has. The next one takes the following ordinal. */
+    readonly countRunsForStory: (story: string) => Effect.Effect<number, RunStoreError>;
+    readonly findRunByPullRequest: (
+      number: number,
+    ) => Effect.Effect<Option.Option<LoadedRun>, RunStoreError>;
 
     readonly acquireLease: (
       runId: RunId,
@@ -230,6 +238,7 @@ export class RunStore extends Context.Service<
       const readRun = (row: {
         document: string;
         plan: string;
+        story: string;
         profile_name: string;
         repo_root: string;
         base_revision: string;
@@ -240,6 +249,7 @@ export class RunStore extends Context.Service<
           return {
             record,
             plan,
+            story: row.story,
             profileName: row.profile_name,
             repoRoot: row.repo_root,
             baseRevision: row.base_revision,
@@ -250,12 +260,15 @@ export class RunStore extends Context.Service<
         yield* sql`
           INSERT INTO wl_runs (
             run_id, plan_digest, workspace_id, state, revision, document, plan,
-            profile_name, origin, repo_root, base_revision, created_at, updated_at
+            story, pull_request_number, profile_name, origin, repo_root, base_revision,
+            created_at, updated_at
           ) VALUES (
             ${input.record.runId}, ${input.record.planDigest}, ${input.record.workspaceId},
             ${input.record.state}, ${input.record.revision}, ${canonicalJson(input.record)},
-            ${canonicalJson(input.plan)}, ${input.profileName}, ${canonicalJson(input.origin)},
-            ${input.repoRoot}, ${input.baseRevision}, ${input.record.createdAt}, ${input.record.updatedAt}
+            ${canonicalJson(input.plan)}, ${input.story},
+            ${input.record.pullRequest?.number ?? null}, ${input.profileName},
+            ${canonicalJson(input.origin)}, ${input.repoRoot}, ${input.baseRevision},
+            ${input.record.createdAt}, ${input.record.updatedAt}
           )
         `.pipe(Effect.mapError(fail("createRun")));
       });
@@ -264,10 +277,11 @@ export class RunStore extends Context.Service<
         const rows = yield* sql<{
           document: string;
           plan: string;
+          story: string;
           profile_name: string;
           repo_root: string;
           base_revision: string;
-        }>`SELECT document, plan, profile_name, repo_root, base_revision
+        }>`SELECT document, plan, story, profile_name, repo_root, base_revision
            FROM wl_runs WHERE run_id = ${runId}`.pipe(Effect.mapError(fail("loadRun")));
 
         const row = rows[0];
@@ -280,24 +294,53 @@ export class RunStore extends Context.Service<
             ? yield* sql<{
                 document: string;
                 plan: string;
+                story: string;
                 profile_name: string;
                 repo_root: string;
                 base_revision: string;
-              }>`SELECT document, plan, profile_name, repo_root, base_revision
+              }>`SELECT document, plan, story, profile_name, repo_root, base_revision
                  FROM wl_runs ORDER BY updated_at DESC`.pipe(Effect.mapError(fail("listRuns")))
             : yield* sql<{
                 document: string;
                 plan: string;
+                story: string;
                 profile_name: string;
                 repo_root: string;
                 base_revision: string;
-              }>`SELECT document, plan, profile_name, repo_root, base_revision
+              }>`SELECT document, plan, story, profile_name, repo_root, base_revision
                  FROM wl_runs WHERE state = ${filter.state} ORDER BY updated_at DESC`.pipe(
                 Effect.mapError(fail("listRuns")),
               );
 
         return yield* Effect.forEach(rows, readRun);
       });
+
+      const countRunsForStory: RunStore["Service"]["countRunsForStory"] = Effect.fnUntraced(
+        function* (story) {
+          const rows = yield* sql<{ total: number }>`
+            SELECT COUNT(*) AS total FROM wl_runs WHERE story = ${story}
+          `.pipe(Effect.mapError(fail("countRunsForStory")));
+          return rows[0]?.total ?? 0;
+        },
+      );
+
+      const findRunByPullRequest: RunStore["Service"]["findRunByPullRequest"] = Effect.fnUntraced(
+        function* (number) {
+          const rows = yield* sql<{
+            document: string;
+            plan: string;
+            story: string;
+            profile_name: string;
+            repo_root: string;
+            base_revision: string;
+          }>`SELECT document, plan, story, profile_name, repo_root, base_revision
+             FROM wl_runs WHERE pull_request_number = ${number}
+             ORDER BY updated_at DESC`.pipe(Effect.mapError(fail("findRunByPullRequest")));
+
+          const row = rows[0];
+          return row === undefined ? Option.none() : Option.some(yield* readRun(row));
+        },
+      );
 
       const assertLease = Effect.fnUntraced(function* (lease: Lease) {
         const rows = yield* sql<{ owner: string; generation: number }>`
@@ -346,6 +389,7 @@ export class RunStore extends Context.Service<
               revision = ${input.next.revision},
               document = ${canonicalJson(input.next)},
               workspace_id = ${input.next.workspaceId},
+              pull_request_number = ${input.next.pullRequest?.number ?? null},
               updated_at = ${input.next.updatedAt}
           WHERE run_id = ${input.next.runId} AND revision = ${input.previous.revision}
         `.pipe(Effect.mapError(fail("commit.update")));
@@ -618,6 +662,8 @@ export class RunStore extends Context.Service<
         loadRun,
         commit,
         listRuns,
+        countRunsForStory,
+        findRunByPullRequest,
         acquireLease,
         renewLease,
         releaseLease,

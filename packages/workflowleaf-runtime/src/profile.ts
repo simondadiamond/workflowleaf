@@ -40,6 +40,19 @@ const FakeExecutorConfig = Schema.Struct({ kind: Schema.Literal("fake") });
 const ExecutorConfig = Schema.Union([T3ExecutorConfig, FakeExecutorConfig]);
 export type ExecutorConfig = typeof ExecutorConfig.Type;
 
+/**
+ * Where the run's pull request is opened. Named rather than inferred: reading
+ * the repository's default branch would quietly retarget every run the day
+ * someone changes it.
+ */
+const PullRequestConfig = Schema.Struct({
+  /** Remote the run's branch is pushed to. */
+  remote: Schema.String.check(Schema.isNonEmpty()),
+  /** Branch the pull request is opened against. */
+  baseBranch: Schema.String.check(Schema.isNonEmpty()),
+});
+export type PullRequestConfig = typeof PullRequestConfig.Type;
+
 const ProfileDocument = Schema.Struct({
   executor: ExecutorConfig,
   /** Absolute path to the repository runs operate on. */
@@ -56,6 +69,8 @@ const ProfileDocument = Schema.Struct({
    * Whether this profile may perform external effects. Nothing infers these
    * from a playbook; an unlisted effect stays unavailable with a diagnostic.
    */
+  /** Required when `permissions.createPullRequest` is on, ignored when it is off. */
+  pullRequest: Schema.optional(PullRequestConfig),
   permissions: Schema.Struct({
     createPullRequest: Schema.Boolean,
     commentOnPullRequest: Schema.Boolean,
@@ -129,6 +144,12 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
   }
 
   const document = decoded.success;
+  if (document.permissions.createPullRequest && document.pullRequest === undefined) {
+    return yield* new ProfileError({
+      message: `${file}: permissions.createPullRequest is on, so pullRequest.remote and pullRequest.baseBranch have to say where the run's pull request goes.`,
+    });
+  }
+
   return {
     ...document,
     name,
@@ -163,6 +184,7 @@ export const PROFILE_TEMPLATE = {
   repoRoot: "<absolute path to the repository runs operate on>",
   skillRoots: ["<absolute path to a directory of skills>"],
   budgets: { maxRepairCycles: 2, runDeadlineMs: null },
+  pullRequest: { remote: "origin", baseBranch: "main" },
   permissions: {
     createPullRequest: false,
     commentOnPullRequest: false,

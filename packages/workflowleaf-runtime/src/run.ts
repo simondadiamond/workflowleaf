@@ -10,6 +10,10 @@
  *
  * A run owns its worktree from the moment it is created, so nothing downstream
  * has to decide where the work happens.
+ *
+ * And a run is one story delivered as one pull request. The id says which
+ * story and which attempt at it, the pull request is opened before any stage
+ * runs, and both are on the record from the first write.
  */
 import {
   initialRun,
@@ -18,6 +22,7 @@ import {
   type IdSource,
   type RunId,
   type RunPlan,
+  type RunRecord,
 } from "@t3tools/workflowleaf-core";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -32,6 +37,7 @@ import { digestOf } from "./digest.ts";
 import { revParse } from "./git.ts";
 import { loadPlaybook } from "./load.ts";
 import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
+import { openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import { drive, type DriveResult, type WorkerDeps } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
@@ -55,6 +61,19 @@ export function idSourceFor(runId: string, seed: number): IdSource {
     decisionId: () => make("decision", ++decisions) as never,
   };
 }
+
+/**
+ * The id of the next run of a story.
+ *
+ * A story that turns out to need two pull requests gets two runs, so the story
+ * alone cannot be the id. The ordinal is what separates them, and it keeps the
+ * two sorted next to each other wherever runs are listed.
+ */
+export const nextRunId = Effect.fnUntraced(function* (story: string) {
+  const store = yield* RunStore;
+  const existing = yield* store.countRunsForStory(story);
+  return `${story}-${String(existing + 1)}` as RunId;
+});
 
 /** Where a run executes: the worktree it owns and how to recall past dispatches. */
 export interface ExecutorBinding {
@@ -114,6 +133,8 @@ const runDirFor = Effect.fnUntraced(function* (runId: string) {
 
 export interface StartRunInput {
   readonly runId: RunId;
+  /** The story this run delivers. Several runs of one story share it. */
+  readonly story: string;
   readonly profile: Profile;
   readonly playbookDir: string;
   readonly inputs: Readonly<Record<string, string>>;
@@ -158,6 +179,18 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     baseRevision,
   });
 
+  // Before any stage runs: the run's pull request is what the work is scoped
+  // to, so it exists from the start rather than appearing at the end.
+  const pullRequest = yield* openPullRequestFor({
+    profile: input.profile,
+    story: input.story,
+    runId: input.runId,
+    outcome: loaded.value.plan.outcome,
+    workspacePath: workspace.path,
+    branch: workspace.branch,
+    openedAt: compiledAt,
+  });
+
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.path,
     branch: workspace.branch,
@@ -169,12 +202,14 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
       runId: input.runId,
       planDigest: loaded.value.plan.planDigest,
       workspaceId: workspace.workspaceId,
+      pullRequest,
       capabilities,
       maxRepairCycles: input.profile.budgets.maxRepairCycles,
       deadlineAt: null,
       now: compiledAt,
     }),
     plan: loaded.value.plan,
+    story: input.story,
     profileName: input.profile.name,
     origin: { trigger: "manual", by: input.owner },
     repoRoot: input.profile.repoRoot,
@@ -198,6 +233,39 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
   });
 
   return { plan: loaded.value.plan, result } satisfies StartedRun;
+});
+
+/**
+ * Opens the run's draft pull request, when the profile permits one.
+ *
+ * A profile without `createPullRequest` gets a run with no pull request rather
+ * than a run that quietly opens one anyway; that is what the permission is.
+ */
+const openPullRequestFor = Effect.fnUntraced(function* (input: {
+  readonly profile: Profile;
+  readonly story: string;
+  readonly runId: RunId;
+  readonly outcome: string;
+  readonly workspacePath: string;
+  readonly branch: string;
+  readonly openedAt: string;
+}) {
+  const config = input.profile.pullRequest;
+  if (!input.profile.permissions.createPullRequest || config === undefined) return null;
+
+  return yield* openDraftPullRequest({
+    workspacePath: input.workspacePath,
+    headBranch: input.branch,
+    baseBranch: config.baseBranch,
+    remote: config.remote,
+    title: `${input.story}: ${input.outcome}`,
+    body: [
+      `WorkflowLeaf run \`${input.runId}\` for story \`${input.story}\`.`,
+      "",
+      "Draft until the run's stages and gates have passed. The run fills this in.",
+    ].join("\n"),
+    openedAt: input.openedAt,
+  });
 });
 
 const takeLease = Effect.fnUntraced(function* (runId: RunId, owner: string) {
@@ -254,13 +322,44 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   });
 });
 
+export interface PullRequestSummary {
+  readonly number: number;
+  readonly url: string;
+}
+
 export interface RunSummary {
   readonly runId: string;
+  readonly story: string;
   readonly state: string;
   readonly stage: string | null;
   readonly attention: string | null;
+  /** Null only for a run started under a profile that may not open one. */
+  readonly pullRequest: PullRequestSummary | null;
   readonly playbook: string;
   readonly updatedAt: string;
+}
+
+function summaryOf(run: {
+  readonly record: RunRecord;
+  readonly plan: RunPlan;
+  readonly story: string;
+}): RunSummary {
+  return {
+    runId: run.record.runId as string,
+    story: run.story,
+    state: run.record.state,
+    stage: run.record.currentStageId as string | null,
+    attention:
+      run.record.decision === null
+        ? run.record.failure
+        : `${run.record.decision.kind}: ${run.record.decision.detail}`,
+    pullRequest:
+      run.record.pullRequest === null
+        ? null
+        : { number: run.record.pullRequest.number, url: run.record.pullRequest.url },
+    playbook: `${run.plan.playbookId}@${run.plan.playbookVersion}`,
+    updatedAt: run.record.updatedAt,
+  };
 }
 
 /** One line per run: what it is doing and, when it is stuck, why. */
@@ -268,21 +367,17 @@ export const summarizeRuns = Effect.fnUntraced(function* (state?: string) {
   const store = yield* RunStore;
   const runs = yield* store.listRuns(state === undefined ? undefined : { state });
 
-  return runs.map((run): RunSummary => ({
-    runId: run.record.runId as string,
-    state: run.record.state,
-    stage: run.record.currentStageId as string | null,
-    attention:
-      run.record.decision === null
-        ? run.record.failure
-        : `${run.record.decision.kind}: ${run.record.decision.detail}`,
-    playbook: `${run.plan.playbookId}@${run.plan.playbookVersion}`,
-    updatedAt: run.record.updatedAt,
-  }));
+  return runs.map(summaryOf);
 });
 
 export interface RunDetail extends RunSummary {
   readonly workspacePath: string | null;
+  /** Set once a stage declared the story had outgrown this run's pull request. */
+  readonly scopeSplit: {
+    readonly detail: string;
+    readonly declaredAt: string;
+    readonly acknowledgedAt: string | null;
+  } | null;
   readonly visits: readonly {
     readonly stageId: string;
     readonly state: string;
@@ -302,16 +397,16 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
   const record = loaded.value.record;
 
   return Option.some({
-    runId: record.runId as string,
-    state: record.state,
-    stage: record.currentStageId as string | null,
-    attention:
-      record.decision === null
-        ? record.failure
-        : `${record.decision.kind}: ${record.decision.detail}`,
-    playbook: `${loaded.value.plan.playbookId}@${loaded.value.plan.playbookVersion}`,
-    updatedAt: record.updatedAt,
+    ...summaryOf(loaded.value),
     workspacePath: Option.isSome(workspace) ? workspace.value.path : null,
+    scopeSplit:
+      record.scopeSplit === null
+        ? null
+        : {
+            detail: record.scopeSplit.detail,
+            declaredAt: record.scopeSplit.declaredAt,
+            acknowledgedAt: record.scopeSplit.acknowledgedAt,
+          },
     visits: record.visits.map((visit) => ({
       stageId: visit.stageId as string,
       state: visit.state,

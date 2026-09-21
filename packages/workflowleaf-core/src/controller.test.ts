@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { decide, initialRun, type ControllerContext, type ControllerEffect } from "./controller.ts";
 import type { GateVerdict } from "./ports.ts";
-import type { GateId, OperationId, RunId, StageId, VisitId, WorkspaceId } from "./ids.ts";
+import type { Digest, GateId, OperationId, RunId, StageId, VisitId, WorkspaceId } from "./ids.ts";
 import type { RunRecord } from "./state.ts";
 import {
   GATE_ARTIFACT_EXISTS,
@@ -667,5 +667,169 @@ describe("stage kinds", () => {
 
     expect(started.run.state).toBe("needs_decision");
     expect(started.effects.map((effect) => effect.type)).toEqual(["raise-decision"]);
+  });
+});
+
+describe("a run is one story and one pull request", () => {
+  /** Stage A settles, declares a split, and passes its gate. */
+  function runToDeclaredSplit(detail = "The auth fix needs its own pull request.") {
+    const ids = sequentialIds();
+    const { settled } = runToStageAGates(ids);
+    const declared = decide(context(settled.run, ids), {
+      type: "scope-split-declared",
+      digest: "digest-split-1" as Digest,
+      detail,
+    });
+    const passed = decide(context(declared.run, ids), {
+      type: "gates-evaluated",
+      visitId: declared.run.visits[0]!.visitId,
+      verdicts: [pass(GATE_ARTIFACT_EXISTS)],
+    });
+    return { declared, passed, ids };
+  }
+
+  it("records a declaration without stopping the stage that made it", () => {
+    const ids = sequentialIds();
+    const { settled } = runToStageAGates(ids);
+
+    const declared = decide(context(settled.run, ids), {
+      type: "scope-split-declared",
+      digest: "digest-split-1" as Digest,
+      detail: "two pull requests",
+    });
+
+    expect(declared.run.state).toBe("running");
+    expect(declared.effects).toEqual([]);
+    expect(declared.run.scopeSplit?.acknowledgedAt).toBe(null);
+  });
+
+  it("stops and asks instead of carrying the wider scope into the next stage", () => {
+    const { passed } = runToDeclaredSplit();
+
+    expect(passed.run.state).toBe("needs_decision");
+    expect(passed.run.decision?.kind).toBe("scope-split");
+    expect(passed.run.currentStageId).toBe(STAGE_A);
+    expect(passed.effects.map((effect) => effect.type)).toEqual(["raise-decision"]);
+  });
+
+  it("scopes the run to its pull request and carries on when answered", () => {
+    const { passed, ids } = runToDeclaredSplit();
+
+    const answered = decide(context(passed.run, ids), {
+      type: "decision-answered",
+      decisionId: passed.run.decision!.decisionId,
+      answer: "proceed",
+      planDigest: passed.run.planDigest,
+    });
+
+    expect(answered.run.state).toBe("running");
+    expect(answered.run.scopeSplit?.acknowledgedAt).not.toBe(null);
+    expect(answered.run.currentStageId).toBe(STAGE_B);
+    expect(dispatchOf(answered.effects).stageId).toBe(STAGE_B);
+    // The stage that declared the split is not run again.
+    expect(answered.run.visits.filter((visit) => visit.stageId === STAGE_A)).toHaveLength(1);
+  });
+
+  it("asks once, not at every later stage", () => {
+    const { passed, ids } = runToDeclaredSplit();
+    const answered = decide(context(passed.run, ids), {
+      type: "decision-answered",
+      decisionId: passed.run.decision!.decisionId,
+      answer: "proceed",
+      planDigest: passed.run.planDigest,
+    });
+
+    const again = decide(context(answered.run, ids), {
+      type: "scope-split-declared",
+      digest: "digest-split-1" as Digest,
+      detail: "the same declaration, read again after a restart",
+    });
+
+    expect(again.effects).toEqual([]);
+    expect(again.run.revision).toBe(answered.run.revision);
+  });
+
+  it("asks again when a later stage declares a different split", () => {
+    const { passed, ids } = runToDeclaredSplit();
+    const answered = decide(context(passed.run, ids), {
+      type: "decision-answered",
+      decisionId: passed.run.decision!.decisionId,
+      answer: "proceed",
+      planDigest: passed.run.planDigest,
+    });
+
+    const settledB = decide(context(answered.run, ids), {
+      type: "settled",
+      settlement: {
+        operationId: dispatchOf(answered.effects).operationId,
+        outcome: "completed",
+        settled: true,
+        detail: null,
+        at: "2026-01-01T00:00:03.000Z",
+      },
+    });
+    const second = decide(context(settledB.run, ids), {
+      type: "scope-split-declared",
+      digest: "digest-split-2" as Digest,
+      detail: "and now the migration too",
+    });
+    const passedB = decide(context(second.run, ids), {
+      type: "gates-evaluated",
+      visitId: second.run.visits[1]!.visitId,
+      verdicts: [pass(GATE_SUMMARY_EXISTS)],
+    });
+
+    expect(passedB.run.state).toBe("needs_decision");
+    expect(passedB.run.decision?.kind).toBe("scope-split");
+  });
+
+  it("aborting a split fails the run rather than splitting it silently", () => {
+    const { passed, ids } = runToDeclaredSplit();
+
+    const aborted = decide(context(passed.run, ids), {
+      type: "decision-answered",
+      decisionId: passed.run.decision!.decisionId,
+      answer: "abort",
+      planDigest: passed.run.planDigest,
+    });
+
+    expect(aborted.run.state).toBe("failed");
+  });
+
+  it("names the pull request the run is scoped to", () => {
+    const ids = sequentialIds();
+    const withPullRequest = freshRun({
+      pullRequest: {
+        number: 42,
+        url: "https://example.test/pull/42",
+        headBranch: "workflowleaf/issue-7-1",
+        baseBranch: "main",
+        openedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const started = decide(context(withPullRequest, ids), { type: "start" });
+    const dispatch = dispatchOf(started.effects);
+    const settled = decide(context(started.run, ids), {
+      type: "settled",
+      settlement: {
+        operationId: dispatch.operationId,
+        outcome: "completed",
+        settled: true,
+        detail: null,
+        at: "2026-01-01T00:00:02.000Z",
+      },
+    });
+    const declared = decide(context(settled.run, ids), {
+      type: "scope-split-declared",
+      digest: "digest-split-1" as Digest,
+      detail: "needs a second one",
+    });
+    const passed = decide(context(declared.run, ids), {
+      type: "gates-evaluated",
+      visitId: declared.run.visits[0]!.visitId,
+      verdicts: [pass(GATE_ARTIFACT_EXISTS)],
+    });
+
+    expect(passed.run.decision?.detail).toContain("#42");
   });
 });

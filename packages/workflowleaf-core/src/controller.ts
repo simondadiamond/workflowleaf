@@ -22,6 +22,7 @@ import type { GateOutcome } from "./evidence.ts";
 import type {
   AttemptId,
   DecisionId,
+  Digest,
   GateId,
   Instant,
   OperationId,
@@ -69,6 +70,16 @@ export type ControllerInput =
       readonly type: "reconciled";
       readonly operationId: OperationId;
       readonly outcome: InspectOutcome;
+    }
+  | {
+      /**
+       * A stage declared that findings grew the story past this run's pull
+       * request. Recording it is separate from asking about it: the question
+       * is put when the run would otherwise move on to the next stage.
+       */
+      readonly type: "scope-split-declared";
+      readonly digest: Digest;
+      readonly detail: string;
     }
   | { readonly type: "cancel"; readonly reason: string }
   | { readonly type: "pause" }
@@ -304,6 +315,12 @@ function enterStage(context: ControllerContext, stageId: StageId): Decision {
   }
 }
 
+function describePullRequest(run: RunRecord): string {
+  return run.pullRequest === null
+    ? "the one pull request this run delivers"
+    : `pull request #${String(run.pullRequest.number)}`;
+}
+
 function advance(context: ControllerContext, passedVisit: StageVisit): Decision {
   const visit: StageVisit = {
     ...passedVisit,
@@ -312,6 +329,18 @@ function advance(context: ControllerContext, passedVisit: StageVisit): Decision 
     pendingGates: [],
   };
   const run = touch(context.run, context.now, { visits: replaceVisit(context.run, visit) });
+
+  // A declared split is asked about here rather than the moment it is written:
+  // the stage that noticed still gets to finish and have its gates checked,
+  // and the run stops before it carries the wider scope into another stage.
+  const split = run.scopeSplit;
+  if (split !== null && split.acknowledgedAt === null) {
+    return raise(
+      { ...context, run },
+      "scope-split",
+      `This story has outgrown ${describePullRequest(run)}. Scope this run to that pull request and open a second run for the rest, or abort.\n${split.detail}`,
+    );
+  }
 
   const next = nextStageAfter(context.plan, passedVisit.stageId);
   if (next === null) {
@@ -535,6 +564,22 @@ export function decide(context: ControllerContext, input: ControllerInput): Deci
 
     case "reconciled":
       return onReconciled(context, input.operationId, input.outcome);
+
+    case "scope-split-declared": {
+      // The same declaration read again after a restart is not a new question.
+      if (run.scopeSplit !== null && run.scopeSplit.digest === input.digest) return noChange(run);
+      return {
+        run: touch(run, context.now, {
+          scopeSplit: {
+            digest: input.digest,
+            detail: input.detail,
+            declaredAt: context.now,
+            acknowledgedAt: null,
+          },
+        }),
+        effects: [],
+      };
+    }
 
     case "cancel": {
       const visit = currentVisit(run);
@@ -775,6 +820,18 @@ function onDecisionAnswered(
   const visit = currentVisit(run);
   if (visit === undefined) return noChange(run);
 
+  // A scope split is answered about the run, not about the stage that raised
+  // it. Proceeding means "stay on this pull request", so the run carries on
+  // from the visit that already passed rather than repeating it.
+  if (pending.kind === "scope-split" && run.scopeSplit !== null) {
+    const acknowledged = touch(run, context.now, {
+      decision: null,
+      state: "running",
+      scopeSplit: { ...run.scopeSplit, acknowledgedAt: context.now },
+    });
+    return advance({ ...context, run: acknowledged }, visit);
+  }
+
   const cleared = touch(run, context.now, { decision: null, state: "running" });
 
   if (answer === "waive") {
@@ -846,6 +903,8 @@ export function initialRun(input: {
   readonly runId: RunRecord["runId"];
   readonly planDigest: RunRecord["planDigest"];
   readonly workspaceId: RunRecord["workspaceId"];
+  /** Null only when the profile does not permit opening one. */
+  readonly pullRequest?: RunRecord["pullRequest"];
   readonly capabilities: ExecutorCapabilities;
   readonly maxRepairCycles: number;
   readonly deadlineAt: Instant | null;
@@ -855,6 +914,8 @@ export function initialRun(input: {
     runId: input.runId,
     planDigest: input.planDigest,
     workspaceId: input.workspaceId,
+    pullRequest: input.pullRequest ?? null,
+    scopeSplit: null,
     state: "queued",
     revision: 0,
     currentStageId: null,

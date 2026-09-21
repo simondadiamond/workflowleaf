@@ -32,8 +32,10 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
 import { compileStagePrompt } from "./prompt.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
@@ -225,6 +227,38 @@ function summarize(detail: { readonly kind: string } & Record<string, unknown>):
   }
 }
 
+/**
+ * Where a stage says the story has outgrown this run's pull request.
+ *
+ * Only the stage doing the work can see that a finding grew the story, so it
+ * writes the reason here and code picks it up. It sits under `.workflowleaf/`,
+ * which snapshots exclude, so declaring a split does not disturb any gate.
+ */
+export const SCOPE_SPLIT_PATH = ".workflowleaf/scope-split.md";
+
+/**
+ * Reads a scope-split declaration, if the stage left one.
+ *
+ * Read after every settlement rather than once at the end: the finding that
+ * grows a story usually turns up while the work is being done, and the run
+ * should ask before it carries the wider scope any further.
+ */
+const scopeSplitDeclared = Effect.fnUntraced(function* (workspacePath: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const file = path.join(workspacePath, SCOPE_SPLIT_PATH);
+
+  if (!(yield* fs.exists(file).pipe(Effect.catchCause(() => Effect.succeed(false))))) return [];
+
+  const text = yield* fs.readFileString(file).pipe(Effect.catchCause(() => Effect.succeed("")));
+  const detail = text.trim();
+  if (detail.length === 0) return [];
+
+  return [
+    { type: "scope-split-declared", digest: digestOf(detail), detail },
+  ] as readonly ControllerInput[];
+});
+
 const stageRequestFor = Effect.fnUntraced(function* (input: {
   readonly record: RunRecord;
   readonly plan: RunPlan;
@@ -307,6 +341,7 @@ const perform = Effect.fnUntraced(function* (input: {
           handle: handle.handle,
         },
         { type: "settled", settlement },
+        ...(yield* scopeSplitDeclared(deps.workspacePath)),
       ] as readonly ControllerInput[];
     }
 
@@ -333,7 +368,10 @@ const perform = Effect.fnUntraced(function* (input: {
           deps.executor.awaitSettlement(handle),
         );
         yield* store.settleOperation(effect.operationId, settlement.outcome);
-        return [{ type: "settled", settlement }] as readonly ControllerInput[];
+        return [
+          { type: "settled", settlement },
+          ...(yield* scopeSplitDeclared(deps.workspacePath)),
+        ] as readonly ControllerInput[];
       }
 
       const handle: StageHandle = { operationId: effect.operationId, handle: previousHandle };
@@ -356,7 +394,10 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(outcome.handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
-      return [{ type: "settled", settlement }] as readonly ControllerInput[];
+      return [
+        { type: "settled", settlement },
+        ...(yield* scopeSplitDeclared(deps.workspacePath)),
+      ] as readonly ControllerInput[];
     }
 
     case "run-gates": {

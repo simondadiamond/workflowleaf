@@ -48,6 +48,7 @@ const seedRun = Effect.fnUntraced(function* (runId = "run-1") {
   yield* store.createRun({
     record,
     plan,
+    story: "story",
     profileName: "test",
     origin: { trigger: "manual", by: "test" },
     repoRoot: "/repo",
@@ -362,6 +363,88 @@ it.layer(testLayer)("run store", (it) => {
         done.map((run) => run.record.runId as string),
         ["run-list-a"],
       );
+    }),
+  );
+});
+
+const pullRequest = (number: number) => ({
+  number,
+  url: `https://example.test/pull/${String(number)}`,
+  headBranch: "workflowleaf/issue-7-1",
+  baseBranch: "main",
+  openedAt: "2026-01-01T00:00:00.000Z",
+});
+
+const seedStoryRun = Effect.fnUntraced(function* (input: {
+  readonly runId: string;
+  readonly story: string;
+  readonly pullRequestNumber?: number;
+}) {
+  const store = yield* RunStore;
+  const record: RunRecord = {
+    ...freshRecord(input.runId),
+    pullRequest:
+      input.pullRequestNumber === undefined ? null : pullRequest(input.pullRequestNumber),
+  };
+  yield* store.createRun({
+    record,
+    plan,
+    story: input.story,
+    profileName: "test",
+    origin: { trigger: "manual", by: "test" },
+    repoRoot: "/repo",
+    baseRevision: "abc123",
+  });
+  return record;
+});
+
+it.layer(testLayer)("a run is a story and a pull request", (it) => {
+  it.effect("counts the runs a story already has, so the next one gets the next ordinal", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* seedStoryRun({ runId: "issue-7-1", story: "issue-7" });
+      yield* seedStoryRun({ runId: "issue-7-2", story: "issue-7" });
+      yield* seedStoryRun({ runId: "issue-8-1", story: "issue-8" });
+
+      assert.strictEqual(yield* store.countRunsForStory("issue-7"), 2);
+      assert.strictEqual(yield* store.countRunsForStory("issue-8"), 1);
+      assert.strictEqual(yield* store.countRunsForStory("issue-9"), 0);
+    }),
+  );
+
+  it.effect("finds the run that owns a pull request", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* seedStoryRun({ runId: "issue-11-1", story: "issue-11", pullRequestNumber: 101 });
+      yield* seedStoryRun({ runId: "issue-11-2", story: "issue-11", pullRequestNumber: 102 });
+
+      const found = yield* store.findRunByPullRequest(102);
+      assert.isTrue(Option.isSome(found));
+      assert.strictEqual(Option.getOrThrow(found).record.runId as string, "issue-11-2");
+      assert.strictEqual(Option.getOrThrow(found).story, "issue-11");
+
+      assert.isTrue(Option.isNone(yield* store.findRunByPullRequest(999)));
+    }),
+  );
+
+  it.effect("keeps the pull request lookup in step with the run it is committed on", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const record = yield* seedStoryRun({ runId: "issue-12-1", story: "issue-12" });
+      const lease = yield* leaseFor("issue-12-1", "worker-a");
+
+      assert.isTrue(Option.isNone(yield* store.findRunByPullRequest(77)));
+
+      yield* store.commit({
+        previous: record,
+        next: { ...record, pullRequest: pullRequest(77), revision: 1, updatedAt: "t1" },
+        transitionInput: {},
+        effects: [],
+        lease,
+      });
+
+      const found = yield* store.findRunByPullRequest(77);
+      assert.strictEqual(Option.getOrThrow(found).record.runId as string, "issue-12-1");
     }),
   );
 });
