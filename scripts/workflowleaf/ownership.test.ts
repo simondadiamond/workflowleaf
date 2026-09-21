@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   findOwnershipViolations,
+  findUpstreamCapViolation,
   parseNameStatusZ,
   upstreamEditCount,
   type Ownership,
@@ -11,9 +12,17 @@ const ownership: Ownership = {
   upstreamBase: "7445aa733ada33e45289e5aa5055f79142556513",
   ownedPrefixes: ["packages/workflowleaf-core/", "scripts/workflowleaf/"],
   ownedFiles: ["packages/contracts/src/workflowleaf.ts"],
+  maxUpstreamEdits: 1,
   allowedUpstreamEdits: [
     { path: "pnpm-lock.yaml", purpose: "workspace join", removeWhen: "packages removed" },
   ],
+  orientation: {
+    path: "scripts/workflowleaf/ORIENTATION.md",
+    layoutPaths: ["packages/workflowleaf-core/src/contracts.ts"],
+    escapeHatch: "orientation-unchanged:",
+    reason: "layout moved",
+  },
+  enablement: { packagePrefixes: ["@t3tools/workflowleaf"], reason: "C14" },
   importBoundaries: [],
 };
 
@@ -99,5 +108,33 @@ describe("git name-status parsing", () => {
       { path: "apps/server/src/old.ts", kind: "deleted" },
       { path: "apps/server/src/new.ts", kind: "added" },
     ]);
+  });
+});
+
+describe("upstream edit cap", () => {
+  it("accepts an allow-list at the cap", () => {
+    expect(findUpstreamCapViolation(ownership)).toBeUndefined();
+  });
+
+  it("rejects an allow-list that has outgrown the cap", () => {
+    const drifted: Ownership = {
+      ...ownership,
+      allowedUpstreamEdits: [
+        ...ownership.allowedUpstreamEdits,
+        { path: "package.json", purpose: "a script", removeWhen: "never, probably" },
+      ],
+    };
+
+    expect(findUpstreamCapViolation(drifted)).toContain("package.json");
+  });
+
+  it("counts recorded entries, not files that happen to be dirty", () => {
+    // Nothing is dirty here and the cap still fails: the list is what accumulates.
+    const drifted: Ownership = {
+      ...ownership,
+      maxUpstreamEdits: 0,
+    };
+
+    expect(findUpstreamCapViolation(drifted)).toContain("maxUpstreamEdits is 0");
   });
 });

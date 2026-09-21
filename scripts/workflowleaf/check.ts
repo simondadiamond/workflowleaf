@@ -6,8 +6,10 @@
  *   node scripts/workflowleaf/check.ts --base <rev>
  *
  * Exits non-zero when the fork edits an upstream file that is not listed in
- * ownership.json, or when a WorkflowLeaf package imports across a boundary it
- * is supposed to respect.
+ * ownership.json, when the allow-list outgrows its cap, when a WorkflowLeaf
+ * package imports across a boundary it is supposed to respect, when a commit
+ * moves the layout without updating the orientation, or when T3 has come to
+ * depend on WorkflowLeaf.
  */
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -22,10 +24,18 @@ import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import { findEnablementViolations, formatEnablementReport, type Manifest } from "./enablement.ts";
 import { findImportViolations, formatImportReport, type SourceFile } from "./imports.ts";
 import {
+  findOrientationViolations,
+  formatOrientationReport,
+  type CommitUnderReview,
+} from "./orientation.ts";
+import {
   findOwnershipViolations,
+  findUpstreamCapViolation,
   formatOwnershipReport,
+  isOwned,
   parseNameStatusZ,
   upstreamEditCount,
   type Change,
@@ -125,16 +135,114 @@ const collectSources = Effect.fnUntraced(function* (repoRoot: string, roots: rea
   return files;
 });
 
-const decodeOwnership = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown));
 
-const checkOwnership = Effect.fnUntraced(function* (baseOverride: string | undefined) {
+const resolves = (repoRoot: string, rev: string) =>
+  git(repoRoot, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]).pipe(
+    Effect.as(true),
+    Effect.catchTag("WlGitFailed", () => Effect.succeed(false)),
+  );
+
+/**
+ * The trunk this branch will merge into. `origin/main` is the fork trunk and a
+ * local `main` is routinely stale, so the remote ref wins when both exist.
+ */
+const ORIENTATION_BASE_CANDIDATES = ["origin/main", "main"] as const;
+
+/**
+ * Each commit in `base..HEAD` is judged on its own diff and its own message, so
+ * one commit's escape hatch cannot excuse another. See orientation.ts.
+ */
+const checkOrientation = Effect.fnUntraced(function* (
+  repoRoot: string,
+  ownership: Ownership,
+  explicitBase: string | undefined,
+) {
+  let base = explicitBase;
+  if (base === undefined) {
+    for (const candidate of ORIENTATION_BASE_CANDIDATES) {
+      if (yield* resolves(repoRoot, candidate)) {
+        base = candidate;
+        break;
+      }
+    }
+    if (base === undefined) {
+      yield* Console.log(
+        `workflowleaf orientation: skipped, no trunk to compare against (tried ${ORIENTATION_BASE_CANDIDATES.join(", ")}). Pass --orientation-base <rev>.`,
+      );
+      return false;
+    }
+  } else if (!(yield* resolves(repoRoot, base))) {
+    // An explicit base that does not resolve is a broken invocation, not a
+    // reason to pass. CI names its base, so CI cannot go quietly green.
+    return yield* new OwnershipCheckFailed({
+      report: `Orientation base ${base} is not in this repository.`,
+    });
+  }
+
+  // Merges are skipped: their changes arrive from commits judged on their own.
+  const shas = (yield* git(repoRoot, ["log", "--no-merges", "--format=%H", `${base}..HEAD`]))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const commits: CommitUnderReview[] = [];
+  for (const sha of shas) {
+    commits.push({
+      sha,
+      subject: (yield* git(repoRoot, ["log", "-1", "--format=%s", sha])).trim(),
+      message: yield* git(repoRoot, ["log", "-1", "--format=%B", sha]),
+      changes: parseNameStatusZ(
+        yield* git(repoRoot, ["diff-tree", "--no-commit-id", "--name-status", "-r", "-z", sha]),
+      ),
+    });
+  }
+
+  const violations = findOrientationViolations(ownership.orientation, commits);
+  yield* Console.log(formatOrientationReport(violations));
+  return violations.length > 0;
+});
+
+/** Workspace manifests outside every owned prefix, decoded for the C14 rule. */
+const checkEnablement = Effect.fnUntraced(function* (repoRoot: string, ownership: Ownership) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+
+  const tracked = (yield* git(repoRoot, ["ls-files", "-z", "--", "*package.json"]))
+    .split("\0")
+    .filter((entry) => entry.length > 0);
+
+  const manifests: Manifest[] = [];
+  for (const relative of tracked) {
+    if (isOwned(ownership, relative)) continue;
+    const parsed = decodeJson(yield* fs.readFileString(path.join(repoRoot, relative)));
+    if (parsed._tag === "Failure") continue;
+    manifests.push({ path: relative, manifest: parsed.success });
+  }
+
+  const upstreamEdits: SourceFile[] = [];
+  for (const entry of ownership.allowedUpstreamEdits) {
+    const absolute = path.join(repoRoot, entry.path);
+    if (!(yield* fs.exists(absolute))) continue;
+    upstreamEdits.push({ path: entry.path, text: yield* fs.readFileString(absolute) });
+  }
+
+  const violations = findEnablementViolations(ownership.enablement, manifests, upstreamEdits);
+  yield* Console.log(formatEnablementReport(violations));
+  return violations.length > 0;
+});
+
+const checkOwnership = Effect.fnUntraced(function* (
+  baseOverride: string | undefined,
+  orientationBase: string | undefined,
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
   const here = path.dirname(new URL(import.meta.url).pathname);
   const repoRoot = path.resolve(here, "..", "..");
 
-  const parsed = decodeOwnership(yield* fs.readFileString(path.join(here, "ownership.json")));
+  const parsed = decodeJson(yield* fs.readFileString(path.join(here, "ownership.json")));
   if (parsed._tag === "Failure") {
     return yield* new OwnershipCheckFailed({ report: `ownership.json is not valid JSON.` });
   }
@@ -153,6 +261,7 @@ const checkOwnership = Effect.fnUntraced(function* (baseOverride: string | undef
 
   const changes = yield* collectChanges(repoRoot, base);
   const ownershipViolations = findOwnershipViolations(ownership, changes);
+  const capViolation = findUpstreamCapViolation(ownership);
   const sources = yield* collectSources(
     repoRoot,
     ownership.importBoundaries.map((boundary) => boundary.root),
@@ -160,12 +269,27 @@ const checkOwnership = Effect.fnUntraced(function* (baseOverride: string | undef
   const importViolations = findImportViolations(ownership.importBoundaries, sources);
 
   yield* Console.log(formatOwnershipReport(ownershipViolations));
+  yield* Console.log(
+    capViolation === undefined
+      ? `workflowleaf upstream cap: ${ownership.allowedUpstreamEdits.length}/${ownership.maxUpstreamEdits} claimed`
+      : `workflowleaf upstream cap: exceeded\n      ${capViolation}`,
+  );
   yield* Console.log(formatImportReport(importViolations));
+
+  const enablementFailed = yield* checkEnablement(repoRoot, ownership);
+  const orientationFailed = yield* checkOrientation(repoRoot, ownership, orientationBase);
+
   yield* Console.log(
     `workflowleaf: ${changes.length} changed path(s) since ${base.slice(0, 12)}, ${upstreamEditCount(ownership, changes)} upstream-owned.`,
   );
 
-  if (ownershipViolations.length > 0 || importViolations.length > 0) {
+  if (
+    ownershipViolations.length > 0 ||
+    capViolation !== undefined ||
+    importViolations.length > 0 ||
+    enablementFailed ||
+    orientationFailed
+  ) {
     return yield* new OwnershipCheckFailed({ report: "Fork ownership check failed." });
   }
 });
@@ -177,9 +301,20 @@ export const workflowleafCheckCommand = Command.make(
       Flag.withDescription("Compare against this revision instead of the recorded upstream base."),
       Flag.optional,
     ),
+    orientationBase: Flag.String("orientation-base").pipe(
+      Flag.withDescription(
+        "Trunk the orientation rule diffs against. Defaults to origin/main, then main.",
+      ),
+      Flag.optional,
+    ),
   },
-  ({ base }) => checkOwnership(Option.getOrUndefined(base)),
-).pipe(Command.withDescription("Check fork ownership and WorkflowLeaf import boundaries."));
+  ({ base, orientationBase }) =>
+    checkOwnership(Option.getOrUndefined(base), Option.getOrUndefined(orientationBase)),
+).pipe(
+  Command.withDescription(
+    "Check fork ownership, import boundaries, orientation freshness and C14 enablement.",
+  ),
+);
 
 if (import.meta.main) {
   Command.run(workflowleafCheckCommand, { version: "0.1.0" }).pipe(

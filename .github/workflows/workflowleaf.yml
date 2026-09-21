@@ -50,8 +50,12 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Check fork ownership and import boundaries
-        run: node scripts/workflowleaf/check.ts
+      # The orientation rule diffs against the branch this PR targets; on a push
+      # the range is empty and the rule has nothing to judge, which is correct.
+      - name: Check fork ownership, boundaries, orientation and enablement
+        run: |
+          node scripts/workflowleaf/check.ts \
+            ${{ github.base_ref && format('--orientation-base origin/{0}', github.base_ref) || '' }}
 
       - name: Typecheck
         run: |

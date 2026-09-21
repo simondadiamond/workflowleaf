@@ -9,6 +9,7 @@
     "apps/web/src/features/workflowleaf/"
   ],
   "ownedFiles": ["packages/contracts/src/workflowleaf.ts", ".github/workflows/workflowleaf.yml"],
+  "maxUpstreamEdits": 1,
   "allowedUpstreamEdits": [
     {
       "path": "pnpm-lock.yaml",
@@ -16,6 +17,23 @@
       "removeWhen": "WorkflowLeaf packages are removed from the workspace."
     }
   ],
+  "orientation": {
+    "path": "scripts/workflowleaf/ORIENTATION.md",
+    "layoutPaths": [
+      "packages/workflowleaf-core/src/contracts.ts",
+      "packages/workflowleaf-core/src/state.ts",
+      "packages/workflowleaf-runtime/src/cli.ts",
+      "packages/workflowleaf-runtime/src/profile.ts",
+      "packages/workflowleaf-runtime/src/adapters/",
+      "scripts/workflowleaf/ownership.json"
+    ],
+    "escapeHatch": "orientation-unchanged:",
+    "reason": "Onboarding material that lies is worse than none. A commit that moves the domain shape, the CLI commands, the profile schema, which executors exist, or these rules must say so in the orientation, or say in its message why it did not."
+  },
+  "enablement": {
+    "packagePrefixes": ["@t3tools/workflowleaf"],
+    "reason": "Conformance case C14: deleting the WorkflowLeaf packages must leave T3 building. No upstream manifest may depend on one, and no allow-listed upstream edit may import one. Sharpen this when a host binding lands under apps/server/src/workflowleaf/."
+  },
   "importBoundaries": [
     {
       "id": "core-is-portable",
