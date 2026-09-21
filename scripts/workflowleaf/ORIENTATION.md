@@ -168,6 +168,15 @@ named by the worktree, `t3code/<something>`, and nothing depends on the name.
 The fork checks run on pull requests and on pushes to `main`, so a pushed branch
 gets no CI until it has a pull request open.
 
+**T3's own CI never runs on this fork, and waiting for it wastes your time.**
+Every job in `.github/workflows/ci.yml` asks for a Blacksmith runner
+(`blacksmith-8vcpu-ubuntu-2404` and friends), a paid service the upstream
+organisation subscribes to and this fork does not. Those jobs queue forever;
+no CI run here has ever completed. The WorkflowLeaf workflow is on
+`ubuntu-latest`, which is the only reason it runs, so keep it that way. Check
+`runs-on` before believing a queued job will start. The WorkflowLeaf job is
+the signal that counts, and repo-wide checks stay a local, scoped exercise.
+
 **Opening a pull request against `main` is pre-authorized here.** AGENTS.md
 tells agents never to open one unless asked; Simon has asked, standingly, for
 this fork. Open it once the work is ready and let CI run the gates. This covers
