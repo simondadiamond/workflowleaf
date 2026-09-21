@@ -16,6 +16,7 @@ on:
       - ".github/workflows/workflowleaf.yml"
   push:
     branches:
+      - main
       - "workflowleaf/**"
 
 permissions:

@@ -1,6 +1,6 @@
 {
   "$comment": "Machine-readable fork ownership record. See scripts/workflowleaf/README.md.",
-  "upstreamBase": "7445aa733ada33e45289e5aa5055f79142556513",
+  "upstreamBase": "48f1a2527a4dd41d5c3d5c5e377223267c486c78",
   "ownedPrefixes": [
     "packages/workflowleaf-core/",
     "packages/workflowleaf-runtime/",
