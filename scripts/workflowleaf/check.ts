@@ -24,7 +24,12 @@ import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { findEnablementViolations, formatEnablementReport, type Manifest } from "./enablement.ts";
+import {
+  findEnablementViolations,
+  formatEnablementReport,
+  isWorkspaceManifest,
+  type Manifest,
+} from "./enablement.ts";
 import { findImportViolations, formatImportReport, type SourceFile } from "./imports.ts";
 import {
   findOrientationViolations,
@@ -215,7 +220,12 @@ const checkEnablement = Effect.fnUntraced(function* (repoRoot: string, ownership
   const manifests: Manifest[] = [];
   for (const relative of tracked) {
     if (isOwned(ownership, relative)) continue;
-    const parsed = decodeJson(yield* fs.readFileString(path.join(repoRoot, relative)));
+    if (!isWorkspaceManifest(relative)) continue;
+    const absolute = path.join(repoRoot, relative);
+    // Tracked is not present: CI sparse-checks-out, so a path from git
+    // ls-files may have no file behind it.
+    if (!(yield* fs.exists(absolute))) continue;
+    const parsed = decodeJson(yield* fs.readFileString(absolute));
     if (parsed._tag === "Failure") continue;
     manifests.push({ path: relative, manifest: parsed.success });
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { dependencyNames, findEnablementViolations } from "./enablement.ts";
+import { dependencyNames, findEnablementViolations, isWorkspaceManifest } from "./enablement.ts";
 import type { EnablementRule } from "./ownership.ts";
 
 const rule: EnablementRule = {
@@ -104,5 +104,28 @@ describe("dependency name extraction", () => {
     expect(dependencyNames(null)).toEqual([]);
     expect(dependencyNames("{}")).toEqual([]);
     expect(dependencyNames({ dependencies: "not a record" })).toEqual([]);
+  });
+});
+
+describe("which tracked manifests get scanned", () => {
+  it("scans a real workspace manifest", () => {
+    expect(isWorkspaceManifest("apps/server/package.json")).toBe(true);
+    expect(isWorkspaceManifest("package.json")).toBe(true);
+  });
+
+  it("skips vendored reference checkouts", () => {
+    // .repos/ is read-only reference material, never built or imported, and CI
+    // sparse-checks-out without it, so these paths are tracked but absent.
+    expect(isWorkspaceManifest(".repos/alchemy-effect/benchmark/package.json")).toBe(false);
+    expect(isWorkspaceManifest(".repos/effect-smol/package.json")).toBe(false);
+  });
+
+  it("skips anything under node_modules, nested included", () => {
+    expect(isWorkspaceManifest("node_modules/effect/package.json")).toBe(false);
+    expect(isWorkspaceManifest("apps/web/node_modules/left-pad/package.json")).toBe(false);
+  });
+
+  it("ignores a path that is not a manifest", () => {
+    expect(isWorkspaceManifest("apps/server/src/bin.ts")).toBe(false);
   });
 });

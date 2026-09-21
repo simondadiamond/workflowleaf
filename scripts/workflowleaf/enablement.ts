@@ -51,6 +51,25 @@ export function dependencyNames(manifest: unknown): string[] {
 
 const SOURCE_EXTENSIONS = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
+/** Tracked paths whose manifests say nothing about whether T3 builds. */
+const UNSCANNED_MANIFEST_PREFIXES = [".repos/", "node_modules/"];
+
+/**
+ * Whether a tracked `package.json` is part of this workspace.
+ *
+ * `.repos/` holds vendored read-only reference checkouts that are never built
+ * or imported, so their dependencies cannot affect whether T3 builds without
+ * WorkflowLeaf. CI also sparse-checks-out without them, which means they are
+ * tracked in git and absent from disk; the caller still needs its own
+ * existence guard, since being tracked never guarantees being present.
+ */
+export function isWorkspaceManifest(path: string): boolean {
+  if (!path.endsWith("package.json")) return false;
+  return !UNSCANNED_MANIFEST_PREFIXES.some(
+    (prefix) => path.startsWith(prefix) || path.includes(`/${prefix}`),
+  );
+}
+
 /**
  * `manifests` and `upstreamEdits` are the upstream-owned ones only; the caller
  * filters. Non-source allow-listed files are skipped for the import rule,
