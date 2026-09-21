@@ -14,10 +14,14 @@ on:
       - "packages/workflowleaf-runtime/**"
       - "scripts/workflowleaf/**"
       - ".github/workflows/workflowleaf.yml"
+  # Every branch reaches main through a pull request, so the pull_request
+  # trigger covers feature work whatever it is named. main is the safety net
+  # that catches an upstream merge, which is the one push that can change
+  # upstream files without a review. Naming a branch pattern here went stale
+  # once already when the workflowleaf/** scheme was retired.
   push:
     branches:
       - main
-      - "workflowleaf/**"
 
 permissions:
   contents: read
