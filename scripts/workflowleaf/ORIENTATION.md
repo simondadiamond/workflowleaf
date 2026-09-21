@@ -157,6 +157,11 @@ git -c user.name="Simon Paris" -c user.email="simondadiamond@gmail.com" commit .
 The repo is already configured this way. Conventional commit titles. Never push
 to `upstream`.
 
+Push work to `origin` as it lands rather than sitting on it. Work branches are
+named by the worktree, `t3code/<something>`, and nothing depends on the name.
+The fork checks run on pull requests and on pushes to `main`, so a pushed branch
+gets no CI until it has a pull request open.
+
 WorkflowLeaf is `main` now. It is the branch the work lands on, and
 `git merge upstream/main` into it stays a normal merge: what keeps upstream
 mergeable is the ownership gate, not a side branch. There is no
