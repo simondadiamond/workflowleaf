@@ -8,9 +8,11 @@
  * exists for, and they are the ones a live run reproduces least reliably.
  */
 import type {
+  AnswerOutcome,
   ContinueOutcome,
   ExecutorPort,
   InspectOutcome,
+  ProviderRequest,
   StageHandle,
   StageRequest,
   StageSettlement,
@@ -157,6 +159,17 @@ export class FakeExecutor implements ExecutorPort {
   awaitSettlement(handle: StageHandle): Promise<StageSettlement> {
     const record = this.#dispatched.get(handle.operationId as string);
     return Promise.resolve(this.#settlementFor(handle.operationId, record?.scripted ?? {}));
+  }
+
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return Promise.resolve([]);
+  }
+
+  answerRequest(): Promise<AnswerOutcome> {
+    return Promise.resolve({
+      kind: "not-pending",
+      reason: "This executor has no provider to ask.",
+    });
   }
 
   #settlementFor(operationId: OperationId, scripted: ScriptedStage): StageSettlement {

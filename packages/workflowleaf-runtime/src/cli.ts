@@ -27,6 +27,7 @@ import {
   PROGRESS_LOG,
   resumeRun,
   runDirFor,
+  stageInFlight,
   startRun,
   summarizeRuns,
 } from "./run.ts";
@@ -632,6 +633,88 @@ const decideCommand = Command.make(
   }),
 ).pipe(Command.withDescription("Answer the decision a run is waiting on."));
 
+const requestsCommand = Command.make(
+  "requests",
+  { run: runIdArgument, profile: profileFlag },
+  Effect.fnUntraced(function* ({ run, profile: profileName }) {
+    const stage = yield* stageInFlight(run as never, yield* loadProfile(profileName));
+    if (stage === null) {
+      yield* Console.log(`${run}: no stage is running, so no provider is asking.`);
+      return;
+    }
+    const requests = yield* Effect.promise(() => stage.executor.pendingRequests(stage.handle));
+    if (requests.length === 0) {
+      yield* Console.log(`${run} ${stage.stageId}: the provider is not waiting on an approval.`);
+      return;
+    }
+    for (const request of requests) {
+      yield* Console.log(
+        `${request.expired ? "expired " : "waiting "} ${request.requestId}  ${request.detail}`,
+      );
+    }
+  }),
+).pipe(
+  Command.withDescription(
+    "List the approvals the provider is waiting on in the run's current stage.",
+  ),
+);
+
+const answerCommand = Command.make(
+  "answer",
+  {
+    run: runIdArgument,
+    request: Argument.String("request").pipe(
+      Argument.withDescription("The request id `wl requests` shows."),
+    ),
+    decision: Argument.String("decision").pipe(Argument.withDescription("accept | decline")),
+    profile: profileFlag,
+  },
+  Effect.fnUntraced(function* ({ run, request, decision, profile: profileName }) {
+    if (decision !== "accept" && decision !== "decline") {
+      yield* Console.error("The decision must be accept or decline.");
+      return;
+    }
+    const stage = yield* stageInFlight(run as never, yield* loadProfile(profileName));
+    if (stage === null) {
+      yield* Console.error(`${run}: no stage is running, so there is nothing to answer.`);
+      return;
+    }
+    const outcome = yield* Effect.promise(() =>
+      stage.executor.answerRequest(stage.handle, request, decision),
+    );
+    switch (outcome.kind) {
+      case "answered":
+        yield* Console.log(`${request}: ${decision === "accept" ? "accepted" : "declined"}.`);
+        return;
+      case "expired":
+        return yield* new RequestNotAnswered({
+          requestId: request,
+          state: "expired",
+          reason: outcome.reason,
+        });
+      case "not-pending":
+        return yield* new RequestNotAnswered({
+          requestId: request,
+          state: "not pending",
+          reason: outcome.reason,
+        });
+    }
+  }),
+).pipe(
+  Command.withDescription(
+    "Accept or decline an approval the provider is waiting on. An expired one is reported, never replayed.",
+  ),
+);
+
+export class RequestNotAnswered extends Schema.TaggedError<RequestNotAnswered>()(
+  "WlRequestNotAnswered",
+  { requestId: Schema.String, state: Schema.String, reason: Schema.String },
+) {
+  override get message(): string {
+    return `${this.requestId} is ${this.state}: ${this.reason}`;
+  }
+}
+
 /** A replay that disagreed with the recorded history. The exit status is the point. */
 export class ReplayDiverged extends Schema.TaggedError<ReplayDiverged>()("WlReplayDiverged", {
   runs: Schema.Array(Schema.String),
@@ -685,6 +768,8 @@ export const wlCommand = Command.make("wl").pipe(
     pauseCommand,
     cancelCommand,
     decideCommand,
+    requestsCommand,
+    answerCommand,
     errorsCommand,
     replayCommand,
     skillsCommand,

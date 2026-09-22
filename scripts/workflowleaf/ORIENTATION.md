@@ -257,6 +257,8 @@ node packages/workflowleaf-runtime/src/bin.ts status --pr 1234
 node packages/workflowleaf-runtime/src/bin.ts resume <run> --profile <name> [--poll 120]
 node packages/workflowleaf-runtime/src/bin.ts errors --since 30d
 node packages/workflowleaf-runtime/src/bin.ts replay [run]
+node packages/workflowleaf-runtime/src/bin.ts requests <run> --profile <name>
+node packages/workflowleaf-runtime/src/bin.ts answer <run> <request> accept|decline --profile <name>
 ```
 
 The playbook directory is optional. Without one, the profile's
@@ -318,6 +320,17 @@ then exchange the pairing token at `POST /oauth/token`.
 active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
 and command gates use it, and each stage prompt tells the agent to. The active
 account is never switched.
+
+`permissions` holds exactly four flags, all false unless granted:
+`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`. They
+cover what WorkflowLeaf itself does outside the worktree. What an agent may do
+inside it is the executor's `runtimeMode` (T3's own four modes) and the
+provider's approvals. With `approval-required`, a stage's provider asks before
+acting: `wl requests <run>` lists what it is waiting on and `wl answer` accepts
+or declines, or answer in T3 itself. A request whose provider session ended
+without closing it is shown as expired and never answered as if it were live.
+A profile that still carries the retired `deploy` flag loads; the key is
+dropped.
 
 `fbm` drives the live T3 install against FB-marketplace-uploader and opens
 draft pull requests against `staging`. `sandbox-live` drives the live install

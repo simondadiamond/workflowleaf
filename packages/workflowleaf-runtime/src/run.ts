@@ -16,6 +16,7 @@
  * runs, and both are on the record from the first write.
  */
 import {
+  currentVisit,
   initialRun,
   type ControllerInput,
   type DecisionPort,
@@ -25,6 +26,7 @@ import {
   type RunId,
   type RunPlan,
   type RunRecord,
+  type StageHandle,
 } from "@t3tools/workflowleaf-core";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -242,6 +244,35 @@ export const answeredFromCli = Effect.fnUntraced(function* (
   if (port !== null && Option.isSome(row) && row.value.askedAt !== null) {
     yield* Effect.tryPromise(() => port.withdraw(request)).pipe(Effect.ignore);
   }
+});
+
+/**
+ * The executor and the context of the stage a run is in, for reaching the
+ * provider while the stage is still running. Null when no stage is in flight.
+ */
+export const stageInFlight = Effect.fnUntraced(function* (runId: RunId, profile: Profile) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId);
+  if (Option.isNone(loaded)) return yield* new RunError({ message: `No run ${runId}.` });
+  const workspace = yield* store.findWorkspace(runId);
+  const visit = currentVisit(loaded.value.record);
+  const operation = visit?.operation ?? null;
+  if (Option.isNone(workspace) || operation === null) return null;
+  // The run record learns the handle only once the stage settles. The
+  // operation row has it from the moment the executor acknowledged the
+  // dispatch, which is when a provider can start asking.
+  const row = yield* store.findOperation(operation.operationId);
+  const handle = Option.isSome(row) ? row.value.handle : operation.handle;
+  if (handle === null) return null;
+  const executor = yield* executorFor(profile, {
+    workspacePath: workspace.value.path,
+    branch: workspace.value.branch,
+  });
+  return {
+    executor,
+    stageId: visit!.stageId as string,
+    handle: { operationId: operation.operationId, handle } satisfies StageHandle,
+  };
 });
 
 /** Appended as the run moves, under the run's directory. Readable while another process drives it. */

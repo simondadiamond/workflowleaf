@@ -10,11 +10,13 @@ import { assert, it } from "@effect/vitest";
 import {
   decide,
   initialRun,
+  type AnswerOutcome,
   type ContinueOutcome,
   type ExecutorCapabilities,
   type ExecutorPort,
   type InspectOutcome,
   type OperationId,
+  type ProviderRequest,
   type RunId,
   type RunPlan,
   type StageHandle,
@@ -171,6 +173,17 @@ class WritingExecutor implements ExecutorPort {
       settled: this.#settled,
       detail: null,
       at: "2026-01-01T00:00:00.000Z",
+    });
+  }
+
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return Promise.resolve([]);
+  }
+
+  answerRequest(): Promise<AnswerOutcome> {
+    return Promise.resolve({
+      kind: "not-pending",
+      reason: "This executor has no provider to ask.",
     });
   }
 }
