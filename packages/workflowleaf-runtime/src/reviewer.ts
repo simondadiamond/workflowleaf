@@ -305,12 +305,9 @@ export const runReview = Effect.fnUntraced(function* (input: {
           blocking: input.gate.blockingSeverities,
           material,
         });
-        const result = yield* complete(
-          input.reviewer.executable,
-          args,
-          input.workspacePath,
-          prompt,
-        ).pipe(
+        const result = yield* complete(input.reviewer.executable, args, input.workspacePath, {
+          input: prompt,
+        }).pipe(
           Effect.timeoutOption(`${input.reviewer.timeoutMs} millis`),
           Effect.catchCause((cause) =>
             Effect.fail(

@@ -28,21 +28,17 @@ to build.
 
 ## 0. Setup
 
-`wl` is `scripts/workflowleaf/bin/wl` in a checkout of the fork. It finds
-its own checkout and puts Node 24 first, so it works from any directory,
-including the repository you are running a story in. If `wl` is not on the
-PATH, link it once:
-
-```bash
-ln -s ~/Repos/t3code/scripts/workflowleaf/bin/wl ~/.local/bin/wl
-```
-
-The current directory does not matter: a run operates on the repository its
+`wl` below means `~/Repos/t3code/scripts/workflowleaf/bin/wl`. Call it by that
+full path. It finds its own checkout and puts Node 24 first, so it works from
+any directory, including the repository you are running a story in. The
+current directory does not matter: a run operates on the repository its
 profile names.
 
-The profile is `fbm` unless Simon names another one. Every command that opens
-or reads a pull request calls `gh`, and `gh` acts as its active account. Make
-sure that account can push to the profile's repository before starting.
+The profile is `fbm` unless Simon names another one. A profile that names
+`ghConfigDir` has its own GitHub account. FBM's is `autoParis`, in
+`~/.fbm/gh`. The run uses it for every `gh` call and tells each stage to. Do
+the same for any `gh` command you run yourself for that story, and never switch
+the active account.
 
 ## 1. Read the story before you start anything
 
@@ -65,7 +61,7 @@ the profile names, so the repository and the account both come from the checkout
 rather than from a slug you assembled:
 
 ```bash
-cd "<repoRoot from the profile>" && gh issue view <N> --comments
+cd "<repoRoot from the profile>" && GH_CONFIG_DIR="<ghConfigDir, if the profile names one>" gh issue view <N> --comments
 ```
 
 Do not start when any of these hold. Report which one, and stop:

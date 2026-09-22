@@ -17,6 +17,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { complete } from "./exec.ts";
+import { ghEnvironment } from "./pullRequest.ts";
 import { revParse } from "./git.ts";
 
 export type ExternalState =
@@ -258,11 +259,12 @@ export function judgeExternal(input: {
 }
 
 /** `owner/name` of the repository `gh` resolves from the worktree's remote. */
-const repositoryOf = Effect.fnUntraced(function* (cwd: string) {
+const repositoryOf = Effect.fnUntraced(function* (cwd: string, ghConfigDir?: string) {
   const result = yield* complete(
     "gh",
     ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
     cwd,
+    { env: ghEnvironment(ghConfigDir) },
   );
   const name = result.stdout.trim();
   if (result.exitCode !== 0 || !name.includes("/")) return null;
@@ -278,6 +280,7 @@ export const observeExternal = Effect.fnUntraced(function* (input: {
   readonly gate: Extract<GateDefinition, { type: "external" }>;
   readonly workspacePath: string;
   readonly pullRequestNumber: number | null;
+  readonly ghConfigDir?: string | undefined;
 }) {
   if (!(KNOWN_EXTERNAL_CHECKS as readonly string[]).includes(input.gate.check)) {
     return {
@@ -305,7 +308,7 @@ export const observeExternal = Effect.fnUntraced(function* (input: {
   }
   const localHead = yield* revParse(input.workspacePath, "HEAD");
 
-  const repository = yield* repositoryOf(input.workspacePath);
+  const repository = yield* repositoryOf(input.workspacePath, input.ghConfigDir);
   if (repository === null) {
     return {
       state: "unavailable",
@@ -329,6 +332,7 @@ export const observeExternal = Effect.fnUntraced(function* (input: {
       `number=${String(input.pullRequestNumber)}`,
     ],
     input.workspacePath,
+    { env: ghEnvironment(input.ghConfigDir) },
   );
   if (result.exitCode !== 0) {
     return {

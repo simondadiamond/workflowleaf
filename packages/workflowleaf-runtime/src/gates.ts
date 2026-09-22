@@ -62,6 +62,8 @@ export interface GateContext {
   readonly artifacts?: readonly string[] | undefined;
   /** Who judges review gates. Absent means review gates cannot run here, and say so. */
   readonly reviewer?: ReviewerConfig | undefined;
+  /** The `gh` config directory for this repository, when the profile names one. */
+  readonly ghConfigDir?: string | undefined;
 }
 
 const TOOL_VERSION = "1";
@@ -119,6 +121,7 @@ export function gateEnvironment(context: GateContext): Record<string, string> {
     ...(context.pullRequestNumber === undefined || context.pullRequestNumber === null
       ? {}
       : { WORKFLOWLEAF_PR_NUMBER: String(context.pullRequestNumber) }),
+    ...(context.ghConfigDir === undefined ? {} : { GH_CONFIG_DIR: context.ghConfigDir }),
   };
 }
 
@@ -338,6 +341,7 @@ const runExternalGate = Effect.fnUntraced(function* (
     gate,
     workspacePath: context.workspacePath,
     pullRequestNumber: context.pullRequestNumber ?? null,
+    ghConfigDir: context.ghConfigDir,
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.succeed({

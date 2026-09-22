@@ -237,6 +237,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
         progressLog: path.join(runDir, PROGRESS_LOG),
         baseRevision,
         reviewer: input.profile.reviewer,
+        ghConfigDir: input.profile.ghConfigDir,
       },
       lease,
       initial: [{ type: "start" }],
@@ -276,6 +277,7 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
       "Draft until the run's stages and gates have passed. The run fills this in.",
     ].join("\n"),
     openedAt: input.openedAt,
+    ghConfigDir: input.profile.ghConfigDir,
   });
 });
 
@@ -367,6 +369,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         progressLog: path.join(runDir, PROGRESS_LOG),
         baseRevision: loaded.value.baseRevision,
         reviewer: input.profile.reviewer,
+        ghConfigDir: input.profile.ghConfigDir,
       },
       lease,
       initial: input.inputs,

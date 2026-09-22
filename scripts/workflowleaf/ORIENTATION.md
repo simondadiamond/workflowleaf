@@ -28,7 +28,7 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 | The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                               |
 | The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                          |
 | Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)              |
-| `wl` from any directory                     | `scripts/workflowleaf/bin/wl`, linked into `~/.local/bin`                                    |
+| `wl` from any directory                     | `~/Repos/t3code/scripts/workflowleaf/bin/wl`, called by full path                            |
 | Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23              |
 | The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`        |
 
@@ -266,6 +266,23 @@ got while another process is still driving it.
 `errors` is the learning log. It is derived from what runs already recorded
 (failed evidence, raised decisions, human answers, limitations) and grouped by
 cause, so there is no second writer to forget.
+
+## Profiles that reach real systems
+
+A T3 executor names its bearer token by `tokenEnv`, by `tokenFile`, or both.
+The environment variable wins when it is set. `tokenFile` lets a run start
+without exporting anything first. Tokens live in `~/.workflowleaf/tokens/`,
+mode 0600, and last 30 days. To mint one, run `t3 pair --base-dir <home>`,
+then exchange the pairing token at `POST /oauth/token`.
+
+`ghConfigDir` names the `gh` config for a repository whose account is not the
+active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
+and command gates use it, and each stage prompt tells the agent to. The active
+account is never switched.
+
+`fbm` drives the live T3 install against FB-marketplace-uploader and opens
+draft pull requests against `staging`. `sandbox-live` drives the live install
+against the sandbox. The other `sandbox*` profiles drive a dev server.
 
 ## How each gate type is judged
 

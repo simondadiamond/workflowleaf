@@ -106,6 +106,8 @@ export interface WorkerDeps {
   readonly baseRevision?: string | undefined;
   /** Who judges review gates. */
   readonly reviewer?: ReviewerConfig | undefined;
+  /** The `gh` config directory for the run's repository, when the profile names one. */
+  readonly ghConfigDir?: string | undefined;
 }
 
 /** Why the worker stopped. `idle` means the run is waiting on something outside it. */
@@ -253,6 +255,7 @@ const runGates = Effect.fnUntraced(function* (input: {
       pullRequestNumber: input.record.pullRequest?.number ?? null,
       artifacts: artifactPaths([...stage.contract.consumes, ...stage.contract.produces]),
       reviewer: input.deps.reviewer,
+      ghConfigDir: input.deps.ghConfigDir,
     };
 
     const evidence = yield* evaluateGate(pinned.definition, context);
@@ -433,6 +436,7 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     workspacePath: input.deps.workspacePath,
     extraSkills,
     correction: input.effect.correction ?? null,
+    ghConfigDir: input.deps.ghConfigDir,
   });
 
   return {
