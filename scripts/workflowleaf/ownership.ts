@@ -33,11 +33,31 @@ export interface ImportBoundary {
   readonly reason: string;
 }
 
+/** Where the orientation lives and which paths, once touched, oblige a reader to update it. */
+export interface OrientationRule {
+  readonly path: string;
+  /** Prefix-matched, so a directory entry covers everything beneath it. */
+  readonly layoutPaths: readonly string[];
+  /** A commit message containing this marker is excused. */
+  readonly escapeHatch: string;
+  readonly reason: string;
+}
+
+/** Conformance case C14: T3 has to keep building with WorkflowLeaf deleted. */
+export interface EnablementRule {
+  readonly packagePrefixes: readonly string[];
+  readonly reason: string;
+}
+
 export interface Ownership {
   readonly upstreamBase: string;
   readonly ownedPrefixes: readonly string[];
   readonly ownedFiles: readonly string[];
+  /** Ceiling on how many upstream files the fork may ever claim, not on how many are dirty today. */
+  readonly maxUpstreamEdits: number;
   readonly allowedUpstreamEdits: readonly AllowedUpstreamEdit[];
+  readonly orientation: OrientationRule;
+  readonly enablement: EnablementRule;
   readonly importBoundaries: readonly ImportBoundary[];
 }
 
@@ -97,6 +117,21 @@ export function findOwnershipViolations(
 /** Upstream files the fork currently edits, for the merge runbook's patch-size metric. */
 export function upstreamEditCount(ownership: Ownership, changes: readonly Change[]): number {
   return changes.filter((change) => !isOwned(ownership, change.path)).length;
+}
+
+/**
+ * Fails when the allow-list has outgrown its ceiling.
+ *
+ * The cap counts recorded entries rather than files that happen to be dirty
+ * today, because the list is what accumulates: every entry is permanent until
+ * someone removes it, and the moment one is added is the moment a human is
+ * looking at the decision. Raising the cap is allowed, and leaves a diff.
+ */
+export function findUpstreamCapViolation(ownership: Ownership): string | undefined {
+  const claimed = ownership.allowedUpstreamEdits.length;
+  if (claimed <= ownership.maxUpstreamEdits) return undefined;
+  const paths = ownership.allowedUpstreamEdits.map((entry) => entry.path).join(", ");
+  return `allowedUpstreamEdits claims ${claimed} upstream file(s) but maxUpstreamEdits is ${ownership.maxUpstreamEdits}: ${paths}. Drop an entry, or raise the cap on purpose.`;
 }
 
 const STATUS_KINDS: Record<string, ChangeKind> = {
