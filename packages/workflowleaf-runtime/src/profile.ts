@@ -18,6 +18,8 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import { DEFAULT_REVIEWER, type ReviewerConfig } from "./reviewer.ts";
+
 export class ProfileError extends Schema.TaggedError<ProfileError>()("WlProfileError", {
   message: Schema.String,
 }) {}
@@ -27,7 +29,13 @@ const T3ExecutorConfig = Schema.Struct({
   /** Origin of the T3 server this profile drives, e.g. `http://127.0.0.1:5173`. */
   origin: Schema.String.check(Schema.isNonEmpty()),
   /** Name of the environment variable holding the bearer token. Never the token. */
-  tokenEnv: Schema.String.check(Schema.isNonEmpty()),
+  tokenEnv: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
+  /**
+   * Absolute path of a file holding the bearer token, used when `tokenEnv` is
+   * absent or unset. Keeps a run startable without exporting anything first.
+   * The path is in the profile; the token never is.
+   */
+  tokenFile: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   projectId: Schema.String.check(Schema.isNonEmpty()),
   provider: Schema.String.check(Schema.isNonEmpty()),
   model: Schema.NullOr(Schema.String),
@@ -53,6 +61,17 @@ const PullRequestConfig = Schema.Struct({
 });
 export type PullRequestConfig = typeof PullRequestConfig.Type;
 
+/**
+ * Who judges review gates. Any command that reads a prompt on stdin and prints
+ * a verdict works; `${schema}` and `${schemaFile}` in `args` are replaced with
+ * the verdict schema. Absent means a fresh `claude -p` with read-only tools.
+ */
+const ReviewerConfigDocument = Schema.Struct({
+  executable: Schema.String.check(Schema.isNonEmpty()),
+  args: Schema.Array(Schema.String),
+  timeoutMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+});
+
 const ProfileDocument = Schema.Struct({
   executor: ExecutorConfig,
   /** Absolute path to the repository runs operate on. */
@@ -70,6 +89,13 @@ const ProfileDocument = Schema.Struct({
   defaultPlaybook: Schema.optional(Schema.String),
   /** Directories searched for skills, in order. Later roots shadow earlier ones. */
   skillRoots: Schema.Array(Schema.String),
+  reviewer: Schema.optional(ReviewerConfigDocument),
+  /**
+   * The `gh` config directory for the profile's repository, when it is not the
+   * active account's. WorkflowLeaf's own `gh` calls and command gates use it,
+   * and each stage is told to. The global active account is never switched.
+   */
+  ghConfigDir: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   budgets: Schema.Struct({
     maxRepairCycles: Schema.Int,
     runDeadlineMs: Schema.NullOr(Schema.Int),
@@ -90,9 +116,10 @@ const ProfileDocument = Schema.Struct({
 });
 export type ProfileDocument = typeof ProfileDocument.Type;
 
-export interface Profile extends ProfileDocument {
+export interface Profile extends Omit<ProfileDocument, "reviewer"> {
   readonly name: string;
   readonly worktreeRoot: string;
+  readonly reviewer: ReviewerConfig;
 }
 
 const decodeProfile = Schema.decodeUnknownResult(ProfileDocument, {
@@ -162,6 +189,7 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
   return {
     ...document,
     name,
+    reviewer: document.reviewer ?? DEFAULT_REVIEWER,
     worktreeRoot:
       document.worktreeRoot !== undefined && document.worktreeRoot.length > 0
         ? document.worktreeRoot
@@ -169,22 +197,41 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
   } satisfies Profile;
 });
 
-/** Resolves the bearer token from the environment variable the profile names. */
+/**
+ * Resolves the bearer token: the environment variable the profile names, if it
+ * is set, else the file the profile names.
+ */
 export const executorToken = Effect.fnUntraced(function* (executor: T3ExecutorConfig) {
-  const token = yield* Config.Redacted(executor.tokenEnv).pipe(Config.option);
-  if (Option.isNone(token) || Redacted.value(token.value).length === 0) {
-    return yield* new ProfileError({
-      message: `${executor.tokenEnv} is not set. The profile names it as the source of the T3 bearer token.`,
-    });
+  if (executor.tokenEnv !== undefined) {
+    const token = yield* Config.Redacted(executor.tokenEnv).pipe(Config.option);
+    if (Option.isSome(token) && Redacted.value(token.value).length > 0) return token.value;
   }
-  return token.value;
+
+  if (executor.tokenFile !== undefined) {
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* fs
+      .readFileString(executor.tokenFile)
+      .pipe(Effect.catchCause(() => Effect.succeed("")));
+    if (text.trim().length > 0) return Redacted.make(text.trim());
+  }
+
+  const sources = [
+    ...(executor.tokenEnv === undefined ? [] : [`$${executor.tokenEnv}`]),
+    ...(executor.tokenFile === undefined ? [] : [executor.tokenFile]),
+  ];
+  return yield* new ProfileError({
+    message:
+      sources.length === 0
+        ? "The profile names no source for the T3 bearer token. Set executor.tokenEnv or executor.tokenFile."
+        : `No T3 bearer token in ${sources.join(" or ")}.`,
+  });
 });
 
 export const PROFILE_TEMPLATE = {
   executor: {
     kind: "t3",
     origin: "http://127.0.0.1:5173",
-    tokenEnv: "WORKFLOWLEAF_T3_TOKEN",
+    tokenFile: "<absolute path to a file holding the bearer token, mode 0600>",
     projectId: "<project id>",
     provider: "claude",
     model: null,

@@ -1,0 +1,7 @@
+id: pushed
+type: command
+executable: "${playbook}/checks/pushed.sh"
+args: []
+timeoutMs: 60000
+expect:
+  exitCode: 0

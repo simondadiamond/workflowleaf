@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 
 import { formatProgress, playbookDirFor } from "./cli.ts";
 import type { Profile } from "./profile.ts";
+import { DEFAULT_REVIEWER } from "./reviewer.ts";
 
 const profile = (defaultPlaybook?: string): Profile => ({
   name: "fixture",
@@ -13,6 +14,7 @@ const profile = (defaultPlaybook?: string): Profile => ({
   worktreeRoot: "/worktrees",
   ...(defaultPlaybook === undefined ? {} : { defaultPlaybook }),
   skillRoots: [],
+  reviewer: DEFAULT_REVIEWER,
   budgets: { maxRepairCycles: 2, runDeadlineMs: null },
   permissions: {
     createPullRequest: false,

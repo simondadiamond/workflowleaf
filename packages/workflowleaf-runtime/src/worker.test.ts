@@ -259,6 +259,50 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("appends progress to a file anyone can read while the run is driven", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-progress-log");
+      const progressLog = path.join(logDir, "..", "progress.log");
+      let seenMidRun = "";
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [
+            (workspacePath) => {
+              // Read from "outside" while the second stage is still running.
+              seenMidRun = NodeFs.readFileSync(progressLog, "utf8");
+              write("summary.md", SUMMARY)(workspacePath);
+            },
+          ],
+        },
+      });
+
+      yield* drive({
+        runId: "run-progress-log" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("p"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          progressLog,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.include(seenMidRun, "summarize started attempt=1");
+      assert.include(seenMidRun, "produce gates artifact-has-content=failed");
+      const finished = yield* fs.readFileString(progressLog);
+      assert.include(finished, "summarize passed");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("stops and asks when a stage says the story outgrew one pull request", () =>
     Effect.gen(function* () {
       const { workspace, lease, logDir } = yield* setUpRun("run-scope-split");

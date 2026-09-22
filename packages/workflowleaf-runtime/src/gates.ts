@@ -34,6 +34,8 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { canonicalJson } from "./canonical.ts";
 import { digestOf } from "./digest.ts";
+import { observeExternal, type ExternalState } from "./externalChecks.ts";
+import { runReview, type ReviewerConfig } from "./reviewer.ts";
 import { globToRegExp } from "./skillCatalog.ts";
 import { changedPaths, takeSnapshot, type SnapshotManifest } from "./workspaces.ts";
 
@@ -52,6 +54,16 @@ export interface GateContext {
   readonly logDir: string;
   /** The snapshot the stage's work produced, used as the baseline for diff gates. */
   readonly baseline: SnapshotManifest;
+  /** The revision the run branched from. A review gate is shown the change since it. */
+  readonly baseRevision?: string | undefined;
+  /** The run's pull request. External gates are measured against it. */
+  readonly pullRequestNumber?: number | null | undefined;
+  /** Artifacts the stage consumed and produced, shown to a reviewer alongside the diff. */
+  readonly artifacts?: readonly string[] | undefined;
+  /** Who judges review gates. Absent means review gates cannot run here, and say so. */
+  readonly reviewer?: ReviewerConfig | undefined;
+  /** The `gh` config directory for this repository, when the profile names one. */
+  readonly ghConfigDir?: string | undefined;
 }
 
 const TOOL_VERSION = "1";
@@ -94,6 +106,25 @@ const collect = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string,
     ),
   );
 
+/**
+ * What a command gate is told about the run it is checking. The base revision
+ * matters most: a check that reads its configuration from the base, rather than
+ * from the worktree, cannot be loosened by the stage it is checking.
+ */
+export function gateEnvironment(context: GateContext): Record<string, string> {
+  return {
+    WORKFLOWLEAF_RUN_ID: context.runId as string,
+    WORKFLOWLEAF_WORKTREE: context.workspacePath,
+    ...(context.baseRevision === undefined
+      ? {}
+      : { WORKFLOWLEAF_BASE_REVISION: context.baseRevision }),
+    ...(context.pullRequestNumber === undefined || context.pullRequestNumber === null
+      ? {}
+      : { WORKFLOWLEAF_PR_NUMBER: String(context.pullRequestNumber) }),
+    ...(context.ghConfigDir === undefined ? {} : { GH_CONFIG_DIR: context.ghConfigDir }),
+  };
+}
+
 const runCommandGate = Effect.fnUntraced(function* (
   gate: Extract<GateDefinition, { type: "command" }>,
   context: GateContext,
@@ -108,7 +139,13 @@ const runCommandGate = Effect.fnUntraced(function* (
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     // Spawned directly with its argument list. Nothing here goes through a
     // shell, so a gate cannot grow a pipeline by accident.
-    const child = yield* spawner.spawn(ChildProcess.make(gate.executable, [...gate.args], { cwd }));
+    const child = yield* spawner.spawn(
+      ChildProcess.make(gate.executable, [...gate.args], {
+        cwd,
+        env: gateEnvironment(context),
+        extendEnv: true,
+      }),
+    );
 
     // The gate owns its own timeout and kills the process itself. Interrupting
     // the read would leave the check running while the run moved on, and a
@@ -236,12 +273,106 @@ const runDiffGate = Effect.fnUntraced(function* (
   } satisfies GateRun;
 });
 
+const runReviewGate = Effect.fnUntraced(function* (
+  gate: Extract<GateDefinition, { type: "review" }>,
+  context: GateContext,
+) {
+  const couldNotRun = (why: string, logRef: string | null = null): GateRun => ({
+    detail: {
+      kind: "review",
+      findings: [{ severity: "error", summary: why, failureScenario: "" }],
+      criteriaJudged: 0,
+    },
+    outcome: "error",
+    logRef,
+  });
+
+  if (context.reviewer === undefined) {
+    return couldNotRun("No reviewer is configured, so this review gate cannot be judged.");
+  }
+  if (context.baseRevision === undefined) {
+    return couldNotRun("The run's base revision is unknown, so there is no change to review.");
+  }
+
+  const reviewed = yield* runReview({
+    gate,
+    reviewer: context.reviewer,
+    workspacePath: context.workspacePath,
+    baseRevision: context.baseRevision,
+    artifacts: context.artifacts ?? [],
+    logDir: context.logDir,
+    attemptId: context.attemptId as string,
+  }).pipe(
+    Effect.map((outcome) => ({ ok: true as const, outcome })),
+    // A reviewer that could not be started or did not answer is a gate that
+    // could not run. It must never surface as a pass, and never take the run
+    // down with it.
+    Effect.catchCause((cause) =>
+      Effect.succeed({ ok: false as const, why: Cause.pretty(cause).split("\n")[0] ?? "" }),
+    ),
+  );
+
+  if (!reviewed.ok) return couldNotRun(reviewed.why);
+
+  const { findings, criteriaJudged, logRef } = reviewed.outcome;
+  const blocking = findings.filter((finding) => gate.blockingSeverities.includes(finding.severity));
+  return {
+    detail: { kind: "review", findings: [...findings], criteriaJudged },
+    outcome: blocking.length === 0 ? "passed" : "failed",
+    logRef,
+  } satisfies GateRun;
+});
+
+const EXTERNAL_OUTCOME: Record<ExternalState, GateOutcome> = {
+  satisfied: "passed",
+  unsatisfied: "failed",
+  pending: "pending",
+  // A result nobody can attribute to this run's head is a failure a stage can
+  // fix by pushing, never a pass.
+  unattributed: "failed",
+  unavailable: "error",
+};
+
+const runExternalGate = Effect.fnUntraced(function* (
+  gate: Extract<GateDefinition, { type: "external" }>,
+  context: GateContext,
+) {
+  const observed = yield* observeExternal({
+    gate,
+    workspacePath: context.workspacePath,
+    pullRequestNumber: context.pullRequestNumber ?? null,
+    ghConfigDir: context.ghConfigDir,
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.succeed({
+        state: "unavailable" as const,
+        boundValue: null,
+        detail: `The check could not run: ${Cause.pretty(cause).split("\n")[0] ?? ""}`,
+      }),
+    ),
+  );
+
+  return {
+    detail: {
+      kind: "external",
+      check: gate.check,
+      boundValue: observed.boundValue,
+      state: observed.state,
+      detail: observed.detail,
+    },
+    outcome: EXTERNAL_OUTCOME[observed.state],
+    logRef: null,
+  } satisfies GateRun;
+});
+
 /**
- * Runs one deterministic gate and records what it observed.
+ * Runs one gate and records what it observed.
  *
- * `review` and `external` gates are not evaluable here and say so. Returning a
- * pass for a check nothing performed is the failure this whole layer exists to
- * prevent.
+ * Command, file and diff gates are decided by code. A review gate is judged by
+ * the profile's reviewer, a separate model process that never saw the stage's
+ * context. An external gate reads the run's pull request. Either one that
+ * cannot run says so as `error`: returning a pass for a check nothing performed
+ * is the failure this whole layer exists to prevent.
  */
 export const evaluateGate = Effect.fnUntraced(function* (
   gate: GateDefinition,
@@ -259,23 +390,9 @@ export const evaluateGate = Effect.fnUntraced(function* (
       case "diff":
         return runDiffGate(gate, context, before);
       case "review":
-        return Effect.succeed<GateRun>({
-          detail: { kind: "review", findings: [] },
-          outcome: "error",
-          logRef: null,
-        });
+        return runReviewGate(gate, context);
       case "external":
-        return Effect.succeed<GateRun>({
-          detail: {
-            kind: "external",
-            check: gate.check,
-            boundValue: null,
-            state: "unavailable",
-            detail: "No integration supplied a result for this gate.",
-          },
-          outcome: "error",
-          logRef: null,
-        });
+        return runExternalGate(gate, context);
     }
   })();
 
@@ -295,7 +412,7 @@ export const evaluateGate = Effect.fnUntraced(function* (
     gateDigest: context.gateDigest,
     snapshotId: before.snapshotId,
     inputDigests,
-    tool: gateTool(gate),
+    tool: gateTool(gate, context),
     toolVersion: TOOL_VERSION,
     startedAt,
     endedAt,
@@ -307,8 +424,11 @@ export const evaluateGate = Effect.fnUntraced(function* (
   } satisfies EvidenceRecord;
 });
 
-function gateTool(gate: GateDefinition): string {
-  return gate.type === "command" ? gate.executable : `workflowleaf:${gate.type}`;
+function gateTool(gate: GateDefinition, context: GateContext): string {
+  if (gate.type === "command") return gate.executable;
+  if (gate.type === "review") return `review:${context.reviewer?.executable ?? "none"}`;
+  if (gate.type === "external") return `external:${gate.check}`;
+  return `workflowleaf:${gate.type}`;
 }
 
 function inputsFor(
@@ -322,8 +442,10 @@ function inputsFor(
     }
     case "diff":
     case "command":
-      // A command gate can read anything in the worktree, so the whole snapshot
-      // is its input. That is what makes any change invalidate its verdict.
+    case "review":
+      // A command gate or a reviewer can read anything in the worktree, so the
+      // whole snapshot is its input. That is what makes any change invalidate
+      // its verdict.
       return snapshot.files;
     default:
       return [];

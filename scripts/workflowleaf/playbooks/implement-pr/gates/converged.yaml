@@ -1,0 +1,4 @@
+id: converged
+type: external
+check: converged-on-head
+boundTo: head-sha

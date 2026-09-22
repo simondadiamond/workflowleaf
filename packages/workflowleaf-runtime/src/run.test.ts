@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { slugify } from "./cli.ts";
-import { describeRun, nextRunId, summarizeRuns } from "./run.ts";
+import { describeRun, holdingLease, nextRunId, summarizeRuns } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
 
@@ -73,6 +73,24 @@ it.layer(testLayer)("run ids", (it) => {
       // in `--revision`, so the detail has to carry it too.
       const detail = yield* describeRun("issue-46-1" as RunId);
       assert.strictEqual(Option.getOrUndefined(detail)?.revision, 7);
+    }),
+  );
+
+  it.effect("gives the lease back when a drive ends, however it ends", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* seed("run-lease", "story-lease");
+
+      yield* holdingLease("run-lease" as RunId, "first", () => Effect.void);
+      const afterSuccess = yield* store.acquireLease("run-lease" as RunId, "second", 60);
+      assert.isTrue(Option.isSome(afterSuccess));
+      if (Option.isSome(afterSuccess)) yield* store.releaseLease(afterSuccess.value);
+
+      yield* holdingLease("run-lease" as RunId, "third", () => Effect.fail("boom")).pipe(
+        Effect.ignore,
+      );
+      const afterFailure = yield* store.acquireLease("run-lease" as RunId, "fourth", 60);
+      assert.isTrue(Option.isSome(afterFailure));
     }),
   );
 

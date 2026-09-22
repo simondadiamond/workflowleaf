@@ -25,8 +25,12 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 | Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                      |
 | Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                     |
 | Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                            |
+| The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                               |
 | The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                          |
 | Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)              |
+| `wl` from any directory                     | `~/Repos/t3code/scripts/workflowleaf/bin/wl`, called by full path                            |
+| Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23              |
+| The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`        |
 
 Two packages: `packages/workflowleaf-core` (pure domain, no T3, no filesystem,
 no clock) and `packages/workflowleaf-runtime` (loader, store, gates, worker,
@@ -232,8 +236,10 @@ as soon as those three land and let #6 (the learning log) collect what breaks.
 node packages/workflowleaf-runtime/src/bin.ts validate [playbook-dir] --profile <name> --input k=v
 node packages/workflowleaf-runtime/src/bin.ts compile  [playbook-dir] --profile <name> --input k=v
 node packages/workflowleaf-runtime/src/bin.ts run      [playbook-dir] --profile <name> --story issue-42 --input k=v
-node packages/workflowleaf-runtime/src/bin.ts status
+node packages/workflowleaf-runtime/src/bin.ts status [run]
 node packages/workflowleaf-runtime/src/bin.ts status --pr 1234
+node packages/workflowleaf-runtime/src/bin.ts resume <run> --profile <name> [--poll 120]
+node packages/workflowleaf-runtime/src/bin.ts errors --since 30d
 ```
 
 The playbook directory is optional. Without one, the profile's
@@ -252,8 +258,58 @@ run has moved since you looked. The number is on the run: `status` carries
 Every command that drives a run prints a line as each stage starts, each gate
 returns a verdict and each stage settles. The lines are read off the records
 either side of each commit, so they report what was persisted and never what
-was merely attempted. An agent holding the command still sees them only when it
-returns (#35).
+was merely attempted. The same lines are appended to
+`~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
+them, so a second terminal or an agent between turns can see how far a run has
+got while another process is still driving it.
+
+`errors` is the learning log. It is derived from what runs already recorded
+(failed evidence, raised decisions, human answers, limitations) and grouped by
+cause, so there is no second writer to forget.
+
+## Profiles that reach real systems
+
+A T3 executor names its bearer token by `tokenEnv`, by `tokenFile`, or both.
+The environment variable wins when it is set. `tokenFile` lets a run start
+without exporting anything first. Tokens live in `~/.workflowleaf/tokens/`,
+mode 0600, and last 30 days. To mint one, run `t3 pair --base-dir <home>`,
+then exchange the pairing token at `POST /oauth/token`.
+
+`ghConfigDir` names the `gh` config for a repository whose account is not the
+active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
+and command gates use it, and each stage prompt tells the agent to. The active
+account is never switched.
+
+`fbm` drives the live T3 install against FB-marketplace-uploader and opens
+draft pull requests against `staging`. `sandbox-live` drives the live install
+against the sandbox. The other `sandbox*` profiles drive a dev server.
+
+## How each gate type is judged
+
+- `command`, `file`, `diff`: by code, in the run's worktree. A command gate can
+  run a script the playbook ships by naming it `${playbook}/checks/x.sh`; the
+  loader resolves that against the playbook directory and folds the script's
+  content into the gate digest, so editing the check invalidates its evidence.
+  Command gates get `WORKFLOWLEAF_BASE_REVISION`, `WORKFLOWLEAF_PR_NUMBER`,
+  `WORKFLOWLEAF_RUN_ID` and `WORKFLOWLEAF_WORKTREE` in their environment. The
+  generic playbook reads the target repository's `.workflowleaf/commands` at the
+  base revision, so a stage cannot loosen the command that checks it.
+- `review`: by the profile's `reviewer`, a separate process started by code
+  and never the stage's own context. Absent, it is a fresh `claude -p` with
+  read-only tools and no user settings. One call per entry in the gate's
+  `criteria` (or one for the whole `rubric`), each answering against a JSON
+  schema. A reviewer that does not answer in the schema records `error`,
+  never a pass.
+- `external`: by reading the run's pull request through `gh`, bound to its
+  head commit and compared with the worktree's HEAD. `pull-request-exists`,
+  `checks-green` and `converged-on-head` exist. An unresolved condition (CI
+  running, a reviewer yet to answer) records `pending`: the run parks in
+  `waiting_external` and `resume` checks again. `--poll <seconds>` keeps
+  checking for up to `--poll-for` minutes.
+
+A stage that routes back (`correction: route-to`) sends its failing verdicts
+with the dispatch, so the stage it returns to starts from the findings rather
+than from nothing.
 
 ## What is proven and what is not
 
@@ -264,18 +320,33 @@ through the worker; and the worker driving the live T3 adapter end to end
 correction delivered as a second turn on the same thread, and the run finishing
 green, with zero upstream files changed.
 
-The `wl-story` skill (#1) is the only way to drive a run by hand today. It
-takes a story number, starts the run, reports each stage and stops when a
-person is needed. It has driven no real story, because no profile on this
-machine can execute one (#33).
+**A real story end to end (#26 on the sandbox).** `issue-1-1` in the sandbox
+ran the generic playbook through a live T3 dev server to `succeeded`. It went
+through plan, build, an independent review judged per criterion by `claude -p`,
+deliver with the pull request body checked by script, and babysit with
+convergence read from GitHub. Its draft pull request carries the code and the
+body. The `gh` half of opening a pull request is now proven.
 
-**Not proven:** opening a real pull request through `gh` — the git half is
-tested, the `gh` half has never run; a second provider (#16); recovery against
-a live server (#18); and any real story end to end.
+The `wl-story` skill (#1) drives a run by hand. It takes a story number,
+starts the run, reports each stage and stops when a person is needed.
 
-Six bugs have been found only by running against a real server, none of them
+`issue-3-1` proved the fixer loop live. The run parked on a running CI check,
+and a review thread was posted on its pull request. Babysit routed the thread
+to build, build fixed it, deliver replied and resolved the thread, and the run
+converged with no human step.
+
+`issue-5-1` ran the same playbook and the same controller on Codex
+(`gpt-5.6-sol`), with only the profile changed (#16, C12). It corrected two
+failing gates inside the same context and succeeded.
+
+**Not proven:** a real Marketplace story (#26 proper), which needs a profile
+pointing at that repository and the account that can push to it; recovery
+against a live server (#18).
+
+Eight bugs have been found only by running against a real server, none of them
 visible from reading the handler: a wrong payload shape, a nested field read
 flat, a subscription attached after dispatch instead of before, a subscription
 attached before the thread existed (which deadlocked), corrections that named
-no evidence, and a gate that could not start taking the whole run down. Prefer
-a live check to an argument.
+no evidence, a gate that could not start taking the whole run down, run records
+from before a field existed failing every `status`, and one dangling symlink in
+a skill root failing every load. Prefer a live check to an argument.

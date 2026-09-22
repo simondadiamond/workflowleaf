@@ -32,8 +32,13 @@ const decodeListed = Schema.decodeUnknownResult(
   Schema.fromJsonString(Schema.Array(ListedPullRequest)),
 );
 
-const gh = (cwd: string, args: readonly string[]) =>
-  capture("gh", args, cwd).pipe(
+/** The environment `gh` runs with: the profile's config directory, when it names one. */
+export function ghEnvironment(ghConfigDir: string | undefined): Record<string, string> | undefined {
+  return ghConfigDir === undefined ? undefined : { GH_CONFIG_DIR: ghConfigDir };
+}
+
+const gh = (cwd: string, args: readonly string[], ghConfigDir?: string) =>
+  capture("gh", args, cwd, { env: ghEnvironment(ghConfigDir) }).pipe(
     Effect.mapError(
       (cause) =>
         new PullRequestError({
@@ -46,17 +51,22 @@ const gh = (cwd: string, args: readonly string[]) =>
 export const findOpenPullRequest = Effect.fnUntraced(function* (input: {
   readonly cwd: string;
   readonly headBranch: string;
+  readonly ghConfigDir?: string | undefined;
 }) {
-  const payload = yield* gh(input.cwd, [
-    "pr",
-    "list",
-    "--head",
-    input.headBranch,
-    "--state",
-    "open",
-    "--json",
-    "number,url,baseRefName",
-  ]);
+  const payload = yield* gh(
+    input.cwd,
+    [
+      "pr",
+      "list",
+      "--head",
+      input.headBranch,
+      "--state",
+      "open",
+      "--json",
+      "number,url,baseRefName",
+    ],
+    input.ghConfigDir,
+  );
 
   const decoded = decodeListed(payload.trim().length === 0 ? "[]" : payload);
   if (decoded._tag === "Failure") {
@@ -75,6 +85,7 @@ export interface OpenPullRequestInput {
   readonly title: string;
   readonly body: string;
   readonly openedAt: string;
+  readonly ghConfigDir?: string | undefined;
 }
 
 /**
@@ -89,6 +100,7 @@ export const openDraftPullRequest = Effect.fnUntraced(function* (input: OpenPull
   const existing = yield* findOpenPullRequest({
     cwd: input.workspacePath,
     headBranch: input.headBranch,
+    ghConfigDir: input.ghConfigDir,
   });
   if (existing !== null) {
     return {
@@ -109,23 +121,28 @@ export const openDraftPullRequest = Effect.fnUntraced(function* (input: OpenPull
     Effect.mapError((cause) => new PullRequestError({ message: cause.message })),
   );
 
-  yield* gh(input.workspacePath, [
-    "pr",
-    "create",
-    "--draft",
-    "--base",
-    input.baseBranch,
-    "--head",
-    input.headBranch,
-    "--title",
-    input.title,
-    "--body",
-    input.body,
-  ]);
+  yield* gh(
+    input.workspacePath,
+    [
+      "pr",
+      "create",
+      "--draft",
+      "--base",
+      input.baseBranch,
+      "--head",
+      input.headBranch,
+      "--title",
+      input.title,
+      "--body",
+      input.body,
+    ],
+    input.ghConfigDir,
+  );
 
   const opened = yield* findOpenPullRequest({
     cwd: input.workspacePath,
     headBranch: input.headBranch,
+    ghConfigDir: input.ghConfigDir,
   });
   if (opened === null) {
     return yield* new PullRequestError({

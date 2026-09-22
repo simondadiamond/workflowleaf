@@ -31,20 +31,54 @@ const collect = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string,
     ),
   );
 
-export const capture = Effect.fnUntraced(function* (
+export interface Completed {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly exitCode: number;
+}
+
+export interface RunOptions {
+  /**
+   * Written to stdin. A prompt or a request body stays out of argv, which is
+   * size-limited and visible in process listings.
+   */
+  readonly input?: string | undefined;
+  /** Added to the inherited environment. */
+  readonly env?: Readonly<Record<string, string>> | undefined;
+}
+
+/** Runs a command to completion and returns everything it said, whatever it exited with. */
+export const complete = Effect.fnUntraced(function* (
   executable: string,
   args: readonly string[],
   cwd: string,
+  options: RunOptions = {},
 ) {
+  const { input, env } = options;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const child = yield* spawner.spawn(ChildProcess.make(executable, args, { cwd }));
+  const child = yield* spawner.spawn(
+    ChildProcess.make(executable, args, {
+      cwd,
+      ...(input === undefined ? {} : { stdin: Stream.make(new TextEncoder().encode(input)) }),
+      ...(env === undefined ? {} : { env: { ...env }, extendEnv: true }),
+    }),
+  );
   const [stdout, stderr, exitCode] = yield* Effect.all(
     [collect(child.stdout), collect(child.stderr), child.exitCode.pipe(Effect.map(Number))],
     { concurrency: "unbounded" },
   );
+  return { stdout, stderr, exitCode } satisfies Completed;
+}, Effect.scoped);
 
+export const capture = Effect.fnUntraced(function* (
+  executable: string,
+  args: readonly string[],
+  cwd: string,
+  options: RunOptions = {},
+) {
+  const { stdout, stderr, exitCode } = yield* complete(executable, args, cwd, options);
   if (exitCode !== 0) {
     return yield* new CommandFailed({ executable, args, cwd, exitCode, stderr });
   }
   return stdout;
-}, Effect.scoped);
+});

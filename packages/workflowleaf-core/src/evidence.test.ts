@@ -125,3 +125,34 @@ describe("downstream invalidation", () => {
     expect(dependentOn([record()], ["docs/readme.md"])).toEqual([]);
   });
 });
+
+describe("run records written by earlier versions", () => {
+  it("decode without the pull request and scope split fields they predate", async () => {
+    const { RunRecord } = await import("./state.ts");
+    const { Schema } = await import("effect");
+    const old = {
+      runId: "wl5a",
+      planDigest: "sha256:p",
+      workspaceId: "ws",
+      state: "succeeded",
+      revision: 3,
+      currentStageId: null,
+      visits: [],
+      budget: { repairCycles: 0, maxRepairCycles: 2, deadlineAt: null },
+      capabilities: {
+        freshContext: true,
+        sameContextContinuation: true,
+        settledCompletion: true,
+        interrupt: true,
+        recovery: true,
+      },
+      decision: null,
+      failure: null,
+      createdAt: "2026-09-20T00:00:00.000Z",
+      updatedAt: "2026-09-20T00:00:00.000Z",
+    };
+    const decoded = Schema.decodeUnknownSync(RunRecord)(old);
+    expect(decoded.pullRequest).toBeNull();
+    expect(decoded.scopeSplit).toBeNull();
+  });
+});

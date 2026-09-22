@@ -39,6 +39,7 @@ import * as Schema from "effect/Schema";
 import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
 import { compileStagePrompt } from "./prompt.ts";
+import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import { takeSnapshot, type SnapshotManifest } from "./workspaces.ts";
@@ -96,6 +97,17 @@ export interface WorkerDeps {
   readonly leaseSeconds: number;
   /** Optional: told what just happened, as it happens. Never affects the run. */
   readonly progress?: ProgressSink | undefined;
+  /**
+   * Where the same progress is appended as lines, so anything can read how far
+   * a run has got while another process is still driving it.
+   */
+  readonly progressLog?: string | undefined;
+  /** The revision the run branched from, for gates that judge the change since. */
+  readonly baseRevision?: string | undefined;
+  /** Who judges review gates. */
+  readonly reviewer?: ReviewerConfig | undefined;
+  /** The `gh` config directory for the run's repository, when the profile names one. */
+  readonly ghConfigDir?: string | undefined;
 }
 
 /** Why the worker stopped. `idle` means the run is waiting on something outside it. */
@@ -171,6 +183,38 @@ function progressFor(input: {
   return events;
 }
 
+/** One line per progress event, the same shape a person watching the terminal sees. */
+export function progressLine(at: string, event: RunProgress): string {
+  switch (event.kind) {
+    case "stage-started":
+      return `${at} ${event.stageId} ${event.correcting ? "correcting" : "started"} attempt=${String(event.attempt)}`;
+    case "gates":
+      return `${at} ${event.stageId} gates ${event.verdicts.map((verdict) => `${verdict.gateId}=${verdict.outcome}`).join(" ") || "none"}`;
+    case "stage-settled":
+      return `${at} ${event.stageId} ${event.state}`;
+  }
+}
+
+/**
+ * Appends progress to the run's log. A watcher that cannot write it must not
+ * stop the run, so a failure here is swallowed rather than raised.
+ */
+const appendProgress = Effect.fnUntraced(
+  function* (file: string, at: string, events: readonly RunProgress[]) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+    yield* fs.writeFileString(
+      file,
+      events.map((event) => `${progressLine(at, event)}\n`).join(""),
+      {
+        flag: "a",
+      },
+    );
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
 /**
  * Runs the deterministic gates of one visit and returns a verdict per gate.
  *
@@ -207,6 +251,11 @@ const runGates = Effect.fnUntraced(function* (input: {
       gateDigest: pinned.digest,
       logDir: input.deps.logDir,
       baseline: input.baseline,
+      baseRevision: input.deps.baseRevision,
+      pullRequestNumber: input.record.pullRequest?.number ?? null,
+      artifacts: artifactPaths([...stage.contract.consumes, ...stage.contract.produces]),
+      reviewer: input.deps.reviewer,
+      ghConfigDir: input.deps.ghConfigDir,
     };
 
     const evidence = yield* evaluateGate(pinned.definition, context);
@@ -226,6 +275,14 @@ const runGates = Effect.fnUntraced(function* (input: {
 
   return verdicts as readonly GateVerdict[];
 });
+
+/**
+ * The names in a stage's `consumes` and `produces` that are files. Run inputs
+ * and abstract outputs such as `diff` are not.
+ */
+function artifactPaths(names: readonly string[]): string[] {
+  return [...new Set(names.filter((name) => name.includes("/") || name.includes(".")))];
+}
 
 /**
  * How much of a failing gate's output is worth carrying into the correction.
@@ -279,6 +336,27 @@ function summarizeFile(detail: Record<string, unknown>): string {
   return parts.join("; ");
 }
 
+/**
+ * A review verdict as the stage being corrected needs it: every finding, its
+ * severity and the failure scenario that makes it a finding rather than an
+ * opinion. A count alone would send the stage back to guess.
+ */
+function summarizeReview(detail: Record<string, unknown>): string {
+  const findings = detail.findings as readonly {
+    severity: string;
+    summary: string;
+    failureScenario: string;
+  }[];
+  if (findings.length === 0) return "no findings";
+  return [
+    `${String(findings.length)} finding(s)`,
+    ...findings.map(
+      (finding) =>
+        `- [${finding.severity}] ${finding.summary}${finding.failureScenario.length > 0 ? `\n  Failure scenario: ${finding.failureScenario}` : ""}`,
+    ),
+  ].join("\n");
+}
+
 function summarize(detail: { readonly kind: string } & Record<string, unknown>): string {
   switch (detail.kind) {
     case "command":
@@ -287,12 +365,14 @@ function summarize(detail: { readonly kind: string } & Record<string, unknown>):
         : `exit ${String(detail.exitCode)}${detail.failedCount === null ? "" : `, ${String(detail.failedCount)} failing`}`;
     case "file":
       return summarizeFile(detail);
-    case "diff":
-      return `${(detail.changedFiles as string[]).length} changed, ${(detail.outsideScope as string[]).length} outside the plan`;
+    case "diff": {
+      const outside = detail.outsideScope as string[];
+      return `${(detail.changedFiles as string[]).length} changed, ${outside.length} outside the plan${outside.length === 0 ? "" : `: ${outside.join(", ")}`}`;
+    }
     case "review":
-      return `${(detail.findings as unknown[]).length} finding(s)`;
+      return summarizeReview(detail);
     case "external":
-      return `${String(detail.check)}: ${String(detail.state)}`;
+      return `${String(detail.check)}: ${String(detail.state)}${detail.detail === null || detail.detail === undefined ? "" : `. ${String(detail.detail)}`}`;
     default:
       return "";
   }
@@ -355,7 +435,8 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     plan: input.plan,
     workspacePath: input.deps.workspacePath,
     extraSkills,
-    correction: input.effect.type === "continue-stage" ? input.effect.correction : null,
+    correction: input.effect.correction ?? null,
+    ghConfigDir: input.deps.ghConfigDir,
   });
 
   return {
@@ -579,15 +660,17 @@ export const drive = Effect.fnUntraced(function* (input: {
       lease: input.lease,
     });
 
-    if (input.deps.progress !== undefined) {
-      for (const event of progressFor({
-        previous: record,
-        next: decision.run,
-        transitionInput: next,
-        effects: decision.effects,
-      })) {
-        yield* input.deps.progress(event);
-      }
+    const events = progressFor({
+      previous: record,
+      next: decision.run,
+      transitionInput: next,
+      effects: decision.effects,
+    });
+    for (const event of events) {
+      if (input.deps.progress !== undefined) yield* input.deps.progress(event);
+    }
+    if (input.deps.progressLog !== undefined && events.length > 0) {
+      yield* appendProgress(input.deps.progressLog, now, events);
     }
 
     record = decision.run;

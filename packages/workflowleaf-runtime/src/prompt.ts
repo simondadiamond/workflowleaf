@@ -21,6 +21,8 @@ export interface PromptInput {
   readonly extraSkills: readonly { readonly id: string; readonly path: string }[];
   /** Present only when this is a correction inside an existing context. */
   readonly correction: string | null;
+  /** The `gh` config directory this repository needs, when it is not the active account's. */
+  readonly ghConfigDir?: string | undefined;
 }
 
 function describeGate(gate: ResolvedStage["gates"][number]): string {
@@ -63,6 +65,11 @@ export function compileStagePrompt(input: PromptInput): string {
     `You are performing the \`${stage.contract.id}\` stage of the \`${plan.playbookId}\` playbook, version ${plan.playbookVersion}.`,
   );
   sections.push(`Work in ${input.workspacePath}. Everything below is relative to it.`);
+  if (input.ghConfigDir !== undefined) {
+    sections.push(
+      `This repository's GitHub account is configured in \`${input.ghConfigDir}\`. Run every \`gh\` command with \`GH_CONFIG_DIR=${input.ghConfigDir}\` set, and never switch the active account.`,
+    );
+  }
 
   if (input.correction !== null) {
     sections.push(`## This is a correction\n\n${input.correction}`);

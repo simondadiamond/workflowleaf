@@ -11,6 +11,13 @@
  *   <playbook>/PLAYBOOK.md     YAML frontmatter is the contract, body is for humans
  *   <playbook>/stages/*.md     one instruction file per agent stage
  *   <playbook>/gates/*.yaml    one gate definition per file
+ *   <playbook>/checks/*        scripts the playbook's command gates run
+ *
+ * A command gate names a script the playbook ships as `${playbook}/checks/x.sh`,
+ * in its executable or its arguments. The loader resolves that against the
+ * playbook directory, so the same playbook runs from wherever it was copied to,
+ * and folds the script's content into the gate's digest, so editing the check
+ * invalidates the evidence it produced.
  */
 import {
   compileRunPlan,
@@ -84,6 +91,35 @@ export function splitFrontmatter(
     const detail = cause instanceof Error ? cause.message : String(cause);
     return fail([{ source, field: "<frontmatter>", message: `Invalid YAML: ${detail}` }]);
   }
+}
+
+/** The prefix a command gate uses for a file shipped inside the playbook. */
+export const PLAYBOOK_BASE = "${playbook}/";
+
+function expandPlaybookPath(value: unknown, playbookDir: string): unknown {
+  return typeof value === "string" && value.startsWith(PLAYBOOK_BASE)
+    ? `${playbookDir.replace(/\/+$/, "")}/${value.slice(PLAYBOOK_BASE.length)}`
+    : value;
+}
+
+/**
+ * Resolves `${playbook}/` in command gates' executables and arguments. Pure:
+ * it only rewrites strings, and anything that is not a command gate passes
+ * through for validation to judge.
+ */
+export function expandPlaybookPaths(gates: readonly unknown[], playbookDir: string): unknown[] {
+  return gates.map((gate) => {
+    if (typeof gate !== "object" || gate === null) return gate;
+    const record = gate as Record<string, unknown>;
+    if (record.type !== "command") return gate;
+    return {
+      ...record,
+      executable: expandPlaybookPath(record.executable, playbookDir),
+      ...(Array.isArray(record.args)
+        ? { args: record.args.map((arg) => expandPlaybookPath(arg, playbookDir)) }
+        : {}),
+    };
+  });
 }
 
 /** Parses YAML outside an Effect generator so a parse failure is a value, not a throw. */
@@ -230,7 +266,37 @@ const resolveResources = Effect.fnUntraced(function* (
   }
 
   for (const gate of document.gates) {
-    gateDigests.set(gate.id as string, digestOf(canonicalJson(gate)));
+    if (gate.type !== "command") {
+      gateDigests.set(gate.id as string, digestOf(canonicalJson(gate)));
+      continue;
+    }
+
+    // A script the playbook ships is part of what the gate checks. Its content
+    // goes into the digest so editing it invalidates what it produced; a
+    // missing one fails here, at load, rather than at gate time mid-run.
+    const root = `${options.playbookDir.replace(/\/+$/, "")}/`;
+    const scripts: { path: string; digest: Digest }[] = [];
+    for (const candidate of [gate.executable, ...gate.args]) {
+      if (!candidate.startsWith(root)) continue;
+      if (!(yield* fs.exists(candidate))) {
+        diagnostics.push({
+          source: `gates/${gate.id as string}`,
+          field: candidate === gate.executable ? "executable" : "args",
+          message: `${candidate.slice(root.length)} is not in the playbook directory.`,
+        });
+        continue;
+      }
+      scripts.push({
+        path: candidate.slice(root.length),
+        digest: digestOf(yield* fs.readFile(candidate)),
+      });
+    }
+    gateDigests.set(
+      gate.id as string,
+      scripts.length === 0
+        ? digestOf(canonicalJson(gate))
+        : digestOf(canonicalJson({ gate, scripts })),
+    );
   }
 
   return {
@@ -278,7 +344,10 @@ export const loadPlaybook = Effect.fnUntraced(function* (options: LoadOptions) {
 
   const inlineGates = Array.isArray(frontmatter.gates) ? frontmatter.gates : [];
   const validated = validatePlaybook(
-    { ...frontmatter, gates: [...gateFiles.value, ...inlineGates] },
+    {
+      ...frontmatter,
+      gates: expandPlaybookPaths([...gateFiles.value, ...inlineGates], options.playbookDir),
+    },
     "PLAYBOOK.md",
   );
   if (!validated.ok) return validated satisfies Validated<LoadedPlaybook>;

@@ -5,6 +5,7 @@
  * to be enough to say what the run was doing without reconstructing it from
  * logs. Every field here is persisted; nothing important lives only in memory.
  */
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -172,10 +173,16 @@ export const RunRecord = Schema.Struct({
   runId: RunId,
   planDigest: Digest,
   workspaceId: WorkspaceId,
-  /** The pull request this run delivers into. Null only while none was opened. */
-  pullRequest: Schema.NullOr(PullRequestRef),
-  /** Set once a stage declares the story has outgrown that pull request. */
-  scopeSplit: Schema.NullOr(ScopeSplit),
+  /**
+   * The pull request this run delivers into. Null only while none was opened.
+   * Records written before this field existed decode with none, rather than
+   * making every listing of the store fail on one old row.
+   */
+  pullRequest: Schema.NullOr(PullRequestRef).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
+  /** Set once a stage declares the story has outgrown that pull request. Defaults as above. */
+  scopeSplit: Schema.NullOr(ScopeSplit).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
   state: RunState,
   /** Optimistic concurrency. One writer owns a run; this is how a stale one is caught. */
   revision: NonNegativeInt,

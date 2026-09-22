@@ -1,0 +1,7 @@
+id: work-committed
+type: command
+executable: "${playbook}/checks/work-committed.sh"
+args: []
+timeoutMs: 60000
+expect:
+  exitCode: 0

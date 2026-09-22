@@ -1,0 +1,12 @@
+id: no-blocking-findings
+type: review
+rubric: >-
+  You are deciding whether this pull request is ready for a person to merge.
+  Verify every claim against the code, not against the plan's wording. A
+  finding that names no concrete failure is not a finding.
+criteria:
+  - "The change does what the plan's Change and Done when sections say, and nothing the Out of scope section excludes."
+  - "Every behaviour the change adds or alters is covered by a test that would fail without the change."
+  - "The change introduces no correctness bug: check edge cases, error paths, and the callers of every changed function."
+blockingSeverities:
+  - block

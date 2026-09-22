@@ -68,7 +68,14 @@ export type DiffGate = typeof DiffGate.Type;
 export const ReviewGate = Schema.Struct({
   id: GateId,
   type: Schema.Literal("review"),
+  /** What the reviewer is judging and why. Every criterion is judged in its light. */
   rubric: NonEmpty,
+  /**
+   * The questions the reviewer answers, one independent call each. A verdict
+   * per criterion can be audited; one opinion about everything cannot. Absent
+   * means the rubric is judged as a single criterion.
+   */
+  criteria: Schema.optional(Schema.Array(NonEmpty)),
   /** A review verdict is judgment. It is recorded as judgment, never as proof. */
   blockingSeverities: Schema.Array(NonEmpty),
 });

@@ -118,6 +118,16 @@ export interface WorkspaceRow {
   readonly disposedAt: string | null;
 }
 
+export interface TransitionRow {
+  readonly runId: string;
+  readonly seq: number;
+  readonly at: string;
+  /** The controller input, as canonical JSON. */
+  readonly input: string;
+  /** The effects it produced, as canonical JSON. */
+  readonly effects: string;
+}
+
 const decodeRunRecord = Schema.decodeUnknownResult(Schema.fromJsonString(RunRecord));
 const decodeRunPlan = Schema.decodeUnknownResult(Schema.fromJsonString(RunPlan));
 const decodeEvidence = Schema.decodeResult(Schema.fromJsonString(Schema.Unknown));
@@ -151,6 +161,26 @@ export class RunStore extends Context.Service<
     }) => Effect.Effect<readonly LoadedRun[], RunStoreError>;
     /** How many runs this story already has. The next one takes the following ordinal. */
     readonly countRunsForStory: (story: string) => Effect.Effect<number, RunStoreError>;
+    /**
+     * How many transitions a run has committed. Each transition mints at most
+     * one id of each kind, so this is a safe seed for a resumed run's ids.
+     */
+    readonly transitionCount: (runId: RunId) => Effect.Effect<number, RunStoreError>;
+    /** Every committed transition since an instant, oldest first, across runs. */
+    readonly transitionsSince: (
+      since: string,
+    ) => Effect.Effect<readonly TransitionRow[], RunStoreError>;
+    /** Every evidence record since an instant whose outcome did not satisfy its gate. */
+    readonly failedEvidenceSince: (
+      since: string,
+    ) => Effect.Effect<readonly EvidenceRecord[], RunStoreError>;
+    /** Every recorded limitation since an instant, across runs. */
+    readonly limitationsSince: (
+      since: string,
+    ) => Effect.Effect<
+      readonly (StageLimitation & { readonly runId: string; readonly at: string })[],
+      RunStoreError
+    >;
     readonly findRunByPullRequest: (
       number: number,
     ) => Effect.Effect<Option.Option<LoadedRun>, RunStoreError>;
@@ -321,6 +351,72 @@ export class RunStore extends Context.Service<
             SELECT COUNT(*) AS total FROM wl_runs WHERE story = ${story}
           `.pipe(Effect.mapError(fail("countRunsForStory")));
           return rows[0]?.total ?? 0;
+        },
+      );
+
+      const transitionCount: RunStore["Service"]["transitionCount"] = Effect.fnUntraced(
+        function* (runId) {
+          const rows = yield* sql<{ total: number }>`
+            SELECT COUNT(*) AS total FROM wl_transitions WHERE run_id = ${runId}
+          `.pipe(Effect.mapError(fail("transitionCount")));
+          return rows[0]?.total ?? 0;
+        },
+      );
+
+      const transitionsSince: RunStore["Service"]["transitionsSince"] = Effect.fnUntraced(
+        function* (since) {
+          const rows = yield* sql<{
+            run_id: string;
+            seq: number;
+            at: string;
+            input: string;
+            effects: string;
+          }>`SELECT run_id, seq, at, input, effects FROM wl_transitions
+             WHERE at >= ${since} ORDER BY at, run_id, seq`.pipe(
+            Effect.mapError(fail("transitionsSince")),
+          );
+          return rows.map((row) => ({
+            runId: row.run_id,
+            seq: row.seq,
+            at: row.at,
+            input: row.input,
+            effects: row.effects,
+          }));
+        },
+      );
+
+      const failedEvidenceSince: RunStore["Service"]["failedEvidenceSince"] = Effect.fnUntraced(
+        function* (since) {
+          const rows = yield* sql<{ document: string }>`
+            SELECT document FROM wl_evidence
+            WHERE recorded_at >= ${since} AND outcome NOT IN ('passed', 'waived')
+            ORDER BY recorded_at
+          `.pipe(Effect.mapError(fail("failedEvidenceSince")));
+          return yield* Effect.forEach(rows, (row) =>
+            decodeOrFail("failedEvidenceSince.document", decodeEvidence(row.document)).pipe(
+              Effect.map((value) => value as EvidenceRecord),
+            ),
+          );
+        },
+      );
+
+      const limitationsSince: RunStore["Service"]["limitationsSince"] = Effect.fnUntraced(
+        function* (since) {
+          const rows = yield* sql<{
+            run_id: string;
+            stage_id: string;
+            capability: string;
+            detail: string;
+            at: string;
+          }>`SELECT run_id, stage_id, capability, detail, at FROM wl_limitations
+             WHERE at >= ${since} ORDER BY at`.pipe(Effect.mapError(fail("limitationsSince")));
+          return rows.map((row) => ({
+            runId: row.run_id,
+            stageId: row.stage_id as StageLimitation["stageId"],
+            capability: row.capability as StageLimitation["capability"],
+            detail: row.detail,
+            at: row.at,
+          }));
         },
       );
 
@@ -663,6 +759,10 @@ export class RunStore extends Context.Service<
         commit,
         listRuns,
         countRunsForStory,
+        transitionCount,
+        transitionsSince,
+        failedEvidenceSince,
+        limitationsSince,
         findRunByPullRequest,
         acquireLease,
         renewLease,

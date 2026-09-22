@@ -45,6 +45,20 @@ it.layer(NodeServices.layer)("skill catalog", (it) => {
     }),
   );
 
+  it.effect("skips a dangling symlink instead of failing the whole catalog", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      yield* writeSkill(root, "real-skill", "a skill that exists");
+      yield* fs.symlink(path.join(root, "nowhere"), path.join(root, "dangling"));
+
+      const catalog = yield* loadSkillCatalog([root]);
+      assert.isTrue(catalog.byId.has("real-skill"));
+      assert.strictEqual(catalog.byId.size, 1);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("lets a later root shadow an earlier one", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -136,6 +136,74 @@ it.layer(NodeServices.layer)("loading a playbook", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  /** The fixture playbook with its first gate replaced by one that runs a script it ships. */
+  const playbookWithScript = Effect.fnUntraced(function* (script = "#!/bin/sh\ntest -f ok.txt\n") {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const copy = yield* playbookCopy();
+    yield* fs.makeDirectory(path.join(copy, "checks"), { recursive: true });
+    yield* fs.writeFileString(path.join(copy, "checks", "ok.sh"), script);
+    yield* fs.writeFileString(
+      path.join(copy, "gates", "artifact-has-content.yaml"),
+      [
+        "id: artifact-has-content",
+        "type: command",
+        'executable: "${playbook}/checks/ok.sh"',
+        'args: ["${playbook}/checks/ok.sh", "--flag"]',
+        "timeoutMs: 1000",
+        "expect:",
+        "  exitCode: 0",
+        "",
+      ].join("\n"),
+    );
+    return copy;
+  });
+
+  const commandGateOf = (loaded: {
+    plan: { stages: readonly { gates: readonly { definition: unknown; digest: string }[] }[] };
+  }) => {
+    const pinned = loaded.plan.stages[0]!.gates[0]!;
+    return {
+      definition: pinned.definition as { executable: string; args: string[] },
+      digest: pinned.digest,
+    };
+  };
+
+  it.effect("resolves a script the playbook ships against wherever the playbook is", () =>
+    Effect.gen(function* () {
+      const first = yield* playbookWithScript();
+      const second = yield* playbookWithScript();
+
+      const one = commandGateOf(yield* expectLoaded({ playbookDir: first }));
+      const two = commandGateOf(yield* expectLoaded({ playbookDir: second }));
+
+      assert.strictEqual(one.definition.executable, `${first}/checks/ok.sh`);
+      assert.deepStrictEqual(one.definition.args, [`${first}/checks/ok.sh`, "--flag"]);
+      assert.strictEqual(two.definition.executable, `${second}/checks/ok.sh`);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("changes the gate digest when the script it runs changes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const copy = yield* playbookWithScript();
+      const original = commandGateOf(yield* expectLoaded({ playbookDir: copy }));
+      yield* fs.writeFileString(`${copy}/checks/ok.sh`, "#!/bin/sh\nexit 1\n");
+      const edited = commandGateOf(yield* expectLoaded({ playbookDir: copy }));
+      assert.notStrictEqual(original.digest, edited.digest);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails at load, not at gate time, when a shipped script is missing", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const copy = yield* playbookWithScript();
+      yield* fs.remove(`${copy}/checks/ok.sh`);
+      const diagnostics = yield* expectDiagnostics({ playbookDir: copy });
+      assert.isTrue(diagnostics.some((one) => one.message.includes("checks/ok.sh")));
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("fails when a required skill is in no configured root", () =>
     Effect.gen(function* () {
       const diagnostics = yield* expectDiagnostics({ skillRoots: [] });

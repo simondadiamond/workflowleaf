@@ -28,19 +28,17 @@ to build.
 
 ## 0. Setup
 
-Shell state does not survive between commands here, so every command below
-carries its own prefix. Node 24 is required; the system node is 22 and fails.
+`wl` below means `~/Repos/t3code/scripts/workflowleaf/bin/wl`. Call it by that
+full path. It finds its own checkout and puts Node 24 first, so it works from
+any directory, including the repository you are running a story in. The
+current directory does not matter: a run operates on the repository its
+profile names.
 
-```bash
-cd ~/Repos/t3code                                     # or any worktree of it
-export PATH="$HOME/.nvm/versions/node/v24.20.0/bin:$PATH"
-```
-
-`wl` below means `node packages/workflowleaf-runtime/src/bin.ts`, run from that
-directory. Which directory does not matter beyond finding the CLI: a run
-operates on the repository its profile names, never on the current one.
-
-The profile is `fbm` unless Simon names another one.
+The profile is `fbm` unless Simon names another one. A profile that names
+`ghConfigDir` has its own GitHub account. FBM's is `autoParis`, in
+`~/.fbm/gh`. The run uses it for every `gh` call and tells each stage to. Do
+the same for any `gh` command you run yourself for that story, and never switch
+the active account.
 
 ## 1. Read the story before you start anything
 
@@ -58,15 +56,12 @@ permissions. Two of them decide whether this run can meet its goal at all:
   executor refuses to start a stage, on purpose, so the run stops at the first
   one. Same rule.
 
-Both are true of every profile on this machine today, which is issue #33. Until
-it is closed, say that plainly instead of starting a run that cannot finish.
-
 Then read the story in full. Run `gh` from inside `repoRoot`, which is the path
 the profile names, so the repository and the account both come from the checkout
 rather than from a slug you assembled:
 
 ```bash
-cd "<repoRoot from the profile>" && gh issue view <N> --comments
+cd "<repoRoot from the profile>" && GH_CONFIG_DIR="<ghConfigDir, if the profile names one>" gh issue view <N> --comments
 ```
 
 Do not start when any of these hold. Report which one, and stop:
@@ -78,16 +73,21 @@ Do not start when any of these hold. Report which one, and stop:
 - The story is not code: an account to re-enable, an email to send.
 - The story is an epic. Run its oldest open child instead.
 
-The playbook's inputs come from the story. Pass acceptance criteria as the
-issue states them. A story with no acceptance criteria is a question for Simon,
-not a gap for you to fill in.
+The playbook's inputs come from the story. `wl validate --profile <p>` fails
+and names any input you did not pass, so read the playbook's `inputs` first.
+Pass the story's text as the issue states it. A story with no acceptance
+criteria is a question for Simon, not a gap for you to fill in.
 
 ## 2. Start the run: one command
 
+For the generic `implement-pr` playbook:
+
 ```bash
-wl run --profile fbm --owner wl-story --story issue-<N> \
-  --input issue=<N> --input acceptance_criteria="<verbatim from the issue>"
+wl run --profile <p> --owner wl-story --story issue-<N> --base origin/main \
+  --input issue=<N> --input story="<title and body, verbatim from the issue>"
 ```
+
+The Marketplace playbook takes `acceptance_criteria` instead of `story`.
 
 No playbook path. The profile's `defaultPlaybook` is the answer, and typing a
 path over it silently runs something other than what this machine is set up to
@@ -97,8 +97,9 @@ The command opens the draft pull request before the first stage, prints a line
 per stage start, per gate verdict and per stage settlement, and returns when the
 run needs a person. A stage can take twenty minutes. Let it.
 
-Those lines reach you only when the command returns, because you are holding it
-while it drives (#35). A terminal watching the same command sees them arrive.
+While you hold the command, its output reaches you only when it returns. Run it
+in the background instead, and read how far it has got with `wl status <run>`,
+whose `recentProgress` is the same lines appended as they happen.
 
 If it fails before any of that, the failure is about the setup rather than the
 work: no profile, an invalid playbook, a lease another worker holds, a dirty
@@ -130,7 +131,7 @@ stop has exactly one right move:
 | `finished`, state `cancelled` | Someone cancelled it                                                                                                                                      | Say who and why, and stop.                                                                    |
 | `needs-decision`              | The run is asking a person                                                                                                                                | §4.1                                                                                          |
 | `paused`                      | Someone paused it                                                                                                                                         | Say who, and stop.                                                                            |
-| `waiting-external`            | A watch stage is parked on something outside the run, usually a review                                                                                    | Report it and stop. `wl resume` cannot move this state today, issue #34. Do not loop on it.   |
+| `waiting-external`            | A gate is waiting on something outside the run: CI still running, or a reviewer yet to answer                                                             | `wl resume <run> --profile <p> --poll 120` checks again every two minutes for up to an hour.  |
 | `idle`                        | The run stopped without reaching a terminal or a waiting state: either the drive loop hit its transition bound, or the input it was given changed nothing | Report it with the run id, and say which of the two it looks like. Do not restart it blindly. |
 
 A pull request being open is not the same as the run having succeeded. Report
@@ -169,9 +170,12 @@ wl resume <run> --profile fbm --owner wl-story --revision <r>
 ```
 
 Under `/loop`, a wakeup is: read `wl status`, resume anything `paused` that
-Simon has unblocked, report anything new, and stop again. A wakeup with nothing
-new says nothing. A run sitting in `waiting-external` is not something a wakeup
-can move (#34), so do not keep waking for it.
+Simon has unblocked or anything `waiting-external`, report anything new, and
+stop again. A wakeup with nothing new says nothing.
+
+A `babysit` stage whose reviews have not converged sends the work back to
+`build` with every unresolved thread in the correction. That is the playbook
+fixing review findings, not something for you to do by hand.
 
 ## 6. Done
 
@@ -182,7 +186,8 @@ Not a merged one. Simon marks a pull request ready and Simon merges, always.
 
 A stage that needed a nudge, a gate that could not run, a step you did manually
 because the run could not: each one is a finding, and it is worth more than the
-story. Report it under "Need to know", and file it on
+story. `wl errors --since 30d` lists what went wrong across runs, grouped by cause, so
+check it before calling something new. Report it under "Need to know", and file it on
 `simondadiamond/workflowleaf` with the `workflowleaf` label when Simon agrees it
 should be fixed rather than remembered. Filing needs the `gh` config that repo
 is authed under: `GH_CONFIG_DIR=$HOME/.workflowleaf/gh`.

@@ -1,0 +1,8 @@
+id: tests-pass
+type: command
+executable: "${playbook}/checks/repo-command.sh"
+args: ["test"]
+timeoutMs: 900000
+expect:
+  exitCode: 0
+parse: tap
