@@ -26,6 +26,7 @@ import {
 } from "@t3tools/workflowleaf-core";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -221,26 +222,26 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     baseRevision,
   });
 
-  const lease = yield* takeLease(input.runId, input.owner);
-
   const runDir = yield* runDirFor(input.runId as string);
-  const result = yield* drive({
-    runId: input.runId,
-    deps: {
-      executor,
-      ids: idSourceFor(input.runId as string, 0),
-      workspacePath: workspace.path,
-      logDir: path.join(runDir, "logs"),
-      owner: input.owner,
-      leaseSeconds: 300,
-      progress: input.progress,
-      progressLog: path.join(runDir, PROGRESS_LOG),
-      baseRevision,
-      reviewer: input.profile.reviewer,
-    },
-    lease,
-    initial: [{ type: "start" }],
-  });
+  const result = yield* holdingLease(input.runId, input.owner, (lease) =>
+    drive({
+      runId: input.runId,
+      deps: {
+        executor,
+        ids: idSourceFor(input.runId as string, 0),
+        workspacePath: workspace.path,
+        logDir: path.join(runDir, "logs"),
+        owner: input.owner,
+        leaseSeconds: 300,
+        progress: input.progress,
+        progressLog: path.join(runDir, PROGRESS_LOG),
+        baseRevision,
+        reviewer: input.profile.reviewer,
+      },
+      lease,
+      initial: [{ type: "start" }],
+    }),
+  );
 
   return { plan: loaded.value.plan, result } satisfies StartedRun;
 });
@@ -278,9 +279,12 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
   });
 });
 
+/** How long a lease lasts without renewal. The holder renews it well inside this. */
+const LEASE_SECONDS = 300;
+
 const takeLease = Effect.fnUntraced(function* (runId: RunId, owner: string) {
   const store = yield* RunStore;
-  const lease = yield* store.acquireLease(runId, owner, 300);
+  const lease = yield* store.acquireLease(runId, owner, LEASE_SECONDS);
   if (Option.isNone(lease)) {
     return yield* new RunError({
       message: `Run ${runId} is held by another worker. Wait for it, or stop that worker.`,
@@ -288,6 +292,35 @@ const takeLease = Effect.fnUntraced(function* (runId: RunId, owner: string) {
   }
   return lease.value as Lease;
 });
+
+/**
+ * Drives a run while holding its lease, and gives the lease back afterwards.
+ *
+ * A stage can run for twenty minutes, longer than the lease lasts, so a
+ * heartbeat renews it while the drive is in progress. Otherwise a second worker
+ * could take over a run that is still being driven. The lease is released
+ * however the drive ends. Otherwise the next `resume` would be refused until
+ * the lease ran out, even though its holder had already exited.
+ */
+export const holdingLease = <A, E, R>(
+  runId: RunId,
+  owner: string,
+  use: (lease: Lease) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const store = yield* RunStore;
+    const lease = yield* takeLease(runId, owner);
+    const heartbeat = yield* Effect.forkChild(
+      store
+        .renewLease(lease, LEASE_SECONDS)
+        .pipe(Effect.ignore, Effect.delay("60 seconds"), Effect.forever),
+    );
+    return yield* use(lease).pipe(
+      Effect.ensuring(
+        Fiber.interrupt(heartbeat).pipe(Effect.andThen(store.releaseLease(lease)), Effect.ignore),
+      ),
+    );
+  });
 
 export interface ResumeRunInput {
   readonly runId: RunId;
@@ -316,28 +349,29 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
     workspacePath: workspace.value.path,
     branch: workspace.value.branch,
   });
-  const lease = yield* takeLease(input.runId, input.owner);
-
   const runDir = yield* runDirFor(input.runId as string);
-  return yield* drive({
-    runId: input.runId,
-    deps: {
-      executor,
-      // Seeded past every id the run has used, so a resumed run cannot mint
-      // one that collides with its own history.
-      ids: idSourceFor(input.runId as string, yield* store.transitionCount(input.runId)),
-      workspacePath: workspace.value.path,
-      logDir: path.join(runDir, "logs"),
-      owner: input.owner,
-      leaseSeconds: 300,
-      progress: input.progress,
-      progressLog: path.join(runDir, PROGRESS_LOG),
-      baseRevision: loaded.value.baseRevision,
-      reviewer: input.profile.reviewer,
-    },
-    lease,
-    initial: input.inputs,
-  });
+  const seed = yield* store.transitionCount(input.runId);
+  return yield* holdingLease(input.runId, input.owner, (lease) =>
+    drive({
+      runId: input.runId,
+      deps: {
+        executor,
+        // Seeded past every id the run has used, so a resumed run cannot mint
+        // one that collides with its own history.
+        ids: idSourceFor(input.runId as string, seed),
+        workspacePath: workspace.value.path,
+        logDir: path.join(runDir, "logs"),
+        owner: input.owner,
+        leaseSeconds: 300,
+        progress: input.progress,
+        progressLog: path.join(runDir, PROGRESS_LOG),
+        baseRevision: loaded.value.baseRevision,
+        reviewer: input.profile.reviewer,
+      },
+      lease,
+      initial: input.inputs,
+    }),
+  );
 });
 
 export interface PullRequestSummary {

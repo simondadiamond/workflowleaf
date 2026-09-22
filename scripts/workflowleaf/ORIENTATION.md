@@ -29,6 +29,7 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 | The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                          |
 | Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)              |
 | `wl` from any directory                     | `scripts/workflowleaf/bin/wl`, linked into `~/.local/bin`                                    |
+| Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23              |
 | The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`        |
 
 Two packages: `packages/workflowleaf-core` (pure domain, no T3, no filesystem,
