@@ -26,6 +26,7 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 | Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                     |
 | Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                            |
 | The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                          |
+| Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)              |
 
 Two packages: `packages/workflowleaf-core` (pure domain, no T3, no filesystem,
 no clock) and `packages/workflowleaf-runtime` (loader, store, gates, worker,
@@ -228,18 +229,31 @@ as soon as those three land and let #6 (the learning log) collect what breaks.
 ## Driving it today
 
 ```bash
-node packages/workflowleaf-runtime/src/bin.ts validate <playbook-dir> --profile <name> --input k=v
-node packages/workflowleaf-runtime/src/bin.ts compile  <playbook-dir> --profile <name> --input k=v
-node packages/workflowleaf-runtime/src/bin.ts run      <playbook-dir> --profile <name> --story issue-42 --input k=v
+node packages/workflowleaf-runtime/src/bin.ts validate [playbook-dir] --profile <name> --input k=v
+node packages/workflowleaf-runtime/src/bin.ts compile  [playbook-dir] --profile <name> --input k=v
+node packages/workflowleaf-runtime/src/bin.ts run      [playbook-dir] --profile <name> --story issue-42 --input k=v
 node packages/workflowleaf-runtime/src/bin.ts status
 node packages/workflowleaf-runtime/src/bin.ts status --pr 1234
 ```
+
+The playbook directory is optional. Without one, the profile's
+`defaultPlaybook` is used, and a command with neither fails rather than
+guessing. A playbook is copied between repositories and shared, so the path it
+sits at belongs to the profile, which is the local half of the pair. Passing a
+directory still wins, because one repository has more than one playbook.
 
 `run` takes `--story`, falling back to the `issue` input, and derives the run id
 from it. There is no `--id`.
 
 `resume`, `pause`, `cancel` and `decide` take `--revision` and refuse when the
-run has moved since you looked.
+run has moved since you looked. The number is on the run: `status` carries
+`revision` in both its detail forms.
+
+Every command that drives a run prints a line as each stage starts, each gate
+returns a verdict and each stage settles. The lines are read off the records
+either side of each commit, so they report what was persisted and never what
+was merely attempted. An agent holding the command still sees them only when it
+returns (#35).
 
 ## What is proven and what is not
 
@@ -249,6 +263,11 @@ through the worker; and the worker driving the live T3 adapter end to end
 (#5) — a two-stage run and a one-stage run with a deliberate gate failure, its
 correction delivered as a second turn on the same thread, and the run finishing
 green, with zero upstream files changed.
+
+The `wl-story` skill (#1) is the only way to drive a run by hand today. It
+takes a story number, starts the run, reports each stage and stops when a
+person is needed. It has driven no real story, because no profile on this
+machine can execute one (#33).
 
 **Not proven:** opening a real pull request through `gh` — the git half is
 tested, the `gh` half has never run; a second provider (#16); recovery against
