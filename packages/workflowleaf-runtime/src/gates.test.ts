@@ -307,7 +307,7 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("gate runner", (it) 
     }).pipe(Effect.scoped),
   );
 
-  it.effect("refuses to decide an external gate with no integration result", () =>
+  it.effect("refuses to decide an external gate for a run with no pull request", () =>
     Effect.gen(function* () {
       const { workspace, logDir } = yield* makeWorkspace();
 

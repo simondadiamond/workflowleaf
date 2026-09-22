@@ -126,7 +126,10 @@ export const executorFor = Effect.fnUntraced(function* (
   }) as ExecutorPort;
 });
 
-const runDirFor = Effect.fnUntraced(function* (runId: string) {
+/** Appended as the run moves, under the run's directory. Readable while another process drives it. */
+export const PROGRESS_LOG = "progress.log";
+
+export const runDirFor = Effect.fnUntraced(function* (runId: string) {
   const path = yield* Path.Path;
   return path.join(yield* workflowleafHome(), "runs", runId);
 });
@@ -220,16 +223,20 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
 
   const lease = yield* takeLease(input.runId, input.owner);
 
+  const runDir = yield* runDirFor(input.runId as string);
   const result = yield* drive({
     runId: input.runId,
     deps: {
       executor,
       ids: idSourceFor(input.runId as string, 0),
       workspacePath: workspace.path,
-      logDir: path.join(yield* runDirFor(input.runId as string), "logs"),
+      logDir: path.join(runDir, "logs"),
       owner: input.owner,
       leaseSeconds: 300,
       progress: input.progress,
+      progressLog: path.join(runDir, PROGRESS_LOG),
+      baseRevision,
+      reviewer: input.profile.reviewer,
     },
     lease,
     initial: [{ type: "start" }],
@@ -311,16 +318,22 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   });
   const lease = yield* takeLease(input.runId, input.owner);
 
+  const runDir = yield* runDirFor(input.runId as string);
   return yield* drive({
     runId: input.runId,
     deps: {
       executor,
-      ids: idSourceFor(input.runId as string, loaded.value.record.visits.length),
+      // Seeded past every id the run has used, so a resumed run cannot mint
+      // one that collides with its own history.
+      ids: idSourceFor(input.runId as string, yield* store.transitionCount(input.runId)),
       workspacePath: workspace.value.path,
-      logDir: path.join(yield* runDirFor(input.runId as string), "logs"),
+      logDir: path.join(runDir, "logs"),
       owner: input.owner,
       leaseSeconds: 300,
       progress: input.progress,
+      progressLog: path.join(runDir, PROGRESS_LOG),
+      baseRevision: loaded.value.baseRevision,
+      reviewer: input.profile.reviewer,
     },
     lease,
     initial: input.inputs,

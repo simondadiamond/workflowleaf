@@ -232,8 +232,10 @@ as soon as those three land and let #6 (the learning log) collect what breaks.
 node packages/workflowleaf-runtime/src/bin.ts validate [playbook-dir] --profile <name> --input k=v
 node packages/workflowleaf-runtime/src/bin.ts compile  [playbook-dir] --profile <name> --input k=v
 node packages/workflowleaf-runtime/src/bin.ts run      [playbook-dir] --profile <name> --story issue-42 --input k=v
-node packages/workflowleaf-runtime/src/bin.ts status
+node packages/workflowleaf-runtime/src/bin.ts status [run]
 node packages/workflowleaf-runtime/src/bin.ts status --pr 1234
+node packages/workflowleaf-runtime/src/bin.ts resume <run> --profile <name> [--poll 120]
+node packages/workflowleaf-runtime/src/bin.ts errors --since 30d
 ```
 
 The playbook directory is optional. Without one, the profile's
@@ -252,8 +254,37 @@ run has moved since you looked. The number is on the run: `status` carries
 Every command that drives a run prints a line as each stage starts, each gate
 returns a verdict and each stage settles. The lines are read off the records
 either side of each commit, so they report what was persisted and never what
-was merely attempted. An agent holding the command still sees them only when it
-returns (#35).
+was merely attempted. The same lines are appended to
+`~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
+them, so a second terminal or an agent between turns can see how far a run has
+got while another process is still driving it.
+
+`errors` is the learning log. It is derived from what runs already recorded
+(failed evidence, raised decisions, human answers, limitations) and grouped by
+cause, so there is no second writer to forget.
+
+## How each gate type is judged
+
+- `command`, `file`, `diff`: by code, in the run's worktree. A command gate can
+  run a script the playbook ships by naming it `${playbook}/checks/x.sh`; the
+  loader resolves that against the playbook directory and folds the script's
+  content into the gate digest, so editing the check invalidates its evidence.
+- `review`: by the profile's `reviewer`, a separate process started by code
+  and never the stage's own context. Absent, it is a fresh `claude -p` with
+  read-only tools and no user settings. One call per entry in the gate's
+  `criteria` (or one for the whole `rubric`), each answering against a JSON
+  schema. A reviewer that does not answer in the schema records `error`,
+  never a pass.
+- `external`: by reading the run's pull request through `gh`, bound to its
+  head commit and compared with the worktree's HEAD. `pull-request-exists`,
+  `checks-green` and `converged-on-head` exist. An unresolved condition (CI
+  running, a reviewer yet to answer) records `pending`: the run parks in
+  `waiting_external` and `resume` checks again. `--poll <seconds>` keeps
+  checking for up to `--poll-for` minutes.
+
+A stage that routes back (`correction: route-to`) sends its failing verdicts
+with the dispatch, so the stage it returns to starts from the findings rather
+than from nothing.
 
 ## What is proven and what is not
 

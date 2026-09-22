@@ -10,14 +10,24 @@ import { formatDiagnostics, SATISFYING } from "@t3tools/workflowleaf-core";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { prettyJson } from "./canonical.ts";
+import { groupByCause, readLearningLog, sinceInstant } from "./learningLog.ts";
 import { loadPlaybook } from "./load.ts";
-import { describeRun, nextRunId, resumeRun, startRun, summarizeRuns } from "./run.ts";
+import {
+  describeRun,
+  nextRunId,
+  PROGRESS_LOG,
+  resumeRun,
+  runDirFor,
+  startRun,
+  summarizeRuns,
+} from "./run.ts";
 import {
   loadProfile,
   PROFILE_TEMPLATE,
@@ -370,7 +380,9 @@ const statusCommand = Command.make(
         yield* Console.error(`No run ${run.value}.`);
         return;
       }
-      yield* Console.log(prettyJson(detail.value));
+      yield* Console.log(
+        prettyJson({ ...detail.value, recentProgress: yield* recentProgress(run.value) }),
+      );
       return;
     }
 
@@ -392,22 +404,113 @@ const statusCommand = Command.make(
   }),
 ).pipe(Command.withDescription("List runs, or show one in full."));
 
+/**
+ * The last lines of a run's progress log. Written by whichever process is
+ * driving the run, so this shows how far it has got while it is still going.
+ */
+const recentProgress = Effect.fnUntraced(
+  function* (runId: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const file = path.join(yield* runDirFor(runId), PROGRESS_LOG);
+    if (!(yield* fs.exists(file))) return [] as string[];
+    const lines = (yield* fs.readFileString(file)).split("\n").filter((line) => line.length > 0);
+    return lines.slice(-12);
+  },
+  Effect.catchCause(() => Effect.succeed([] as string[])),
+);
+
 const resumeCommand = Command.make(
   "resume",
-  { run: runIdArgument, profile: profileFlag, owner: ownerFlag, revision: revisionFlag },
-  Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision }) {
+  {
+    run: runIdArgument,
+    profile: profileFlag,
+    owner: ownerFlag,
+    revision: revisionFlag,
+    poll: Flag.Int("poll").pipe(
+      Flag.withDescription(
+        "While the run is waiting on an external condition, check again every this many seconds.",
+      ),
+      Flag.optional,
+    ),
+    pollFor: Flag.Int("poll-for").pipe(
+      Flag.withDescription("Stop polling after this many minutes. Defaults to 60."),
+      Flag.withDefault(60),
+    ),
+  },
+  Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision, poll, pollFor }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const result = yield* resumeRun({
-      runId: run as never,
-      profile,
-      owner,
-      inputs: [{ type: "resume" }],
-      progress: printProgress,
-    });
+    const resumeOnce = () =>
+      resumeRun({
+        runId: run as never,
+        profile,
+        owner,
+        inputs: [{ type: "resume" }],
+        progress: printProgress,
+      });
+
+    let result = yield* resumeOnce();
+    if (Option.isSome(poll)) {
+      // Waiting on CI or reviewers is waiting on something that cannot notify
+      // us, so this asks again on an interval, bounded so it cannot run forever.
+      const interval = Math.max(10, poll.value);
+      let waited = 0;
+      while (result.stopped === "waiting-external" && waited + interval <= pollFor * 60) {
+        yield* Effect.sleep(`${interval} seconds`);
+        waited += interval;
+        result = yield* resumeOnce();
+      }
+    }
     yield* reportResult(run, result.stopped);
   }),
-).pipe(Command.withDescription("Pick a paused run back up."));
+).pipe(
+  Command.withDescription(
+    "Pick a paused run back up. A run waiting on an external condition checks it again.",
+  ),
+);
+
+const errorsCommand = Command.make(
+  "errors",
+  {
+    since: Flag.String("since").pipe(
+      Flag.withDescription("How far back: 30d, 12h, 90m, or an ISO instant."),
+      Flag.withDefault("30d"),
+    ),
+    json: Flag.Boolean("json").pipe(Flag.withDescription("Print every entry as JSON.")),
+  },
+  Effect.fnUntraced(function* ({ since, json }) {
+    const from = yield* sinceInstant(since);
+    if (from === null) {
+      yield* Console.error(`--since ${since} is not 30d, 12h, 90m or an ISO instant.`);
+      return;
+    }
+    const entries = yield* readLearningLog(from);
+    if (json) {
+      yield* Console.log(prettyJson(entries));
+      return;
+    }
+    const groups = groupByCause(entries);
+    if (groups.length === 0) {
+      yield* Console.log(`Nothing went wrong since ${from}.`);
+      return;
+    }
+    for (const group of groups) {
+      const people = group.human > 0 ? `, ${String(group.human)} needed a person` : "";
+      yield* Console.log(
+        `${String(group.count).padStart(3)}x ${group.cause}  (${group.runs.join(", ")}${people}; last ${group.lastAt})`,
+      );
+      const firstLine = group.latest.detail.split("\n")[0] ?? "";
+      if (firstLine.length > 0) yield* Console.log(`      ${firstLine.slice(0, 200)}`);
+      if (group.latest.evidence !== null)
+        yield* Console.log(`      evidence: ${group.latest.evidence}`);
+    }
+  }),
+).pipe(
+  Command.withDescription(
+    "The learning log: every failed gate, stop and manual intervention, grouped by cause.",
+  ),
+);
 
 const pauseCommand = Command.make(
   "pause",
@@ -504,6 +607,7 @@ export const wlCommand = Command.make("wl").pipe(
     pauseCommand,
     cancelCommand,
     decideCommand,
+    errorsCommand,
     skillsCommand,
     profileCommand,
   ]),

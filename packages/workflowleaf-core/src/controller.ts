@@ -94,6 +94,12 @@ export type ControllerEffect =
       readonly visitId: VisitId;
       readonly attemptId: AttemptId;
       readonly operationId: OperationId;
+      /**
+       * Set when a later stage routed the work back here. The stage opens a
+       * fresh context, so the findings that sent it back have to travel with
+       * the dispatch or the repair starts blind.
+       */
+      readonly correction?: string | undefined;
     }
   | {
       readonly type: "continue-stage";
@@ -140,7 +146,7 @@ export interface ControllerContext {
 
 // ---------------------------------------------------------------- helpers
 
-/** Gate outcomes that let a stage advance. Everything else needs correcting. */
+/** Gate outcomes that let a stage advance. `pending` waits; everything else needs correcting. */
 export const SATISFYING: readonly GateOutcome[] = ["passed", "waived"];
 
 function touch(run: RunRecord, now: Instant, patch: Partial<RunRecord>): RunRecord {
@@ -198,7 +204,7 @@ function deadlinePassed(context: ControllerContext): boolean {
  * runs its gates with no model at all; a decision stage stops for a human; a
  * watch stage waits on its external gates.
  */
-function enterStage(context: ControllerContext, stageId: StageId): Decision {
+function enterStage(context: ControllerContext, stageId: StageId, correction?: string): Decision {
   const stage = findStage(context.plan, stageId);
   if (stage === undefined) {
     return {
@@ -277,10 +283,12 @@ function enterStage(context: ControllerContext, stageId: StageId): Decision {
     }
 
     case "watch": {
+      // A watch stage checks straight away. It parks in `waiting_external`
+      // only when a gate says the condition has not resolved yet.
       const visit: StageVisit = { ...base, state: "checking", attempts: 1 };
       return {
         run: touch(context.run, context.now, {
-          state: "waiting_external",
+          state: "running",
           currentStageId: stageId,
           visits: [...context.run.visits, visit],
         }),
@@ -309,7 +317,16 @@ function enterStage(context: ControllerContext, stageId: StageId): Decision {
           currentStageId: stageId,
           visits: [...context.run.visits, visit],
         }),
-        effects: [{ type: "dispatch-stage", stageId, visitId, attemptId, operationId }],
+        effects: [
+          {
+            type: "dispatch-stage",
+            stageId,
+            visitId,
+            attemptId,
+            operationId,
+            ...(correction === undefined ? {} : { correction }),
+          },
+        ],
       };
     }
   }
@@ -505,7 +522,11 @@ function routeBack(
   const withCycle = touch(run, context.now, {
     budget: { ...run.budget, repairCycles: run.budget.repairCycles + 1 },
   });
-  return enterStage({ ...context, run: withCycle }, policy.stage);
+  return enterStage(
+    { ...context, run: withCycle },
+    policy.stage,
+    `The \`${visit.stageId}\` stage sent this work back.\n${correctionText(verdicts)}`,
+  );
 }
 
 // ---------------------------------------------------------------- transitions
@@ -601,10 +622,8 @@ export function decide(context: ControllerContext, input: ControllerInput): Deci
       return { run: touch(run, context.now, { state: "paused" }), effects: [] };
     }
 
-    case "resume": {
-      if (run.state !== "paused") return noChange(run);
-      return { run: touch(run, context.now, { state: "running" }), effects: [] };
-    }
+    case "resume":
+      return onResume(context);
   }
 }
 
@@ -761,7 +780,59 @@ function onGates(
   const unsatisfied = verdicts.filter((verdict) => !SATISFYING.includes(verdict.outcome));
   if (unsatisfied.length === 0) return advance(context, visit);
 
-  return repair(context, stage, visit, verdicts);
+  // A real failure is corrected now. Only when everything left is unresolved
+  // does the run park and wait, because waiting cannot fix a failing gate.
+  if (unsatisfied.every((verdict) => verdict.outcome === "pending")) {
+    return {
+      run: touch(run, context.now, { state: "waiting_external" }),
+      effects: [],
+    };
+  }
+
+  return repair(
+    context,
+    stage,
+    visit,
+    verdicts.filter((verdict) => verdict.outcome !== "pending"),
+  );
+}
+
+/**
+ * Picks a run back up.
+ *
+ * A run that stopped while its gates were being checked, whether parked on an
+ * unresolved external condition or paused mid-check, checks again. The earlier
+ * verdicts stay in the evidence store; the new ones are recorded under a fresh
+ * attempt so nothing is overwritten. Anything else simply runs again, and the
+ * worker reconciles whatever was in flight.
+ */
+function onResume(context: ControllerContext): Decision {
+  const { run } = context;
+  if (run.state !== "paused" && run.state !== "waiting_external") return noChange(run);
+
+  const visit = currentVisit(run);
+  const stage = visit === undefined ? undefined : findStage(context.plan, visit.stageId);
+  if (visit === undefined || stage === undefined || visit.state !== "checking") {
+    if (run.state === "waiting_external") return noChange(run);
+    return { run: touch(run, context.now, { state: "running" }), effects: [] };
+  }
+
+  const gateIds = stage.gates.map((gate) => gate.definition.id);
+  return {
+    run: touch(run, context.now, {
+      state: "running",
+      visits: replaceVisit(run, { ...visit, pendingGates: gateIds }),
+    }),
+    effects: [
+      {
+        type: "run-gates",
+        stageId: visit.stageId,
+        visitId: visit.visitId,
+        attemptId: context.ids.attemptId(),
+        gateIds,
+      },
+    ],
+  };
 }
 
 function onEvidenceInvalidated(

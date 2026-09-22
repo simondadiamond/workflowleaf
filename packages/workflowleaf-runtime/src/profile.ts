@@ -18,6 +18,8 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import { DEFAULT_REVIEWER, type ReviewerConfig } from "./reviewer.ts";
+
 export class ProfileError extends Schema.TaggedError<ProfileError>()("WlProfileError", {
   message: Schema.String,
 }) {}
@@ -53,6 +55,17 @@ const PullRequestConfig = Schema.Struct({
 });
 export type PullRequestConfig = typeof PullRequestConfig.Type;
 
+/**
+ * Who judges review gates. Any command that reads a prompt on stdin and prints
+ * a verdict works; `${schema}` and `${schemaFile}` in `args` are replaced with
+ * the verdict schema. Absent means a fresh `claude -p` with read-only tools.
+ */
+const ReviewerConfigDocument = Schema.Struct({
+  executable: Schema.String.check(Schema.isNonEmpty()),
+  args: Schema.Array(Schema.String),
+  timeoutMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+});
+
 const ProfileDocument = Schema.Struct({
   executor: ExecutorConfig,
   /** Absolute path to the repository runs operate on. */
@@ -70,6 +83,7 @@ const ProfileDocument = Schema.Struct({
   defaultPlaybook: Schema.optional(Schema.String),
   /** Directories searched for skills, in order. Later roots shadow earlier ones. */
   skillRoots: Schema.Array(Schema.String),
+  reviewer: Schema.optional(ReviewerConfigDocument),
   budgets: Schema.Struct({
     maxRepairCycles: Schema.Int,
     runDeadlineMs: Schema.NullOr(Schema.Int),
@@ -90,9 +104,10 @@ const ProfileDocument = Schema.Struct({
 });
 export type ProfileDocument = typeof ProfileDocument.Type;
 
-export interface Profile extends ProfileDocument {
+export interface Profile extends Omit<ProfileDocument, "reviewer"> {
   readonly name: string;
   readonly worktreeRoot: string;
+  readonly reviewer: ReviewerConfig;
 }
 
 const decodeProfile = Schema.decodeUnknownResult(ProfileDocument, {
@@ -162,6 +177,7 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
   return {
     ...document,
     name,
+    reviewer: document.reviewer ?? DEFAULT_REVIEWER,
     worktreeRoot:
       document.worktreeRoot !== undefined && document.worktreeRoot.length > 0
         ? document.worktreeRoot

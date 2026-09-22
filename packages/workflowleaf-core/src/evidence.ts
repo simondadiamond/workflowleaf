@@ -13,8 +13,20 @@ import * as Schema from "effect/Schema";
 
 import { AttemptId, Digest, GateId, Instant, RunId, SnapshotId, VisitId } from "./ids.ts";
 
-/** `error` is "the check could not run", which is not the same as "the check failed". */
-export const GateOutcome = Schema.Literals(["passed", "failed", "error", "stale", "waived"]);
+/**
+ * `error` is "the check could not run", which is not the same as "the check
+ * failed". `pending` is "the thing being checked has not resolved yet": CI is
+ * still running, or reviewers have not answered. It is neither a pass nor
+ * something a correction can fix, so the run waits and asks again.
+ */
+export const GateOutcome = Schema.Literals([
+  "passed",
+  "failed",
+  "error",
+  "stale",
+  "waived",
+  "pending",
+]);
 export type GateOutcome = typeof GateOutcome.Type;
 
 export const CommandResult = Schema.Struct({
@@ -55,6 +67,8 @@ export const ReviewResult = Schema.Struct({
       failureScenario: Schema.String,
     }),
   ),
+  /** How many rubric criteria were judged. Optional so older evidence still decodes. */
+  criteriaJudged: Schema.optional(Schema.Int),
 });
 
 export const ExternalResult = Schema.Struct({
@@ -62,7 +76,7 @@ export const ExternalResult = Schema.Struct({
   check: Schema.String,
   /** What the result is bound to. A green against another revision proves nothing. */
   boundValue: Schema.NullOr(Schema.String),
-  state: Schema.Literals(["satisfied", "unsatisfied", "unattributed", "unavailable"]),
+  state: Schema.Literals(["satisfied", "unsatisfied", "pending", "unattributed", "unavailable"]),
   detail: Schema.NullOr(Schema.String),
 });
 

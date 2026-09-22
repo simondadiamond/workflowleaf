@@ -833,3 +833,141 @@ describe("a run is one story and one pull request", () => {
     expect(passed.run.decision?.detail).toContain("#42");
   });
 });
+
+describe("waiting on an external condition", () => {
+  /** A plan whose second stage is a watch with a single external gate. */
+  function watchPlan() {
+    return {
+      ...plan,
+      stages: plan.stages.map((stage, index) =>
+        index === 1
+          ? {
+              ...stage,
+              contract: {
+                ...stage.contract,
+                kind: "watch" as const,
+                instruction: undefined,
+                correction: { mode: "route-to" as const, stage: STAGE_A, maxCycles: 2 },
+              },
+              instruction: null,
+            }
+          : stage,
+      ),
+    };
+  }
+
+  function runToWatch(ids = sequentialIds()) {
+    const watch = watchPlan();
+    const ctx = (run: RunRecord, now = "2026-01-01T00:00:05.000Z") => ({
+      run,
+      plan: watch,
+      now,
+      ids,
+    });
+    const started = decide(ctx(freshRun()), { type: "start" });
+    const dispatch = dispatchOf(started.effects);
+    const settled = decide(ctx(started.run), {
+      type: "settled",
+      settlement: {
+        operationId: dispatch.operationId,
+        outcome: "completed",
+        settled: true,
+        detail: null,
+        at: "2026-01-01T00:00:02.000Z",
+      },
+    });
+    const entered = decide(ctx(settled.run), {
+      type: "gates-evaluated",
+      visitId: settled.run.visits[0]!.visitId,
+      verdicts: [pass(GATE_ARTIFACT_EXISTS)],
+    });
+    return { entered, ctx, watchVisitId: entered.run.visits[1]!.visitId };
+  }
+
+  const pending: GateVerdict = {
+    gateId: GATE_SUMMARY_EXISTS,
+    outcome: "pending",
+    summary: "checks still running",
+  };
+
+  it("checks straight away and parks only when the condition is unresolved", () => {
+    const { entered, ctx, watchVisitId } = runToWatch();
+    expect(entered.run.state).toBe("running");
+    expect(entered.effects.map((effect) => effect.type)).toEqual(["run-gates"]);
+
+    const parked = decide(ctx(entered.run), {
+      type: "gates-evaluated",
+      visitId: watchVisitId,
+      verdicts: [pending],
+    });
+    expect(parked.run.state).toBe("waiting_external");
+    expect(parked.effects).toEqual([]);
+    expect(parked.run.visits[1]?.state).toBe("checking");
+    expect(parked.run.budget.repairCycles).toBe(0);
+  });
+
+  it("checks again on resume, under a fresh attempt, and moves on once satisfied", () => {
+    const { entered, ctx, watchVisitId } = runToWatch();
+    const parked = decide(ctx(entered.run), {
+      type: "gates-evaluated",
+      visitId: watchVisitId,
+      verdicts: [pending],
+    });
+
+    const resumed = decide(ctx(parked.run), { type: "resume" });
+    expect(resumed.run.state).toBe("running");
+    const rerun = resumed.effects[0];
+    expect(rerun?.type).toBe("run-gates");
+    const firstAttempt =
+      entered.effects[0]?.type === "run-gates" ? entered.effects[0].attemptId : null;
+    expect(rerun?.type === "run-gates" ? rerun.attemptId : null).not.toBe(firstAttempt);
+
+    const done = decide(ctx(resumed.run), {
+      type: "gates-evaluated",
+      visitId: watchVisitId,
+      verdicts: [pass(GATE_SUMMARY_EXISTS)],
+    });
+    expect(done.run.state).toBe("succeeded");
+  });
+
+  it("stays parked when the condition is still unresolved on resume", () => {
+    const { entered, ctx, watchVisitId } = runToWatch();
+    const parked = decide(ctx(entered.run), {
+      type: "gates-evaluated",
+      visitId: watchVisitId,
+      verdicts: [pending],
+    });
+    const resumed = decide(ctx(parked.run), { type: "resume" });
+    const again = decide(ctx(resumed.run), {
+      type: "gates-evaluated",
+      visitId: watchVisitId,
+      verdicts: [pending],
+    });
+    expect(again.run.state).toBe("waiting_external");
+    expect(again.run.visits).toHaveLength(2);
+  });
+
+  it("routes a real failure back with its findings instead of waiting on it", () => {
+    const { entered, ctx, watchVisitId } = runToWatch();
+    const failed = decide(ctx(entered.run), {
+      type: "gates-evaluated",
+      visitId: watchVisitId,
+      verdicts: [
+        failGate(GATE_SUMMARY_EXISTS, "2 unresolved review threads: src/a.ts:12 null check"),
+      ],
+    });
+
+    const dispatch = dispatchOf(failed.effects);
+    expect(dispatch.stageId).toBe(STAGE_A);
+    expect(dispatch.correction).toContain("src/a.ts:12 null check");
+    expect(dispatch.correction).toContain("sent this work back");
+    expect(failed.run.budget.repairCycles).toBe(1);
+  });
+
+  it("does not treat a resume of a running run as a reason to check again", () => {
+    const { entered, ctx } = runToWatch();
+    const resumed = decide(ctx(entered.run), { type: "resume" });
+    expect(resumed.effects).toEqual([]);
+    expect(resumed.run.revision).toBe(entered.run.revision);
+  });
+});
