@@ -313,9 +313,18 @@ body. The `gh` half of opening a pull request is now proven.
 The `wl-story` skill (#1) drives a run by hand. It takes a story number,
 starts the run, reports each stage and stops when a person is needed.
 
+`issue-3-1` proved the fixer loop live. The run parked on a running CI check,
+and a review thread was posted on its pull request. Babysit routed the thread
+to build, build fixed it, deliver replied and resolved the thread, and the run
+converged with no human step.
+
+`issue-5-1` ran the same playbook and the same controller on Codex
+(`gpt-5.6-sol`), with only the profile changed (#16, C12). It corrected two
+failing gates inside the same context and succeeded.
+
 **Not proven:** a real Marketplace story (#26 proper), which needs a profile
-pointing at that repository and the account that can push to it; a second
-provider (#16); recovery against a live server (#18).
+pointing at that repository and the account that can push to it; recovery
+against a live server (#18).
 
 Eight bugs have been found only by running against a real server, none of them
 visible from reading the handler: a wrong payload shape, a nested field read
