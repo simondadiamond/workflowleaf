@@ -25,8 +25,11 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 | Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                      |
 | Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                     |
 | Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                            |
+| The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                               |
 | The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                          |
 | Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)              |
+| `wl` from any directory                     | `scripts/workflowleaf/bin/wl`, linked into `~/.local/bin`                                    |
+| The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`        |
 
 Two packages: `packages/workflowleaf-core` (pure domain, no T3, no filesystem,
 no clock) and `packages/workflowleaf-runtime` (loader, store, gates, worker,
@@ -269,6 +272,10 @@ cause, so there is no second writer to forget.
   run a script the playbook ships by naming it `${playbook}/checks/x.sh`; the
   loader resolves that against the playbook directory and folds the script's
   content into the gate digest, so editing the check invalidates its evidence.
+  Command gates get `WORKFLOWLEAF_BASE_REVISION`, `WORKFLOWLEAF_PR_NUMBER`,
+  `WORKFLOWLEAF_RUN_ID` and `WORKFLOWLEAF_WORKTREE` in their environment. The
+  generic playbook reads the target repository's `.workflowleaf/commands` at the
+  base revision, so a stage cannot loosen the command that checks it.
 - `review`: by the profile's `reviewer`, a separate process started by code
   and never the stage's own context. Absent, it is a fresh `claude -p` with
   read-only tools and no user settings. One call per entry in the gate's
@@ -295,18 +302,24 @@ through the worker; and the worker driving the live T3 adapter end to end
 correction delivered as a second turn on the same thread, and the run finishing
 green, with zero upstream files changed.
 
-The `wl-story` skill (#1) is the only way to drive a run by hand today. It
-takes a story number, starts the run, reports each stage and stops when a
-person is needed. It has driven no real story, because no profile on this
-machine can execute one (#33).
+**A real story end to end (#26 on the sandbox).** `issue-1-1` in the sandbox
+ran the generic playbook through a live T3 dev server to `succeeded`. It went
+through plan, build, an independent review judged per criterion by `claude -p`,
+deliver with the pull request body checked by script, and babysit with
+convergence read from GitHub. Its draft pull request carries the code and the
+body. The `gh` half of opening a pull request is now proven.
 
-**Not proven:** opening a real pull request through `gh` — the git half is
-tested, the `gh` half has never run; a second provider (#16); recovery against
-a live server (#18); and any real story end to end.
+The `wl-story` skill (#1) drives a run by hand. It takes a story number,
+starts the run, reports each stage and stops when a person is needed.
 
-Six bugs have been found only by running against a real server, none of them
+**Not proven:** a real Marketplace story (#26 proper), which needs a profile
+pointing at that repository and the account that can push to it; a second
+provider (#16); recovery against a live server (#18).
+
+Eight bugs have been found only by running against a real server, none of them
 visible from reading the handler: a wrong payload shape, a nested field read
 flat, a subscription attached after dispatch instead of before, a subscription
 attached before the thread existed (which deadlocked), corrections that named
-no evidence, and a gate that could not start taking the whole run down. Prefer
-a live check to an argument.
+no evidence, a gate that could not start taking the whole run down, run records
+from before a field existed failing every `status`, and one dangling symlink in
+a skill root failing every load. Prefer a live check to an argument.

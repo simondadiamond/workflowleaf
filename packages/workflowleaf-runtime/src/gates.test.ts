@@ -161,6 +161,24 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("gate runner", (it) 
     }).pipe(Effect.scoped),
   );
 
+  it.effect("tells a command gate the run's base revision, so it can read config from there", () =>
+    Effect.gen(function* () {
+      const { workspace, logDir } = yield* makeWorkspace();
+      const evidence = yield* evaluateGate(
+        {
+          id: "sees-base" as GateId,
+          type: "command",
+          executable: "/bin/sh",
+          args: ["-c", 'test "$WORKFLOWLEAF_BASE_REVISION" = "base-123" && test -n "$PATH"'],
+          timeoutMs: 10_000,
+          expect: { exitCode: 0 },
+        },
+        { ...(yield* contextFor(workspace, logDir)), baseRevision: "base-123" },
+      );
+      assert.strictEqual(evidence.outcome, "passed");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("fails a command gate on a non-zero exit, regardless of what it printed", () =>
     Effect.gen(function* () {
       const { workspace, logDir } = yield* makeWorkspace();

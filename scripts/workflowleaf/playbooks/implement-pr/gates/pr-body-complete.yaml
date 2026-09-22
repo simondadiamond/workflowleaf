@@ -1,0 +1,7 @@
+id: pr-body-complete
+type: command
+executable: "${playbook}/checks/pr-body.sh"
+args: ["## Summary", "## Tests", "## Done when"]
+timeoutMs: 60000
+expect:
+  exitCode: 0

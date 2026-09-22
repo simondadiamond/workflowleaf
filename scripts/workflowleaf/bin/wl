@@ -1,0 +1,25 @@
+#!/bin/sh
+# The `wl` command from anywhere, e.g. inside the repository a run operates on.
+#
+# Resolves the checkout this script lives in, puts Node 24 first, and runs the
+# CLI from there. A run operates on the repository its profile names, never on
+# the current directory, so where you call this from does not matter.
+#
+# Install: ln -s "<checkout>/scripts/workflowleaf/bin/wl" ~/.local/bin/wl
+set -eu
+
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$(dirname "$self")/$target ;;
+  esac
+done
+checkout=$(cd "$(dirname "$self")/../../.." && pwd)
+
+node24="$HOME/.nvm/versions/node/v24.20.0/bin"
+[ -d "$node24" ] && PATH="$node24:$PATH"
+export PATH
+
+exec node "$checkout/packages/workflowleaf-runtime/src/bin.ts" "$@"

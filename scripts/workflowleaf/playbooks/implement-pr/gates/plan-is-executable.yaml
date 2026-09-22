@@ -1,0 +1,10 @@
+id: plan-is-executable
+type: file
+path: .workflowleaf/plan.md
+mustExist: true
+minBytes: 300
+mustContain:
+  - "## Change"
+  - "## Tests"
+  - "## Done when"
+  - "## Out of scope"

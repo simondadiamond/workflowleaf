@@ -12,6 +12,7 @@
  */
 import type { Digest } from "@t3tools/workflowleaf-core";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { parse as parseYaml } from "yaml";
@@ -81,8 +82,10 @@ export const loadSkillCatalog = Effect.fnUntraced(function* (roots: readonly str
 
     for (const entry of [...(yield* fs.readDirectory(root))].sort()) {
       const directory = path.join(root, entry);
-      const childInfo = yield* fs.stat(directory);
-      if (childInfo.type !== "Directory") continue;
+      // A dangling symlink or an unreadable entry is not a skill. It must not
+      // take down every load that happens to share its root.
+      const childInfo = yield* fs.stat(directory).pipe(Effect.option);
+      if (Option.isNone(childInfo) || childInfo.value.type !== "Directory") continue;
       const skill = yield* readSkill(directory, root);
       if (skill !== null) byId.set(skill.id, skill);
     }

@@ -104,6 +104,24 @@ const collect = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string,
     ),
   );
 
+/**
+ * What a command gate is told about the run it is checking. The base revision
+ * matters most: a check that reads its configuration from the base, rather than
+ * from the worktree, cannot be loosened by the stage it is checking.
+ */
+export function gateEnvironment(context: GateContext): Record<string, string> {
+  return {
+    WORKFLOWLEAF_RUN_ID: context.runId as string,
+    WORKFLOWLEAF_WORKTREE: context.workspacePath,
+    ...(context.baseRevision === undefined
+      ? {}
+      : { WORKFLOWLEAF_BASE_REVISION: context.baseRevision }),
+    ...(context.pullRequestNumber === undefined || context.pullRequestNumber === null
+      ? {}
+      : { WORKFLOWLEAF_PR_NUMBER: String(context.pullRequestNumber) }),
+  };
+}
+
 const runCommandGate = Effect.fnUntraced(function* (
   gate: Extract<GateDefinition, { type: "command" }>,
   context: GateContext,
@@ -118,7 +136,13 @@ const runCommandGate = Effect.fnUntraced(function* (
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     // Spawned directly with its argument list. Nothing here goes through a
     // shell, so a gate cannot grow a pipeline by accident.
-    const child = yield* spawner.spawn(ChildProcess.make(gate.executable, [...gate.args], { cwd }));
+    const child = yield* spawner.spawn(
+      ChildProcess.make(gate.executable, [...gate.args], {
+        cwd,
+        env: gateEnvironment(context),
+        extendEnv: true,
+      }),
+    );
 
     // The gate owns its own timeout and kills the process itself. Interrupting
     // the read would leave the check running while the run moved on, and a

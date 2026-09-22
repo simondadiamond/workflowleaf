@@ -1,0 +1,4 @@
+id: pull-request-is-this-run
+type: external
+check: pull-request-exists
+boundTo: head-sha
