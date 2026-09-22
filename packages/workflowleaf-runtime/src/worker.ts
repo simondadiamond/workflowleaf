@@ -27,6 +27,7 @@ import {
   type StageHandle,
   type StageRequest,
   type VisitId,
+  type VisitState,
 } from "@t3tools/workflowleaf-core";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -65,6 +66,27 @@ const fromExecutor = <A>(operation: string, run: () => Promise<A>) =>
       }),
   });
 
+/**
+ * What the run just did, for whoever is watching it work.
+ *
+ * A stage can take twenty minutes, so a driver that reports only where the run
+ * stopped tells a person nothing until it is over. These are the moments worth
+ * seeing while it runs; the run record remains the durable account.
+ */
+export type RunProgress =
+  | {
+      readonly kind: "stage-started";
+      readonly stageId: string;
+      readonly attempt: number;
+      /** A correction inside an existing context rather than a fresh visit. */
+      readonly correcting: boolean;
+    }
+  | { readonly kind: "gates"; readonly stageId: string; readonly verdicts: readonly GateVerdict[] }
+  | { readonly kind: "stage-settled"; readonly stageId: string; readonly state: VisitState };
+
+/** Where progress is reported to. Absent means nobody is watching. */
+export type ProgressSink = (event: RunProgress) => Effect.Effect<void>;
+
 export interface WorkerDeps {
   readonly executor: ExecutorPort;
   readonly ids: IdSource;
@@ -72,6 +94,8 @@ export interface WorkerDeps {
   readonly logDir: string;
   readonly owner: string;
   readonly leaseSeconds: number;
+  /** Optional: told what just happened, as it happens. Never affects the run. */
+  readonly progress?: ProgressSink | undefined;
 }
 
 /** Why the worker stopped. `idle` means the run is waiting on something outside it. */
@@ -98,6 +122,53 @@ function stopReasonFor(record: RunRecord): StopReason | null {
     default:
       return null;
   }
+}
+
+const SETTLED_VISIT_STATES: readonly VisitState[] = ["passed", "failed", "blocked", "cancelled"];
+
+/**
+ * The visible moments in one committed transition.
+ *
+ * Read off the records either side of the commit rather than announced from
+ * inside each branch of `perform`, so a watcher is told what was persisted and
+ * nothing that was merely attempted.
+ */
+function progressFor(input: {
+  readonly previous: RunRecord;
+  readonly next: RunRecord;
+  readonly transitionInput: ControllerInput;
+  readonly effects: readonly ControllerEffect[];
+}): readonly RunProgress[] {
+  const events: RunProgress[] = [];
+  const stageOf = (visitId: VisitId) =>
+    input.next.visits.find((visit) => visit.visitId === visitId)?.stageId ?? null;
+
+  if (input.transitionInput.type === "gates-evaluated") {
+    const stageId = stageOf(input.transitionInput.visitId);
+    if (stageId !== null) {
+      events.push({ kind: "gates", stageId, verdicts: input.transitionInput.verdicts });
+    }
+  }
+
+  for (const visit of input.next.visits) {
+    const before = input.previous.visits.find((candidate) => candidate.visitId === visit.visitId);
+    if (before?.state === visit.state) continue;
+    if (!SETTLED_VISIT_STATES.includes(visit.state)) continue;
+    events.push({ kind: "stage-settled", stageId: visit.stageId, state: visit.state });
+  }
+
+  for (const effect of input.effects) {
+    if (effect.type !== "dispatch-stage" && effect.type !== "continue-stage") continue;
+    const visit = input.next.visits.find((candidate) => candidate.visitId === effect.visitId);
+    events.push({
+      kind: "stage-started",
+      stageId: effect.stageId,
+      attempt: visit?.attempts ?? 1,
+      correcting: effect.type === "continue-stage",
+    });
+  }
+
+  return events;
 }
 
 /**
@@ -507,6 +578,18 @@ export const drive = Effect.fnUntraced(function* (input: {
       effects: decision.effects,
       lease: input.lease,
     });
+
+    if (input.deps.progress !== undefined) {
+      for (const event of progressFor({
+        previous: record,
+        next: decision.run,
+        transitionInput: next,
+        effects: decision.effects,
+      })) {
+        yield* input.deps.progress(event);
+      }
+    }
+
     record = decision.run;
     transitions += 1;
 

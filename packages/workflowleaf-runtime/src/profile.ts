@@ -59,6 +59,15 @@ const ProfileDocument = Schema.Struct({
   repoRoot: Schema.String.check(Schema.isNonEmpty()),
   /** Where run worktrees are created. */
   worktreeRoot: Schema.optional(Schema.String),
+  /**
+   * The playbook this machine runs by default, as an absolute directory.
+   *
+   * A playbook is portable: it is copied between repositories and shared, so it
+   * cannot know where it lives. The profile is the local half of that pair and
+   * is where the path belongs. `wl run <playbook>` still overrides it, because
+   * one repository has more than one playbook.
+   */
+  defaultPlaybook: Schema.optional(Schema.String),
   /** Directories searched for skills, in order. Later roots shadow earlier ones. */
   skillRoots: Schema.Array(Schema.String),
   budgets: Schema.Struct({
@@ -182,6 +191,7 @@ export const PROFILE_TEMPLATE = {
     runtimeMode: "full-access",
   },
   repoRoot: "<absolute path to the repository runs operate on>",
+  defaultPlaybook: "<absolute path to a playbook directory, or omit to pass one per run>",
   skillRoots: ["<absolute path to a directory of skills>"],
   budgets: { maxRepairCycles: 2, runDeadlineMs: null },
   pullRequest: { remote: "origin", baseBranch: "main" },
