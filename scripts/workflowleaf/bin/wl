@@ -22,4 +22,18 @@ node24="$HOME/.nvm/versions/node/v24.20.0/bin"
 [ -d "$node24" ] && PATH="$node24:$PATH"
 export PATH
 
+# A checkout that was never installed, or whose lockfile changed since it was
+# (a pull that moved dependencies), fails deep inside Node with a module it
+# cannot find. Say which, and what fixes it, before that happens. pnpm keeps a
+# copy of the lockfile it installed from, so comparing the two is exact.
+installed="$checkout/node_modules/.pnpm/lock.yaml"
+if [ ! -f "$installed" ]; then
+  echo "wl: $checkout has no dependencies installed. Run: (cd $checkout && pnpm install --frozen-lockfile)" >&2
+  exit 1
+fi
+if ! cmp -s "$checkout/pnpm-lock.yaml" "$installed"; then
+  echo "wl: $checkout/pnpm-lock.yaml changed since its dependencies were installed. Run: (cd $checkout && pnpm install --frozen-lockfile)" >&2
+  exit 1
+fi
+
 exec node "$checkout/packages/workflowleaf-runtime/src/bin.ts" "$@"

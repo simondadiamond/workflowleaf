@@ -15,22 +15,23 @@ Everything is additive on top of T3 so upstream's main branch keeps merging.
 
 ## Where everything is
 
-| What                                        | Where                                                                                        |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Code, branch `main`                         | any worktree under `~/.t3/worktrees/t3code/`                                                 |
-| This document                               | `scripts/workflowleaf/ORIENTATION.md`, the source of truth                                   |
-| The additive rule, for every agent          | `scripts/workflowleaf/FORK-RULES.md`, imported by `CLAUDE.md`                                |
-| Fork remote                                 | `origin` = `simondadiamond/workflowleaf`, `upstream` = `pingdotgg/t3code` (never push there) |
-| Backlog                                     | issues on `simondadiamond/workflowleaf`, labelled `workflowleaf` + `p0`–`p3`                 |
-| Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                      |
-| Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                     |
-| Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                            |
-| The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                               |
-| The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                          |
-| Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)              |
-| `wl` from any directory                     | `~/Repos/t3code/scripts/workflowleaf/bin/wl`, called by full path                            |
-| Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23              |
-| The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`        |
+| What                                        | Where                                                                                           |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Code, branch `main`                         | any worktree under `~/.t3/worktrees/t3code/`                                                    |
+| This document                               | `scripts/workflowleaf/ORIENTATION.md`, the source of truth                                      |
+| The additive rule, for every agent          | `scripts/workflowleaf/FORK-RULES.md`, imported by `CLAUDE.md`                                   |
+| Fork remote                                 | `origin` = `simondadiamond/workflowleaf`, `upstream` = `pingdotgg/t3code` (never push there)    |
+| Backlog                                     | issues on `simondadiamond/workflowleaf`, labelled `workflowleaf` + `p0`–`p3`                    |
+| Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                         |
+| Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                        |
+| Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                               |
+| The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                                  |
+| The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                             |
+| Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)                 |
+| `wl` from any directory                     | `~/Repos/t3code/scripts/workflowleaf/bin/wl`, called by full path                               |
+| Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23                 |
+| Rehearse the next upstream merge            | `scripts/workflowleaf/merge-rehearsal.sh`, recorded in `~/.workflowleaf/merge-rehearsals.jsonl` |
+| The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`           |
 
 Two packages: `packages/workflowleaf-core` (pure domain, no T3, no filesystem,
 no clock) and `packages/workflowleaf-runtime` (loader, store, gates, worker,
@@ -181,6 +182,16 @@ no CI run here has ever completed. The WorkflowLeaf workflow is on
 `ubuntu-latest`, which is the only reason it runs, so keep it that way. Check
 `runs-on` before believing a queued job will start. The WorkflowLeaf job is
 the signal that counts, and repo-wide checks stay a local, scoped exercise.
+
+**Rehearse before merging upstream.** `scripts/workflowleaf/merge-rehearsal.sh`
+merges `upstream/main` into a throwaway worktree of `origin/main`, reinstalls,
+runs the WorkflowLeaf checks and T3's own typecheck and tests (`--quick` skips
+T3's), and appends what it found to `~/.workflowleaf/merge-rehearsals.jsonl`.
+It touches no branch. Git merges `pnpm-lock.yaml` as text, and a merge with no
+conflict can still leave a lockfile pnpm rejects; regenerate it with
+`pnpm install --no-frozen-lockfile`, which the rehearsal does and records. Two
+rehearsals in a row that conflicted or failed a check mean the seam needs
+review before the merge, and the script says so.
 
 **Opening a pull request against `main` is pre-authorized here.** AGENTS.md
 tells agents never to open one unless asked; Simon has asked, standingly, for
