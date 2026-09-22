@@ -46,7 +46,12 @@ import { compileStagePrompt } from "./prompt.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
-import { pathsChangedSince, takeSnapshot, type SnapshotManifest } from "./workspaces.ts";
+import {
+  changedPaths,
+  pathsChangedSince,
+  takeSnapshot,
+  type SnapshotManifest,
+} from "./workspaces.ts";
 
 export class WorkerError extends Schema.TaggedError<WorkerError>()("WlWorkerError", {
   message: Schema.String,
@@ -112,7 +117,28 @@ export interface WorkerDeps {
   readonly reviewer?: ReviewerConfig | undefined;
   /** The `gh` config directory for the run's repository, when the profile names one. */
   readonly ghConfigDir?: string | undefined;
+  /**
+   * How long the worktree must stay unchanged before gates may read it. Absent
+   * means gates run as soon as the stage settles, which only tests want.
+   */
+  readonly quiet?: QuietWindow | undefined;
 }
+
+/**
+ * The worktree must go this long without a change before a gate reads it, and
+ * a tree still changing after `timeoutMs` is reported instead of judged.
+ */
+export interface QuietWindow {
+  readonly windowMs: number;
+  readonly timeoutMs: number;
+}
+
+/**
+ * What a real run waits for. Long enough to outlast a formatter or a hook that
+ * fires as a turn ends, short enough not to be noticed, and a timeout past
+ * which something is plainly still running in the worktree.
+ */
+export const DEFAULT_QUIET: QuietWindow = { windowMs: 2_000, timeoutMs: 180_000 };
 
 /** Why the worker stopped. `idle` means the run is waiting on something outside it. */
 export type StopReason = "finished" | "needs-decision" | "paused" | "waiting-external" | "idle";
@@ -220,6 +246,33 @@ const appendProgress = Effect.fnUntraced(
 );
 
 /**
+ * Waits until nothing is writing to the worktree.
+ *
+ * An executor's settlement says its own turn is over. It cannot speak for a
+ * process that turn started in the background, a hook, or a formatter, and a
+ * gate that reads while any of those is still writing judges a tree that is
+ * about to change. Two snapshots a quiet window apart must agree before gates
+ * may run. The paths still changing when time runs out are returned, so the
+ * run can say what would not settle.
+ */
+export const awaitQuiet = Effect.fnUntraced(function* (workspacePath: string, quiet: QuietWindow) {
+  const snapshot = Effect.gen(function* () {
+    return yield* takeSnapshot(workspacePath, DateTime.formatIso(yield* DateTime.now));
+  });
+
+  let previous = yield* snapshot;
+  let changing: readonly string[] = [];
+  for (let waited = 0; waited < quiet.timeoutMs; waited += quiet.windowMs) {
+    yield* Effect.sleep(`${quiet.windowMs} millis`);
+    const next = yield* snapshot;
+    if (next.snapshotId === previous.snapshotId) return { quiet: true, changing: [] };
+    changing = changedPaths(previous, next);
+    previous = next;
+  }
+  return { quiet: false, changing };
+});
+
+/**
  * Runs the deterministic gates of one visit and returns a verdict per gate.
  *
  * Evidence is written before the verdicts go anywhere near the controller, so
@@ -239,6 +292,23 @@ const runGates = Effect.fnUntraced(function* (input: {
   const stage = visit === undefined ? undefined : findStage(input.plan, visit.stageId);
   if (stage === undefined) {
     return [] as readonly GateVerdict[];
+  }
+
+  // No gate reads the worktree until it has stopped changing. A tree that
+  // never settles is not judged: every gate reports that it could not run,
+  // which stops the run for a person rather than spending the stage's attempts.
+  if (input.deps.quiet !== undefined) {
+    const settled = yield* awaitQuiet(input.deps.workspacePath, input.deps.quiet);
+    if (!settled.quiet) {
+      const summary = `the worktree was still changing after ${String(input.deps.quiet.timeoutMs)}ms, so no gate ran: ${settled.changing.slice(0, 10).join(", ")}`;
+      return stage.gates
+        .filter((pinned) => input.gateIds.includes(pinned.definition.id))
+        .map((pinned): GateVerdict => ({
+          gateId: pinned.definition.id,
+          outcome: "error",
+          summary,
+        }));
+    }
   }
 
   const verdicts: GateVerdict[] = [];

@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // The stand-in executor writes to the worktree the way a provider would, which
 // has to happen synchronously inside a Promise-returning port.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
@@ -1000,6 +1001,87 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       );
       assert.deepStrictEqual(result.record.visits[0]?.skills, [LAZY_SKILL]);
       assert.strictEqual(result.record.visits[0]?.attempts, 1);
+    }).pipe(Effect.scoped),
+  );
+
+  /**
+   * A stage that ends its turn while a process it started keeps writing: a
+   * line appended every 40ms, `lines` times, or until stopped when null.
+   */
+  const backgroundWriter = (lines: number | null) => {
+    const children: NodeChildProcess.ChildProcess[] = [];
+    const loop =
+      lines === null
+        ? "while true; do echo line >> artifact.md; sleep 0.04; done"
+        : `i=0; while [ $i -lt ${String(lines)} ]; do echo line >> artifact.md; i=$((i+1)); sleep 0.04; done`;
+    const action: Action = (workspacePath) => {
+      children.push(NodeChildProcess.spawn("sh", ["-c", loop], { cwd: workspacePath }));
+    };
+    return { action, stop: () => children.forEach((child) => child.kill()) };
+  };
+
+  it.effect("holds the gates until a background writer the stage left running has finished", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-quiet");
+      const writer = backgroundWriter(10);
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: { produce: [writer.action, doNothing], summarize: [write("summary.md", SUMMARY)] },
+      });
+
+      const result = yield* drive({
+        runId: "run-quiet" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("q"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          quiet: { windowMs: 150, timeoutMs: 5_000 },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      }).pipe(Effect.ensuring(Effect.sync(writer.stop)));
+
+      assert.strictEqual(result.record.state, "succeeded");
+      // Judged once, on the finished file: no correction for a race the stage
+      // did not lose.
+      assert.lengthOf(executor.continues, 0);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops for a person when the worktree never stops changing", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-never-quiet");
+      const writer = backgroundWriter(null);
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: { produce: [writer.action] },
+      });
+
+      const result = yield* drive({
+        runId: "run-never-quiet" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("n"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          quiet: { windowMs: 60, timeoutMs: 300 },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      }).pipe(Effect.ensuring(Effect.sync(writer.stop)));
+
+      assert.strictEqual(result.stopped, "needs-decision");
+      assert.strictEqual(result.record.decision?.kind, "reconciliation");
+      assert.include(result.record.decision?.detail ?? "", "still changing");
+      assert.include(result.record.decision?.detail ?? "", "artifact.md");
+      // No attempt was spent on it.
+      assert.strictEqual(result.record.visits[0]?.attempts, 1);
+      assert.lengthOf(executor.continues, 0);
     }).pipe(Effect.scoped),
   );
 });

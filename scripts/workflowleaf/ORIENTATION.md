@@ -308,6 +308,14 @@ records the skills it has been given in `skills`, so none is given twice.
 
 ## How each gate type is judged
 
+No gate reads the worktree until it has stopped changing. A settlement only
+speaks for the executor's own turn, not for a process that turn left running,
+so the worker waits for two snapshots two seconds apart to agree
+(`DEFAULT_QUIET` in `worker.ts`). A tree still changing after three minutes is
+not judged: every gate reports `error` naming the paths, and the run stops for
+a person without spending an attempt. The before-and-after snapshot around each
+gate stays as the safety net, recording a pass on a tree that moved as `stale`.
+
 - `command`, `file`, `diff`: by code, in the run's worktree. A command gate can
   run a script the playbook ships by naming it `${playbook}/checks/x.sh`; the
   loader resolves that against the playbook directory and folds the script's

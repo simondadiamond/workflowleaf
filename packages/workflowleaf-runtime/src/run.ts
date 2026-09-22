@@ -40,7 +40,13 @@ import { loadPlaybook } from "./load.ts";
 import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
 import { openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
-import { drive, type DriveResult, type ProgressSink, type WorkerDeps } from "./worker.ts";
+import {
+  DEFAULT_QUIET,
+  drive,
+  type DriveResult,
+  type ProgressSink,
+  type WorkerDeps,
+} from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 export class RunError extends Schema.TaggedError<RunError>()("WlRunError", {
@@ -238,6 +244,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
         baseRevision,
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
+        quiet: DEFAULT_QUIET,
       },
       lease,
       initial: [{ type: "start" }],
@@ -370,6 +377,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         baseRevision: loaded.value.baseRevision,
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
+        quiet: DEFAULT_QUIET,
       },
       lease,
       initial: input.inputs,
