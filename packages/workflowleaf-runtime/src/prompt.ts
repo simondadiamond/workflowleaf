@@ -17,7 +17,7 @@ export interface PromptInput {
   readonly stage: ResolvedStage;
   readonly plan: RunPlan;
   readonly workspacePath: string;
-  /** Path-triggered skills selected from the paths this stage will touch. */
+  /** Path-triggered skills selected from the paths the run has changed. */
   readonly extraSkills: readonly { readonly id: string; readonly path: string }[];
   /** Present only when this is a correction inside an existing context. */
   readonly correction: string | null;
@@ -119,7 +119,7 @@ export function compileStagePrompt(input: PromptInput): string {
         "",
         ...skills.map(
           (skill) =>
-            `- ${skill.id}${skill.required ? "" : " (selected from the paths you will touch)"}: \`${skill.path}/SKILL.md\``,
+            `- ${skill.id}${skill.required ? "" : " (selected from the paths this run has changed)"}: \`${skill.path}/SKILL.md\``,
         ),
       ].join("\n"),
     );

@@ -293,6 +293,19 @@ account is never switched.
 draft pull requests against `staging`. `sandbox-live` drives the live install
 against the sandbox. The other `sandbox*` profiles drive a dev server.
 
+## Path-triggered skills
+
+A stage's `lazyRules` map path globs to skills in its `skills.lazy`; `wl
+validate` rejects a rule that loads anything else. The rules are matched
+against the paths the run has actually changed since its base revision, plus
+what the stage declares it produces, at dispatch and again when each turn
+settles. A skill that turns up only at settlement means the stage wrote
+something it was not briefed for, so the run refreshes the stage with the skill
+before any gate runs: a second turn in the same context, or a fresh context
+carrying the same message when the executor cannot continue one, which is
+recorded as a limitation. A refresh does not spend an attempt. Each visit
+records the skills it has been given in `skills`, so none is given twice.
+
 ## How each gate type is judged
 
 - `command`, `file`, `diff`: by code, in the run's worktree. A command gate can

@@ -153,6 +153,18 @@ function semanticDiagnostics(document: PlaybookDocumentType, source: string): Di
         at(`${field}.gates`, "A check stage needs at least one command, file or diff gate.");
       }
     }
+    // A rule can only hand a stage a skill the plan pinned for it, and only
+    // `lazy` skills are pinned for that. Anything else would match its paths
+    // and then load nothing.
+    stage.skills.lazyRules.forEach((rule, ruleIndex) => {
+      if (!stage.skills.lazy.includes(rule.load)) {
+        at(
+          `${field}.skills.lazyRules[${ruleIndex}].load`,
+          `Skill ${rule.load} is not in this stage's skills.lazy, so the rule could never load it.`,
+        );
+      }
+    });
+
     if (stage.kind === "decision" && stage.gates.length > 0) {
       at(`${field}.gates`, "A decision stage is answered by a human, not by a gate.");
     }

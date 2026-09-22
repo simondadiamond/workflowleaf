@@ -9,7 +9,9 @@ import {
   GATE_SUMMARY_EXISTS,
   STAGE_A,
   STAGE_B,
+  LAZY_SKILL,
   capabilities,
+  lazySkillPlan,
   sequentialIds,
   twoStagePlan,
 } from "./testing/fixture.ts";
@@ -969,5 +971,92 @@ describe("waiting on an external condition", () => {
     const resumed = decide(ctx(entered.run), { type: "resume" });
     expect(resumed.effects).toEqual([]);
     expect(resumed.run.revision).toBe(entered.run.revision);
+  });
+});
+
+describe("a skill discovered mid-stage", () => {
+  const skillPlan = lazySkillPlan();
+  const ctx = (run: RunRecord, ids: ReturnType<typeof sequentialIds>) => ({
+    run,
+    plan: skillPlan,
+    now: "2026-01-01T00:00:03.000Z",
+    ids,
+  });
+
+  function dispatched(runCapabilities = capabilities(), dispatchSkills: string[] = []) {
+    const ids = sequentialIds();
+    const started = decide(ctx(freshRun({ capabilities: runCapabilities }), ids), {
+      type: "start",
+    });
+    const dispatch = dispatchOf(started.effects);
+    const acknowledged = decide(ctx(started.run, ids), {
+      type: "dispatch-acknowledged",
+      operationId: dispatch.operationId,
+      handle: "thread-1",
+      skills: dispatchSkills,
+    });
+    return { run: acknowledged.run, dispatch, ids };
+  }
+
+  it("refreshes the stage with the skill before any gate runs, without spending an attempt", () => {
+    const { run, dispatch, ids } = dispatched();
+    const discovered = decide(ctx(run, ids), {
+      type: "skills-discovered",
+      operationId: dispatch.operationId,
+      skills: [LAZY_SKILL],
+    });
+
+    expect(discovered.effects.map((effect) => effect.type)).toEqual(["continue-stage"]);
+    const refresh = discovered.effects[0];
+    if (refresh?.type !== "continue-stage") throw new Error("expected a refresh");
+    expect(refresh.correction).toContain("/skills/migrations/SKILL.md");
+    const visit = discovered.run.visits[0]!;
+    expect(visit.skills).toEqual([LAZY_SKILL]);
+    expect(visit.attempts).toBe(1);
+    expect(visit.state).toBe("executing");
+    expect(visit.operation?.handle).toBe("thread-1");
+    expect(visit.operation?.operationId).toBe(refresh.operationId);
+
+    // The settlement of the turn that was refreshed no longer advances anything.
+    const late = decide(ctx(discovered.run, ids), {
+      type: "settled",
+      settlement: {
+        operationId: dispatch.operationId,
+        outcome: "completed",
+        settled: true,
+        detail: null,
+        at: "2026-01-01T00:00:04.000Z",
+      },
+    });
+    expect(late.effects).toEqual([]);
+  });
+
+  it("does not refresh for a skill the visit was already given", () => {
+    const { run, dispatch, ids } = dispatched(capabilities(), [LAZY_SKILL]);
+    const again = decide(ctx(run, ids), {
+      type: "skills-discovered",
+      operationId: dispatch.operationId,
+      skills: [LAZY_SKILL],
+    });
+    expect(again.effects).toEqual([]);
+    expect(again.run.revision).toBe(run.revision);
+  });
+
+  it("starts a fresh context carrying the handoff when the executor cannot continue", () => {
+    const { run, dispatch, ids } = dispatched(capabilities({ sameContextContinuation: false }));
+    const discovered = decide(ctx(run, ids), {
+      type: "skills-discovered",
+      operationId: dispatch.operationId,
+      skills: [LAZY_SKILL],
+    });
+
+    expect(discovered.effects.map((effect) => effect.type)).toEqual([
+      "record-limitation",
+      "continue-stage",
+    ]);
+    const visit = discovered.run.visits[0]!;
+    expect(visit.lostContext).toBe(true);
+    expect(visit.operation?.handle).toBeNull();
+    expect(visit.operation?.mode).toBe("fresh");
   });
 });

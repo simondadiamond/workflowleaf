@@ -24,6 +24,8 @@ import {
 import {
   capabilities,
   commandGatePlan,
+  LAZY_SKILL,
+  lazySkillPlan,
   sequentialIds,
   twoStagePlan,
 } from "@t3tools/workflowleaf-core/testing";
@@ -938,6 +940,66 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.strictEqual(report.divergence?.what, "state");
       assert.isNull(report.divergence?.seq ?? null);
       assert.include(report.divergence?.replayed ?? "", "repairCycles");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refreshes a stage that changed paths needing a skill before its gates run", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun(
+        "run-lazy-skill",
+        capabilities(),
+        lazySkillPlan(),
+      );
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder("db/001-add-column.sql", "ALTER TABLE t ADD c int;\n")(workspacePath);
+            },
+            doNothing,
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const seen: RunProgress[] = [];
+
+      const result = yield* drive({
+        runId: "run-lazy-skill" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("s"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          progress: (event) =>
+            Effect.sync(() => {
+              seen.push(event);
+            }),
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      // The first prompt could not know: nothing under db/ existed yet.
+      assert.notInclude(executor.prompts[0] ?? "", "/skills/migrations");
+      // The refresh names the skill, and the gates ran only after it.
+      assert.lengthOf(executor.continues, 1);
+      assert.include(executor.continues[0]?.correction ?? "", "/skills/migrations/SKILL.md");
+      assert.deepStrictEqual(
+        seen.slice(0, 3).map((event) => `${event.kind} ${event.stageId}`),
+        ["stage-started produce", "stage-started produce", "gates produce"],
+      );
+      // The next stage is given it up front, chosen from what the run changed.
+      assert.include(
+        executor.prompts[1] ?? "",
+        `${LAZY_SKILL} (selected from the paths this run has changed)`,
+      );
+      assert.deepStrictEqual(result.record.visits[0]?.skills, [LAZY_SKILL]);
+      assert.strictEqual(result.record.visits[0]?.attempts, 1);
     }).pipe(Effect.scoped),
   );
 });
