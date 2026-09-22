@@ -143,7 +143,15 @@ both.
 answer and end the turn. Ending the turn is the notification: that is how Simon
 hears about it. Do not answer it, and do not keep working around it.
 
-Simon answers, or tells you to:
+The run has also put the question on its own T3 thread, `WorkflowLeaf
+decision: <run>`, which shows as awaiting input and alerts Simon's devices.
+He can answer there. Then this picks it up and carries on:
+
+```bash
+wl resume <run> --profile fbm --owner wl-story --poll 30
+```
+
+Or he answers in chat, or tells you to:
 
 ```bash
 wl decide <run> proceed --profile fbm --owner wl-story --revision <r>

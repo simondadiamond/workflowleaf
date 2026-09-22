@@ -12,6 +12,7 @@
  */
 import {
   SATISFYING,
+  currentVisit,
   decide,
   findStage,
   satisfies,
@@ -716,7 +717,18 @@ const perform = Effect.fnUntraced(function* (input: {
       return [] as readonly ControllerInput[];
     }
 
-    case "raise-decision":
+    case "raise-decision": {
+      // Recorded against the visit that raised it, so the question and its
+      // answer outlive whatever surface the person was asked on.
+      const visit = currentVisit(input.record);
+      yield* store.recordDecision({
+        runId: input.record.runId,
+        visitId: (visit?.visitId as string | undefined) ?? null,
+        decision: effect.decision,
+      });
+      return [] as readonly ControllerInput[];
+    }
+
     case "interrupt":
     case "finish":
       return [] as readonly ControllerInput[];

@@ -288,6 +288,20 @@ past run would have done fails there instead of on the next live run. The ids
 a transition mints are handed back from what the run recorded, so changing the
 id scheme does not break replay; minting an id the run never recorded does.
 
+A run that stops on a decision asks for it where T3 already shows work
+waiting on you. Through a T3 profile it opens a thread named
+`WorkflowLeaf decision: <run>` in the run's worktree, in `approval-required`
+mode, whose one turn puts the question to the user with the provider's question
+tool. The thread shows as awaiting input and sends the usual device alert. The
+answer is read from T3's record of the reply (`user-input.resolved`), never
+from what the model says. `wl resume <run> --poll 30` waits on that thread and
+resumes the run once someone answers. `wl decide` still works, and takes the
+thread's question down when it does. Each decision is recorded in the store's
+`wl_decisions` against the visit that raised it, with where it was asked and
+where it was answered, so the record does not depend on the thread. Only a
+provider can open a question, which is why this spends one short model turn;
+an executor with no provider behind it asks nowhere but the terminal.
+
 `errors` is the learning log. It is derived from what runs already recorded
 (failed evidence, raised decisions, human answers, limitations) and grouped by
 cause, so there is no second writer to forget.

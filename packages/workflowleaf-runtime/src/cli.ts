@@ -20,6 +20,8 @@ import { prettyJson } from "./canonical.ts";
 import { groupByCause, readLearningLog, sinceInstant } from "./learningLog.ts";
 import { loadPlaybook } from "./load.ts";
 import {
+  answeredFromCli,
+  decisionPortFor,
   describeRun,
   nextRunId,
   PROGRESS_LOG,
@@ -285,6 +287,15 @@ const reportResult = Effect.fnUntraced(function* (runId: string, stopped: string
   }
   if (detail.value.stage !== null) yield* Console.log(`  stage: ${detail.value.stage}`);
   if (detail.value.attention !== null) yield* Console.log(`  needs you: ${detail.value.attention}`);
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId as never);
+  const pending = Option.isSome(loaded) ? loaded.value.record.decision : null;
+  const asked = pending === null ? Option.none() : yield* store.findDecision(pending.decisionId);
+  if (Option.isSome(asked) && asked.value.askedAt !== null && asked.value.answeredAt === null) {
+    yield* Console.log(
+      `  asked on the T3 thread "WorkflowLeaf decision: ${runId}". Answer there, then \`wl resume ${runId} --profile <profile> --poll 30\` picks it up; or \`wl decide ${runId} <answer>\`.`,
+    );
+  }
   for (const limitation of detail.value.limitations) {
     yield* Console.log(`  limitation at ${limitation.stageId}: ${limitation.detail}`);
   }
@@ -455,12 +466,35 @@ const resumeCommand = Command.make(
     if (Option.isSome(poll)) {
       // Waiting on CI or reviewers is waiting on something that cannot notify
       // us, so this asks again on an interval, bounded so it cannot run forever.
+      // A decision asked on a thread is waited on directly: its answer arrives
+      // on the thread's subscription, so there is nothing to poll.
       const interval = Math.max(10, poll.value);
+      const deadline = pollFor * 60;
       let waited = 0;
-      while (result.stopped === "waiting-external" && waited + interval <= pollFor * 60) {
-        yield* Effect.sleep(`${interval} seconds`);
-        waited += interval;
-        result = yield* resumeOnce();
+      while (waited + interval <= deadline) {
+        if (result.stopped === "waiting-external") {
+          yield* Effect.sleep(`${interval} seconds`);
+          waited += interval;
+          result = yield* resumeOnce();
+          continue;
+        }
+        if (result.stopped === "needs-decision") {
+          const answered = yield* resumeRun({
+            runId: run as never,
+            profile,
+            owner,
+            inputs: [{ type: "resume" }],
+            progress: printProgress,
+            waitForAnswer: true,
+          }).pipe(Effect.timeoutOption(`${deadline - waited} seconds`));
+          if (Option.isNone(answered)) break;
+          if (answered.value.stopped === "needs-decision" && answered.value.transitions === 0) {
+            break;
+          }
+          result = answered.value;
+          continue;
+        }
+        break;
       }
     }
     yield* reportResult(run, result.stopped);
@@ -577,6 +611,7 @@ const decideCommand = Command.make(
     }
 
     const profile = yield* loadProfile(profileName);
+    yield* answeredFromCli(run as never, answer, yield* decisionPortFor(profile));
     const result = yield* resumeRun({
       runId: run as never,
       profile,

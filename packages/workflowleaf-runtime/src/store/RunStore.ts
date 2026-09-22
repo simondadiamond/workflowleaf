@@ -20,6 +20,7 @@ import {
   RunRecord,
   type EvidenceRecord,
   type OperationId,
+  type PendingDecision,
   type RunId,
   type StageLimitation,
   type VisitId,
@@ -107,6 +108,21 @@ export interface OperationRow {
   readonly handle: string | null;
   readonly settledAt: string | null;
   readonly outcome: string | null;
+}
+
+export interface DecisionRow {
+  readonly decisionId: string;
+  readonly runId: string;
+  readonly visitId: string | null;
+  readonly kind: string;
+  readonly detail: string;
+  readonly raisedAt: string;
+  /** When a person was asked on a surface they already watch. Null if never. */
+  readonly askedAt: string | null;
+  readonly answeredAt: string | null;
+  readonly answer: string | null;
+  /** `cli` or `thread`: where the answer was given. */
+  readonly answeredVia: string | null;
 }
 
 export interface WorkspaceRow {
@@ -243,6 +259,22 @@ export class RunStore extends Context.Service<
     readonly unsettledOperations: (
       runId: RunId,
     ) => Effect.Effect<readonly OperationRow[], RunStoreError>;
+
+    /** Records a raised decision against the visit that raised it. Idempotent. */
+    readonly recordDecision: (input: {
+      readonly runId: RunId;
+      readonly visitId: string | null;
+      readonly decision: PendingDecision;
+    }) => Effect.Effect<void, RunStoreError>;
+    readonly markDecisionAsked: (decisionId: string) => Effect.Effect<void, RunStoreError>;
+    readonly markDecisionAnswered: (
+      decisionId: string,
+      answer: string,
+      via: "cli" | "thread",
+    ) => Effect.Effect<void, RunStoreError>;
+    readonly findDecision: (
+      decisionId: string,
+    ) => Effect.Effect<Option.Option<DecisionRow>, RunStoreError>;
 
     readonly putEvidence: (evidence: EvidenceRecord) => Effect.Effect<void, RunStoreError>;
     readonly evidenceFor: (
@@ -654,6 +686,75 @@ export class RunStore extends Context.Service<
         },
       );
 
+      const recordDecision: RunStore["Service"]["recordDecision"] = Effect.fnUntraced(
+        function* (input) {
+          yield* sql`
+            INSERT INTO wl_decisions (decision_id, run_id, visit_id, kind, detail, plan_digest, raised_at)
+            VALUES (${input.decision.decisionId}, ${input.runId}, ${input.visitId},
+                    ${input.decision.kind}, ${input.decision.detail},
+                    ${input.decision.planDigest}, ${input.decision.raisedAt})
+            ON CONFLICT (decision_id) DO NOTHING
+          `.pipe(Effect.mapError(fail("recordDecision")));
+        },
+      );
+
+      const markDecisionAsked: RunStore["Service"]["markDecisionAsked"] = Effect.fnUntraced(
+        function* (decisionId) {
+          const at = yield* now;
+          yield* sql`UPDATE wl_decisions SET asked_at = ${at}
+                     WHERE decision_id = ${decisionId} AND asked_at IS NULL`.pipe(
+            Effect.mapError(fail("markDecisionAsked")),
+          );
+        },
+      );
+
+      const markDecisionAnswered: RunStore["Service"]["markDecisionAnswered"] = Effect.fnUntraced(
+        function* (decisionId, answer, via) {
+          const at = yield* now;
+          yield* sql`UPDATE wl_decisions
+                     SET answered_at = ${at}, answer = ${answer}, answered_via = ${via}
+                     WHERE decision_id = ${decisionId} AND answered_at IS NULL`.pipe(
+            Effect.mapError(fail("markDecisionAnswered")),
+          );
+        },
+      );
+
+      const findDecision: RunStore["Service"]["findDecision"] = Effect.fnUntraced(
+        function* (decisionId) {
+          const rows = yield* sql<{
+            decision_id: string;
+            run_id: string;
+            visit_id: string | null;
+            kind: string;
+            detail: string;
+            raised_at: string;
+            asked_at: string | null;
+            answered_at: string | null;
+            answer: string | null;
+            answered_via: string | null;
+          }>`SELECT decision_id, run_id, visit_id, kind, detail, raised_at, asked_at,
+                    answered_at, answer, answered_via
+             FROM wl_decisions WHERE decision_id = ${decisionId}`.pipe(
+            Effect.mapError(fail("findDecision")),
+          );
+          const row = rows[0];
+          return row === undefined
+            ? Option.none()
+            : Option.some({
+                decisionId: row.decision_id,
+                runId: row.run_id,
+                visitId: row.visit_id,
+                kind: row.kind,
+                detail: row.detail,
+                raisedAt: row.raised_at,
+                askedAt: row.asked_at,
+                answeredAt: row.answered_at,
+                answer: row.answer,
+                answeredVia: row.answered_via,
+              } satisfies DecisionRow);
+        },
+      );
+
       const putEvidence: RunStore["Service"]["putEvidence"] = Effect.fnUntraced(
         function* (evidence) {
           const at = yield* now;
@@ -795,6 +896,10 @@ export class RunStore extends Context.Service<
         settleOperation,
         findOperation,
         unsettledOperations,
+        recordDecision,
+        markDecisionAsked,
+        markDecisionAnswered,
+        findDecision,
         putEvidence,
         evidenceFor,
         recordLimitation,

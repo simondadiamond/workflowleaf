@@ -1017,6 +1017,12 @@ function onDecisionAnswered(
     return advance({ ...context, run: cleared }, visit);
   }
 
+  // A decision stage exists to be answered. Proceeding past it is the answer,
+  // so the run moves on; entering it again would only ask the same question.
+  if (findStage(context.plan, visit.stageId)?.contract.kind === "decision") {
+    return advance({ ...context, run: cleared }, visit);
+  }
+
   return enterStage({ ...context, run: cleared }, visit.stageId);
 }
 

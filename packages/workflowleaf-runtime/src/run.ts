@@ -18,6 +18,8 @@
 import {
   initialRun,
   type ControllerInput,
+  type DecisionPort,
+  type DecisionRequest,
   type ExecutorPort,
   type IdSource,
   type RunId,
@@ -33,6 +35,7 @@ import * as Schema from "effect/Schema";
 
 import { AssistedExecutor } from "./adapters/assisted.ts";
 import { connect } from "./adapters/t3/connection.ts";
+import { T3DecisionThread } from "./adapters/t3/decisions.ts";
 import { T3Executor } from "./adapters/t3/executor.ts";
 import { digestOf } from "./digest.ts";
 import { revParse } from "./git.ts";
@@ -131,6 +134,114 @@ export const executorFor = Effect.fnUntraced(function* (
       ),
     now: () => DateTime.formatIso(DateTime.nowUnsafe()),
   }) as ExecutorPort;
+});
+
+/**
+ * Where a profile's runs ask for decisions. A T3 profile asks on a thread of
+ * its own; one with no provider behind it has nowhere to ask but the terminal.
+ */
+export const decisionPortFor = Effect.fnUntraced(function* (profile: Profile) {
+  if (profile.executor.kind === "fake") return null;
+  const token = yield* executorToken(profile.executor);
+  const client = yield* connect(profile.executor.origin, token);
+  return new T3DecisionThread({
+    client,
+    runEffect: (effect) => Effect.runPromise(effect),
+    projectId: profile.executor.projectId,
+    instanceId: profile.executor.provider,
+    model: profile.executor.model ?? "default",
+    now: () => DateTime.formatIso(DateTime.nowUnsafe()),
+  }) as DecisionPort;
+});
+
+/** The question a run is waiting on, as a decision port needs it. Null when it waits on none. */
+const decisionRequestFor = Effect.fnUntraced(function* (runId: RunId) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId);
+  if (Option.isNone(loaded)) return null;
+  const record = loaded.value.record;
+  const workspace = yield* store.findWorkspace(runId);
+  if (record.decision === null || Option.isNone(workspace)) return null;
+  return {
+    runId,
+    decision: record.decision,
+    workspacePath: workspace.value.path,
+    branch: workspace.value.branch,
+    pullRequestUrl: record.pullRequest?.url ?? null,
+  } satisfies DecisionRequest;
+});
+
+/**
+ * Asks for the decision a run stopped on, once. A failure to ask is reported
+ * and swallowed: the decision is on the record either way, and `wl decide`
+ * still answers it.
+ */
+export const askForDecision = Effect.fnUntraced(function* (
+  runId: RunId,
+  port: DecisionPort | null,
+) {
+  if (port === null) return false;
+  const store = yield* RunStore;
+  const request = yield* decisionRequestFor(runId);
+  if (request === null) return false;
+  const row = yield* store.findDecision(request.decision.decisionId);
+  if (Option.isSome(row) && row.value.askedAt !== null) return true;
+  const asked = yield* Effect.tryPromise(() => port.ask(request)).pipe(
+    Effect.as(true),
+    Effect.catchCause(() => Effect.succeed(false)),
+  );
+  if (asked) yield* store.markDecisionAsked(request.decision.decisionId);
+  return asked;
+});
+
+/**
+ * The answer given on the decision's thread, as the input that applies it, or
+ * nothing. With `wait`, blocks until someone answers there.
+ */
+export const answeredOnThread = Effect.fnUntraced(function* (
+  runId: RunId,
+  port: DecisionPort | null,
+  wait: boolean,
+) {
+  if (port === null) return [] as ControllerInput[];
+  const store = yield* RunStore;
+  const request = yield* decisionRequestFor(runId);
+  if (request === null) return [] as ControllerInput[];
+  const row = yield* store.findDecision(request.decision.decisionId);
+  if (Option.isNone(row) || row.value.askedAt === null) return [] as ControllerInput[];
+
+  const answer = yield* Effect.tryPromise(() => port.answer(request, wait)).pipe(
+    Effect.catchCause(() => Effect.succeed(null)),
+  );
+  if (answer === null) return [] as ControllerInput[];
+  yield* store.markDecisionAnswered(request.decision.decisionId, answer, "thread");
+  return [
+    {
+      type: "decision-answered",
+      decisionId: request.decision.decisionId,
+      answer,
+      planDigest: request.decision.planDigest,
+    },
+  ] as ControllerInput[];
+});
+
+/**
+ * Records an answer given from the terminal and takes the thread's question
+ * down, so it does not keep asking for something already decided.
+ */
+export const answeredFromCli = Effect.fnUntraced(function* (
+  runId: RunId,
+  answer: string,
+  port: DecisionPort | null,
+) {
+  const store = yield* RunStore;
+  const request = yield* decisionRequestFor(runId);
+  if (request === null) return;
+  const row = yield* store.findDecision(request.decision.decisionId);
+  yield* store.markDecisionAnswered(request.decision.decisionId, answer, "cli");
+  if (port !== null && Option.isSome(row) && row.value.askedAt !== null) {
+    yield* Effect.tryPromise(() => port.withdraw(request)).pipe(Effect.ignore);
+  }
 });
 
 /** Appended as the run moves, under the run's directory. Readable while another process drives it. */
@@ -251,6 +362,10 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     }),
   );
 
+  if (result.stopped === "needs-decision") {
+    yield* askForDecision(input.runId, yield* decisionPortFor(input.profile));
+  }
+
   return { plan: loaded.value.plan, result } satisfies StartedRun;
 });
 
@@ -337,9 +452,16 @@ export interface ResumeRunInput {
   readonly owner: string;
   readonly inputs: readonly ControllerInput[];
   readonly progress?: ProgressSink | undefined;
+  /** When the run is waiting on a decision asked on a thread, wait for its answer there. */
+  readonly waitForAnswer?: boolean | undefined;
 }
 
-/** Picks a run back up: reattaches to its worktree, reconciles, then drives. */
+/**
+ * Picks a run back up: reattaches to its worktree, reconciles, then drives.
+ *
+ * A run stopped on a decision that was asked on a thread takes the answer
+ * given there, so answering the question is what resumes it.
+ */
 export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   const store = yield* RunStore;
   const path = yield* Path.Path;
@@ -359,8 +481,17 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
     branch: workspace.value.branch,
   });
   const runDir = yield* runDirFor(input.runId as string);
+  const answered =
+    loaded.value.record.state === "needs_decision" &&
+    !input.inputs.some((one) => one.type === "decision-answered")
+      ? yield* answeredOnThread(
+          input.runId,
+          yield* decisionPortFor(input.profile),
+          input.waitForAnswer ?? false,
+        )
+      : [];
   const seed = yield* store.transitionCount(input.runId);
-  return yield* holdingLease(input.runId, input.owner, (lease) =>
+  const result = yield* holdingLease(input.runId, input.owner, (lease) =>
     drive({
       runId: input.runId,
       deps: {
@@ -380,9 +511,14 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         quiet: DEFAULT_QUIET,
       },
       lease,
-      initial: input.inputs,
+      initial: answered.length > 0 ? answered : input.inputs,
     }),
   );
+
+  if (result.stopped === "needs-decision") {
+    yield* askForDecision(input.runId, yield* decisionPortFor(input.profile));
+  }
+  return result;
 });
 
 export interface PullRequestSummary {

@@ -1060,3 +1060,41 @@ describe("a skill discovered mid-stage", () => {
     expect(visit.operation?.mode).toBe("fresh");
   });
 });
+
+describe("a decision stage", () => {
+  const decisionPlan = {
+    ...plan,
+    stages: plan.stages.map((resolved, index) =>
+      index === 0
+        ? {
+            ...resolved,
+            gates: [],
+            contract: { ...resolved.contract, kind: "decision" as const, gates: [] },
+          }
+        : resolved,
+    ),
+  };
+
+  it("moves on once a person proceeds, rather than asking again", () => {
+    const ids = sequentialIds();
+    const ctx = (run: RunRecord) => ({
+      run,
+      plan: decisionPlan,
+      now: "2026-01-01T00:00:01.000Z",
+      ids,
+    });
+    const stopped = decide(ctx(freshRun()), { type: "start" });
+    expect(stopped.run.state).toBe("needs_decision");
+
+    const answered = decide(ctx(stopped.run), {
+      type: "decision-answered",
+      decisionId: stopped.run.decision!.decisionId,
+      answer: "proceed",
+      planDigest: stopped.run.planDigest,
+    });
+
+    expect(answered.run.decision).toBeNull();
+    expect(answered.run.visits[0]?.state).toBe("passed");
+    expect(dispatchOf(answered.effects).stageId).toBe(STAGE_B);
+  });
+});

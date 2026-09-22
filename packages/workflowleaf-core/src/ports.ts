@@ -21,7 +21,8 @@ import type {
   VisitId,
   WorkspaceId,
 } from "./ids.ts";
-import type { ExecutorCapabilities } from "./state.ts";
+import type { DecisionAnswer } from "./controller.ts";
+import type { ExecutorCapabilities, PendingDecision } from "./state.ts";
 
 export interface StageRequest {
   readonly runId: RunId;
@@ -129,4 +130,27 @@ export interface StageLimitation {
   readonly stageId: StageId;
   readonly capability: keyof ExecutorCapabilities;
   readonly detail: string;
+}
+
+export interface DecisionRequest {
+  readonly runId: RunId;
+  readonly decision: PendingDecision;
+  /** Where the run works, so the question sits with the run's other threads. */
+  readonly workspacePath: string;
+  readonly branch: string;
+  readonly pullRequestUrl: string | null;
+}
+
+/**
+ * Asks a person for a decision where they already look for work waiting on
+ * them, and reads back what they answered. The decision itself is recorded by
+ * the run store; this is only where the question is put.
+ */
+export interface DecisionPort {
+  /** Puts the question up. Asking the same decision twice is the caller's to avoid. */
+  ask(request: DecisionRequest): Promise<void>;
+  /** The answer given there, or null. With `wait`, resolves once one is given. */
+  answer(request: DecisionRequest, wait: boolean): Promise<DecisionAnswer | null>;
+  /** Takes the question down once it was answered somewhere else. */
+  withdraw(request: DecisionRequest): Promise<void>;
 }
