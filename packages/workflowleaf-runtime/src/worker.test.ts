@@ -2,7 +2,7 @@
 // The stand-in executor writes to the worktree the way a provider would, which
 // has to happen synchronously inside a Promise-returning port.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFs from "node:fs";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -57,7 +57,7 @@ type Action = (workspacePath: string) => void;
 const write =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
-    NodeFs.writeFileSync(NodePath.join(workspacePath, relativePath), content);
+    NodeFS.writeFileSync(NodePath.join(workspacePath, relativePath), content);
   };
 
 /** Writes into a directory the stage may not have created yet. */
@@ -65,8 +65,8 @@ const writeUnder =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
     const target = NodePath.join(workspacePath, relativePath);
-    NodeFs.mkdirSync(NodePath.dirname(target), { recursive: true });
-    NodeFs.writeFileSync(target, content);
+    NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+    NodeFS.writeFileSync(target, content);
   };
 
 const doNothing: Action = () => {};
@@ -280,7 +280,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
           summarize: [
             (workspacePath) => {
               // Read from "outside" while the second stage is still running.
-              seenMidRun = NodeFs.readFileSync(progressLog, "utf8");
+              seenMidRun = NodeFS.readFileSync(progressLog, "utf8");
               write("summary.md", SUMMARY)(workspacePath);
             },
           ],

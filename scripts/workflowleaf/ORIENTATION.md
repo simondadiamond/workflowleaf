@@ -174,14 +174,19 @@ named by the worktree, `t3code/<something>`, and nothing depends on the name.
 The fork checks run on pull requests and on pushes to `main`, so a pushed branch
 gets no CI until it has a pull request open.
 
-**T3's own CI never runs on this fork, and waiting for it wastes your time.**
-Every job in `.github/workflows/ci.yml` asks for a Blacksmith runner
+**T3's own `ci.yml` never runs on this fork. Its jobs are queued forever, not
+broken.** Every job in it asks for a Blacksmith runner
 (`blacksmith-8vcpu-ubuntu-2404` and friends), a paid service the upstream
-organisation subscribes to and this fork does not. Those jobs queue forever;
-no CI run here has ever completed. The WorkflowLeaf workflow is on
-`ubuntu-latest`, which is the only reason it runs, so keep it that way. Check
-`runs-on` before believing a queued job will start. The WorkflowLeaf job is
-the signal that counts, and repo-wide checks stay a local, scoped exercise.
+organisation subscribes to and this fork does not, so the nine checks named
+Check, Test, Test Server, Rust, Mobile and Release Smoke sit queued on every
+pull request and never complete. Ignore them. Editing their `runs-on` would be
+a permanent upstream edit in the file upstream changes most, so instead
+`.github/workflows/workflowleaf-t3.yml`, a fork-owned file, runs T3's Check
+(lint, format, typecheck), its package tests and its three server test shards
+on `ubuntu-latest`. Those jobs are named `T3 check`, `T3 test` and
+`T3 test server`. With the WorkflowLeaf job they are the signals that count.
+Keep every fork workflow on `ubuntu-latest`, and check `runs-on` before
+believing a queued job will start.
 
 **Rehearse before merging upstream.** `scripts/workflowleaf/merge-rehearsal.sh`
 merges `upstream/main` into a throwaway worktree of `origin/main`, reinstalls,
