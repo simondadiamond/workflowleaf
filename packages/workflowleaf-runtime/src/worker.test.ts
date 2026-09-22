@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  decide,
   initialRun,
   type ContinueOutcome,
   type ExecutorCapabilities,
@@ -33,6 +34,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { git } from "./git.ts";
+import { replayRun } from "./replay.ts";
+import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
 import { drive, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
@@ -770,6 +773,171 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
         (event) => event.kind === "stage-started" && event.correcting,
       );
       assert.lengthOf(corrections, 1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replays a finished run's history to exactly the state it recorded", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay" as RunId,
+        deps: {
+          executor,
+          ids: idSourceFor("run-replay", 0),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      const report = yield* replayRun("run-replay" as RunId);
+      assert.isNull(report.divergence);
+      assert.isAbove(report.transitions, 6);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replays across a stop for a decision and the drive that answered it", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-decision");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder(SCOPE_SPLIT_PATH, "and the migration too\n")(workspacePath);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const deps = {
+        executor,
+        ids: idSourceFor("run-replay-decision", 0),
+        workspacePath: workspace.path,
+        logDir,
+        owner: "worker-a",
+        leaseSeconds: 60,
+      };
+      const stopped = yield* drive({
+        runId: "run-replay-decision" as RunId,
+        deps,
+        lease,
+        initial: [{ type: "start" }],
+      });
+      // A resumed run mints its ids from a new seed, as `wl resume` does.
+      yield* drive({
+        runId: "run-replay-decision" as RunId,
+        deps: { ...deps, ids: idSourceFor("run-replay-decision", 5) },
+        lease,
+        initial: [
+          {
+            type: "decision-answered",
+            decisionId: stopped.record.decision!.decisionId,
+            answer: "proceed",
+            planDigest: stopped.record.planDigest,
+          },
+        ],
+      });
+
+      const report = yield* replayRun("run-replay-decision" as RunId);
+      assert.isNull(report.divergence);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails at the first transition a changed controller would decide differently", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-changed");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay-changed" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // A controller that lets a failing gate through: the past run corrected
+      // `produce`, this one would have moved straight on to `summarize`.
+      const lenient: typeof decide = (context, input) =>
+        decide(
+          context,
+          input.type === "gates-evaluated"
+            ? {
+                ...input,
+                verdicts: input.verdicts.map((verdict) => ({ ...verdict, outcome: "passed" })),
+              }
+            : input,
+        );
+
+      const report = yield* replayRun("run-replay-changed" as RunId, lenient);
+      assert.strictEqual(report.divergence?.what, "effects");
+      assert.strictEqual(report.divergence?.seq, 4);
+      assert.include(report.divergence?.recorded ?? "", "continue-stage");
+      assert.include(report.divergence?.replayed ?? "", "summarize");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails on a changed final state even when every effect still matches", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-state");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay-state" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // Spends a repair cycle on every transition and says nothing about it.
+      const leaky: typeof decide = (context, input) => {
+        const decision = decide(context, input);
+        const budget = {
+          ...decision.run.budget,
+          repairCycles: decision.run.budget.repairCycles + 1,
+        };
+        return { ...decision, run: { ...decision.run, budget } };
+      };
+
+      const report = yield* replayRun("run-replay-state" as RunId, leaky);
+      assert.strictEqual(report.divergence?.what, "state");
+      assert.isNull(report.divergence?.seq ?? null);
+      assert.include(report.divergence?.replayed ?? "", "repairCycles");
     }).pipe(Effect.scoped),
   );
 });

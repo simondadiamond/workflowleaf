@@ -37,6 +37,7 @@ import {
 } from "./profile.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { loadSkillCatalog } from "./skillCatalog.ts";
+import { replayRun } from "./replay.ts";
 import type { RunProgress } from "./worker.ts";
 
 export class PlaybookInvalid extends Schema.TaggedError<PlaybookInvalid>()("WlPlaybookInvalid", {
@@ -596,6 +597,48 @@ const decideCommand = Command.make(
   }),
 ).pipe(Command.withDescription("Answer the decision a run is waiting on."));
 
+/** A replay that disagreed with the recorded history. The exit status is the point. */
+export class ReplayDiverged extends Schema.TaggedError<ReplayDiverged>()("WlReplayDiverged", {
+  runs: Schema.Array(Schema.String),
+}) {
+  override get message(): string {
+    return `The controller no longer reproduces ${this.runs.join(", ")}.`;
+  }
+}
+
+const replayCommand = Command.make(
+  "replay",
+  { run: Argument.String("run").pipe(Argument.optional) },
+  Effect.fnUntraced(function* ({ run }) {
+    const store = yield* RunStore;
+    const runIds = Option.isSome(run)
+      ? [run.value]
+      : (yield* store.listRuns()).map((loaded) => loaded.record.runId as string).sort();
+
+    const diverged: string[] = [];
+    for (const runId of runIds) {
+      const report = yield* replayRun(runId as never);
+      const divergence = report.divergence;
+      if (divergence === null) {
+        yield* Console.log(`${runId}: ${String(report.transitions)} transition(s) reproduced`);
+        continue;
+      }
+      diverged.push(runId);
+      const where =
+        divergence.seq === null ? "the final state" : `transition ${String(divergence.seq)}`;
+      yield* Console.error(`${runId}: diverged at ${where} (${divergence.what})`);
+      yield* Console.error(`  recorded:\n${divergence.recorded}`);
+      yield* Console.error(`  replayed:\n${divergence.replayed}`);
+    }
+
+    if (diverged.length > 0) return yield* new ReplayDiverged({ runs: diverged });
+  }),
+).pipe(
+  Command.withDescription(
+    "Re-run a run's recorded transitions through the controller and fail if the outcome differs. Every run when none is named.",
+  ),
+);
+
 export const wlCommand = Command.make("wl").pipe(
   Command.withDescription("WorkflowLeaf: run playbooks as staged, gated, evidence-backed work."),
   Command.withSubcommands([
@@ -608,6 +651,7 @@ export const wlCommand = Command.make("wl").pipe(
     cancelCommand,
     decideCommand,
     errorsCommand,
+    replayCommand,
     skillsCommand,
     profileCommand,
   ]),

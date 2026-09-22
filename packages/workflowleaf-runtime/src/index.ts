@@ -12,3 +12,4 @@ export * from "./adapters/assisted.ts";
 export * from "./prompt.ts";
 export * from "./run.ts";
 export * from "./worker.ts";
+export * from "./replay.ts";

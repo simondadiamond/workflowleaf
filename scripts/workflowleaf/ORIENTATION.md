@@ -240,6 +240,7 @@ node packages/workflowleaf-runtime/src/bin.ts status [run]
 node packages/workflowleaf-runtime/src/bin.ts status --pr 1234
 node packages/workflowleaf-runtime/src/bin.ts resume <run> --profile <name> [--poll 120]
 node packages/workflowleaf-runtime/src/bin.ts errors --since 30d
+node packages/workflowleaf-runtime/src/bin.ts replay [run]
 ```
 
 The playbook directory is optional. Without one, the profile's
@@ -262,6 +263,14 @@ was merely attempted. The same lines are appended to
 `~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
 them, so a second terminal or an agent between turns can see how far a run has
 got while another process is still driving it.
+
+`replay` feeds a run's recorded transitions back through the controller from
+its initial state and fails at the first transition whose effects or revision
+differ, or on a different final state. With no run it replays every run in the
+store, so run it after changing `controller.ts`: a change that alters what a
+past run would have done fails there instead of on the next live run. The ids
+a transition mints are handed back from what the run recorded, so changing the
+id scheme does not break replay; minting an id the run never recorded does.
 
 `errors` is the learning log. It is derived from what runs already recorded
 (failed evidence, raised decisions, human answers, limitations) and grouped by

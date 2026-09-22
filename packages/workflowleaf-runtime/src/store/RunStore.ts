@@ -126,7 +126,27 @@ export interface TransitionRow {
   readonly input: string;
   /** The effects it produced, as canonical JSON. */
   readonly effects: string;
+  /** The run's revision once this transition was committed. */
+  readonly revision: number;
 }
+
+interface TransitionColumns {
+  readonly run_id: string;
+  readonly seq: number;
+  readonly at: string;
+  readonly input: string;
+  readonly effects: string;
+  readonly revision: number;
+}
+
+const toTransitionRow = (row: TransitionColumns): TransitionRow => ({
+  runId: row.run_id,
+  seq: row.seq,
+  at: row.at,
+  input: row.input,
+  effects: row.effects,
+  revision: row.revision,
+});
 
 const decodeRunRecord = Schema.decodeUnknownResult(Schema.fromJsonString(RunRecord));
 const decodeRunPlan = Schema.decodeUnknownResult(Schema.fromJsonString(RunPlan));
@@ -169,6 +189,10 @@ export class RunStore extends Context.Service<
     /** Every committed transition since an instant, oldest first, across runs. */
     readonly transitionsSince: (
       since: string,
+    ) => Effect.Effect<readonly TransitionRow[], RunStoreError>;
+    /** One run's committed transitions, in the order they were committed. */
+    readonly transitionsFor: (
+      runId: RunId,
     ) => Effect.Effect<readonly TransitionRow[], RunStoreError>;
     /** Every evidence record since an instant whose outcome did not satisfy its gate. */
     readonly failedEvidenceSince: (
@@ -365,23 +389,21 @@ export class RunStore extends Context.Service<
 
       const transitionsSince: RunStore["Service"]["transitionsSince"] = Effect.fnUntraced(
         function* (since) {
-          const rows = yield* sql<{
-            run_id: string;
-            seq: number;
-            at: string;
-            input: string;
-            effects: string;
-          }>`SELECT run_id, seq, at, input, effects FROM wl_transitions
-             WHERE at >= ${since} ORDER BY at, run_id, seq`.pipe(
+          const rows = yield* sql<TransitionColumns>`
+            SELECT run_id, seq, at, input, effects, revision FROM wl_transitions
+            WHERE at >= ${since} ORDER BY at, run_id, seq`.pipe(
             Effect.mapError(fail("transitionsSince")),
           );
-          return rows.map((row) => ({
-            runId: row.run_id,
-            seq: row.seq,
-            at: row.at,
-            input: row.input,
-            effects: row.effects,
-          }));
+          return rows.map(toTransitionRow);
+        },
+      );
+
+      const transitionsFor: RunStore["Service"]["transitionsFor"] = Effect.fnUntraced(
+        function* (runId) {
+          const rows = yield* sql<TransitionColumns>`
+            SELECT run_id, seq, at, input, effects, revision FROM wl_transitions
+            WHERE run_id = ${runId} ORDER BY seq`.pipe(Effect.mapError(fail("transitionsFor")));
+          return rows.map(toTransitionRow);
         },
       );
 
@@ -761,6 +783,7 @@ export class RunStore extends Context.Service<
         countRunsForStory,
         transitionCount,
         transitionsSince,
+        transitionsFor,
         failedEvidenceSince,
         limitationsSince,
         findRunByPullRequest,
