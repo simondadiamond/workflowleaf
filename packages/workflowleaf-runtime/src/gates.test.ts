@@ -208,6 +208,27 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("gate runner", (it) 
     }).pipe(Effect.scoped),
   );
 
+  it.effect("reports a command gate as pending on its declared pending exit code", () =>
+    Effect.gen(function* () {
+      const { workspace, logDir } = yield* makeWorkspace();
+      const gate = (code: number) =>
+        ({
+          id: "reviews-settled" as GateId,
+          type: "command",
+          executable: "node",
+          args: ["-e", `process.exit(${code})`],
+          timeoutMs: 30_000,
+          expect: { exitCode: 0, pendingExitCode: 75 },
+        }) as const;
+
+      const waiting = yield* evaluateGate(gate(75), yield* contextFor(workspace, logDir));
+      const failing = yield* evaluateGate(gate(1), yield* contextFor(workspace, logDir));
+
+      assert.strictEqual(waiting.outcome, "pending");
+      assert.strictEqual(failing.outcome, "failed");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("records a gate that cannot be started rather than taking the run down", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

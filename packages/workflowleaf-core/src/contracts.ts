@@ -39,7 +39,15 @@ export const CommandGate = Schema.Struct({
   /** Relative to the run's worktree. Absolute paths and `..` are rejected. */
   cwd: Schema.optional(NonEmpty),
   timeoutMs: PositiveInt,
-  expect: Schema.Struct({ exitCode: NonNegativeInt }),
+  expect: Schema.Struct({
+    exitCode: NonNegativeInt,
+    /**
+     * An exit code meaning "not resolved yet": the run parks in
+     * `waiting_external` and `resume` checks again, as it does for an
+     * external gate. For checks that read a system the run waits on.
+     */
+    pendingExitCode: Schema.optional(NonNegativeInt),
+  }),
   /** Optional structured result parsing, recorded as evidence alongside the exit code. */
   parse: Schema.optional(Schema.Literals(["tap", "none"])),
 });

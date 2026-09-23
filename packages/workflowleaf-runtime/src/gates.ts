@@ -222,7 +222,12 @@ const runCommandGate = Effect.fnUntraced(function* (
       passedCount: counts.passed,
       failedCount: counts.failed,
     },
-    outcome: exitCode === gate.expect.exitCode ? "passed" : "failed",
+    outcome:
+      exitCode === gate.expect.exitCode
+        ? "passed"
+        : exitCode === gate.expect.pendingExitCode
+          ? "pending"
+          : "failed",
     logRef,
   } satisfies GateRun;
 });
