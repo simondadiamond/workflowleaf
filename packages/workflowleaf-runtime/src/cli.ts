@@ -21,6 +21,7 @@ import { groupByCause, readLearningLog, sinceInstant } from "./learningLog.ts";
 import { loadPlaybook } from "./load.ts";
 import {
   answeredFromCli,
+  cancelRun,
   decisionPortFor,
   describeRun,
   nextRunId,
@@ -577,16 +578,20 @@ const cancelCommand = Command.make(
   Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision, reason }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const result = yield* resumeRun({
+    const result = yield* cancelRun({
       runId: run as never,
       profile,
       owner,
-      inputs: [{ type: "cancel", reason }],
+      reason,
       progress: printProgress,
     });
     yield* reportResult(run, result.stopped);
   }),
-).pipe(Command.withDescription("Cancel a run, interrupting whatever it is doing."));
+).pipe(
+  Command.withDescription(
+    "Cancel a run without starting anything. A stage still in flight is interrupted if its executor answers.",
+  ),
+);
 
 const decideCommand = Command.make(
   "decide",

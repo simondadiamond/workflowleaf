@@ -46,9 +46,11 @@ import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
 import { openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import {
+  cancel,
   DEFAULT_QUIET,
   drive,
   type DriveResult,
+  ExecutorFailed,
   type ProgressSink,
   type WorkerDeps,
 } from "./worker.ts";
@@ -550,6 +552,54 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
     yield* askForDecision(input.runId, yield* decisionPortFor(input.profile));
   }
   return result;
+});
+
+/**
+ * Cancels a run. The executor is reached only to stop a stage still in
+ * flight, and a run whose executor is gone still cancels.
+ */
+export const cancelRun = Effect.fnUntraced(function* (input: {
+  readonly runId: RunId;
+  readonly profile: Profile;
+  readonly owner: string;
+  readonly reason: string;
+  readonly progress?: ProgressSink | undefined;
+}) {
+  const store = yield* RunStore;
+  const path = yield* Path.Path;
+  const workspace = yield* store.findWorkspace(input.runId);
+  const runDir = yield* runDirFor(input.runId as string);
+  const seed = yield* store.transitionCount(input.runId);
+
+  const interrupt = (handle: StageHandle) =>
+    Option.isNone(workspace)
+      ? Effect.void
+      : Effect.scoped(
+          Effect.gen(function* () {
+            const executor = yield* executorFor(input.profile, {
+              workspacePath: workspace.value.path,
+              branch: workspace.value.branch,
+            });
+            yield* Effect.tryPromise(() => executor.interrupt(handle));
+          }),
+        ).pipe(
+          Effect.timeout("15 seconds"),
+          Effect.mapError(
+            (cause) => new ExecutorFailed({ operation: "interrupt", detail: cause.message }),
+          ),
+        );
+
+  return yield* holdingLease(input.runId, input.owner, (lease) =>
+    cancel({
+      runId: input.runId,
+      reason: input.reason,
+      lease,
+      ids: idSourceFor(input.runId as string, seed),
+      interrupt,
+      progress: input.progress,
+      progressLog: path.join(runDir, PROGRESS_LOG),
+    }),
+  );
 });
 
 export interface PullRequestSummary {

@@ -43,7 +43,7 @@ import { replayRun } from "./replay.ts";
 import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
-import { drive, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
+import { cancel, drive, ExecutorFailed, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 const plan: RunPlan = twoStagePlan();
@@ -185,6 +185,41 @@ class WritingExecutor implements ExecutorPort {
       kind: "not-pending",
       reason: "This executor has no provider to ask.",
     });
+  }
+}
+
+/** An executor whose server is gone. It records what it was asked, then refuses. */
+class FailingExecutor implements ExecutorPort {
+  readonly calls: string[] = [];
+
+  #refuse(call: string): Promise<never> {
+    this.calls.push(call);
+    return Promise.reject(new Error("socket ticket refused"));
+  }
+
+  capabilities(): Promise<ExecutorCapabilities> {
+    return this.#refuse("capabilities");
+  }
+  startStage(request: StageRequest): Promise<StageHandle> {
+    return this.#refuse(`startStage ${request.stage.contract.id as string}`);
+  }
+  continueStage(handle: StageHandle): Promise<ContinueOutcome> {
+    return this.#refuse(`continueStage ${handle.handle}`);
+  }
+  inspect(operationId: OperationId): Promise<InspectOutcome> {
+    return this.#refuse(`inspect ${operationId as string}`);
+  }
+  interrupt(handle: StageHandle): Promise<void> {
+    return this.#refuse(`interrupt ${handle.handle}`);
+  }
+  awaitSettlement(handle: StageHandle): Promise<StageSettlement> {
+    return this.#refuse(`awaitSettlement ${handle.handle}`);
+  }
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return this.#refuse("pendingRequests");
+  }
+  answerRequest(): Promise<AnswerOutcome> {
+    return this.#refuse("answerRequest");
   }
 }
 
@@ -731,6 +766,70 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.deepStrictEqual(executor.starts, []);
     }).pipe(Effect.scoped),
   );
+  it.effect(
+    "cancels a run with a lost dispatch without starting it again or reaching the executor",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* RunStore;
+        const { lease } = yield* setUpRun("run-cancel-stale");
+
+        // The run was started and its worker died with the first stage in flight:
+        // the dispatch is on record and nothing ever settled it.
+        const loaded = yield* store.loadRun("run-cancel-stale" as RunId);
+        if (Option.isNone(loaded)) return yield* Effect.die("no run");
+        const started = decide(
+          {
+            run: loaded.value.record,
+            plan,
+            now: "2026-01-01T00:00:00.000Z",
+            ids: sequentialIds("s"),
+          },
+          { type: "start" },
+        );
+        yield* store.commit({
+          previous: loaded.value.record,
+          next: started.run,
+          transitionInput: { type: "start" },
+          effects: started.effects,
+          lease,
+        });
+        const dispatch = started.effects.find((effect) => effect.type === "dispatch-stage");
+        if (dispatch?.type !== "dispatch-stage") return yield* Effect.die("no dispatch");
+        yield* store.recordIntent({
+          operationId: dispatch.operationId,
+          runId: "run-cancel-stale" as RunId,
+          visitId: dispatch.visitId as string,
+          attemptId: dispatch.attemptId as string,
+          kind: "start",
+          idempotencyKey: "run-cancel-stale:first",
+        });
+        yield* store.acknowledgeOperation(dispatch.operationId, "thread-of-a-dead-server");
+
+        // The executor the run was started on is gone: every call fails.
+        const executor = new FailingExecutor();
+        const result = yield* cancel({
+          runId: "run-cancel-stale" as RunId,
+          reason: "dead experiment",
+          lease,
+          ids: sequentialIds("c"),
+          interrupt: (handle) =>
+            Effect.tryPromise({
+              try: () => executor.interrupt(handle),
+              catch: (cause) =>
+                new ExecutorFailed({ operation: "interrupt", detail: String(cause) }),
+            }),
+        });
+
+        assert.strictEqual(result.record.state, "cancelled");
+        assert.strictEqual(result.stopped, "finished");
+        assert.deepStrictEqual(executor.calls, ["interrupt thread-of-a-dead-server"]);
+        const after = yield* store.loadRun("run-cancel-stale" as RunId);
+        if (Option.isNone(after)) return yield* Effect.die("no run");
+        assert.strictEqual(after.value.record.state, "cancelled");
+        assert.lengthOf(yield* store.unsettledOperations("run-cancel-stale" as RunId), 0);
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("reports every stage and gate verdict while it drives, not only at the end", () =>
     Effect.gen(function* () {
       const { workspace, lease, logDir } = yield* setUpRun("run-progress");

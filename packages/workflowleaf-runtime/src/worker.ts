@@ -849,6 +849,84 @@ export const drive = Effect.fnUntraced(function* (input: {
   } satisfies DriveResult;
 });
 
+/**
+ * Cancels a run without doing any of its work first.
+ *
+ * `drive` reconciles unsettled operations before it reads its inputs, and a
+ * reconciliation that finds a lost dispatch starts the stage again. A cancel
+ * must never do that, and the run it cancels may belong to an executor that no
+ * longer exists. So this commits the cancel on its own, never reconciles and
+ * never dispatches. Stopping a stage still in flight is best effort: `interrupt`
+ * is told the handle, and whatever it fails with is swallowed.
+ */
+export const cancel = Effect.fnUntraced(function* <R>(input: {
+  readonly runId: RunId;
+  readonly reason: string;
+  readonly lease: Lease;
+  readonly ids: IdSource;
+  readonly interrupt?:
+    | ((handle: StageHandle) => Effect.Effect<void, ExecutorFailed, R>)
+    | undefined;
+  readonly progress?: ProgressSink | undefined;
+  readonly progressLog?: string | undefined;
+}) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(input.runId);
+  if (Option.isNone(loaded)) {
+    return yield* new WorkerError({ message: `No run ${input.runId}.` });
+  }
+
+  const record = loaded.value.record;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  const transitionInput: ControllerInput = { type: "cancel", reason: input.reason };
+  const decision = decide(
+    { run: record, plan: loaded.value.plan, now, ids: input.ids },
+    transitionInput,
+  );
+  if (decision.run.revision === record.revision && decision.effects.length === 0) {
+    return {
+      record,
+      stopped: stopReasonFor(record) ?? "idle",
+      transitions: 0,
+    } satisfies DriveResult;
+  }
+
+  yield* store.commit({
+    previous: record,
+    next: decision.run,
+    transitionInput,
+    effects: decision.effects,
+    lease: input.lease,
+  });
+
+  const events = progressFor({
+    previous: record,
+    next: decision.run,
+    transitionInput,
+    effects: decision.effects,
+  });
+  for (const event of events) {
+    if (input.progress !== undefined) yield* input.progress(event);
+  }
+  if (input.progressLog !== undefined && events.length > 0) {
+    yield* appendProgress(input.progressLog, now, events);
+  }
+
+  // Whatever was in flight is over as far as the run is concerned. Its
+  // operations are closed so nothing later reads them as work to recover.
+  const unsettled = yield* store.unsettledOperations(input.runId);
+  for (const operation of unsettled) {
+    if (input.interrupt !== undefined && operation.handle !== null) {
+      yield* input
+        .interrupt({ operationId: operation.operationId, handle: operation.handle })
+        .pipe(Effect.ignoreCause);
+    }
+    yield* store.settleOperation(operation.operationId, "interrupted");
+  }
+
+  return { record: decision.run, stopped: "finished", transitions: 1 } satisfies DriveResult;
+});
+
 /** Whether a visit's recorded evidence still satisfies every gate of its stage. */
 export const evidenceStillHolds = Effect.fnUntraced(function* (input: {
   readonly record: RunRecord;

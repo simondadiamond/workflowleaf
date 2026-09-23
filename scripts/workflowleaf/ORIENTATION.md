@@ -274,6 +274,10 @@ from it. There is no `--id`.
 run has moved since you looked. The number is on the run: `status` carries
 `revision` in both its detail forms.
 
+`cancel` commits the cancel and nothing else. It never reconciles or starts a
+stage, so it works on a run whose executor is gone. A stage still in flight is
+interrupted if its executor answers, and its operation is closed either way.
+
 Every command that drives a run prints a line as each stage starts, each gate
 returns a verdict and each stage settles. The lines are read off the records
 either side of each commit, so they report what was persisted and never what
