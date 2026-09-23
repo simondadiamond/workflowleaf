@@ -22,6 +22,31 @@ node24="$HOME/.nvm/versions/node/v24.20.0/bin"
 [ -d "$node24" ] && PATH="$node24:$PATH"
 export PATH
 
+# Keep the checkout current. `wl` runs whatever this checkout holds, so a
+# WorkflowLeaf fix merged on GitHub does nothing until someone pulls it here.
+# On a clean `main`, fetch at most once an hour and fast-forward; anything
+# else (another branch, local edits, local commits, no network) is left alone.
+# WL_NO_UPDATE=1 turns it off.
+updated=false
+if [ -z "${WL_NO_UPDATE:-}" ] &&
+  [ "$(git -C "$checkout" symbolic-ref --quiet --short HEAD 2>/dev/null)" = main ]; then
+  stamp="$(git -C "$checkout" rev-parse --absolute-git-dir)/wl-last-update"
+  if [ -z "$(find "$stamp" -mmin -60 2>/dev/null)" ]; then
+    touch "$stamp"
+    if GIT_TERMINAL_PROMPT=0 git -C "$checkout" fetch --quiet origin main 2>/dev/null &&
+      ! git -C "$checkout" merge-base --is-ancestor origin/main HEAD; then
+      if [ -n "$(git -C "$checkout" status --porcelain --untracked-files=no)" ]; then
+        echo "wl: $checkout is behind origin/main but has local edits; not updating it." >&2
+      elif git -C "$checkout" merge --ff-only --quiet origin/main 2>/dev/null; then
+        echo "wl: updated $checkout to $(git -C "$checkout" rev-parse --short HEAD)." >&2
+        updated=true
+      else
+        echo "wl: $checkout has commits origin/main does not; not updating it." >&2
+      fi
+    fi
+  fi
+fi
+
 # A checkout that was never installed, or whose lockfile changed since it was
 # (a pull that moved dependencies), fails deep inside Node with a module it
 # cannot find. Say which, and what fixes it, before that happens. pnpm keeps a
@@ -30,6 +55,12 @@ installed="$checkout/node_modules/.pnpm/lock.yaml"
 if [ ! -f "$installed" ]; then
   echo "wl: $checkout has no dependencies installed. Run: (cd $checkout && pnpm install --frozen-lockfile)" >&2
   exit 1
+fi
+if ! cmp -s "$checkout/pnpm-lock.yaml" "$installed" && $updated; then
+  # The update just above moved the dependencies, so install them rather than
+  # hand the person a command to type.
+  echo "wl: dependencies changed with that update; installing them." >&2
+  (cd "$checkout" && pnpm install --frozen-lockfile >&2)
 fi
 if ! cmp -s "$checkout/pnpm-lock.yaml" "$installed"; then
   echo "wl: $checkout/pnpm-lock.yaml changed since its dependencies were installed. Run: (cd $checkout && pnpm install --frozen-lockfile)" >&2

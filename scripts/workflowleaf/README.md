@@ -84,6 +84,13 @@ that fixes it, when that checkout has no dependencies installed or its
 `pnpm-lock.yaml` differs from the copy pnpm keeps of the lockfile it installed
 from, which is what a pull that moved dependencies leaves behind.
 
+It also keeps its checkout current. When that checkout is on a clean `main`,
+it fetches `origin/main` at most once an hour and fast-forwards, so a merged
+WorkflowLeaf pull request reaches `wl` without anyone pulling
+`~/Repos/t3code` by hand. It installs dependencies itself when that update
+moved the lockfile. Another branch, local edits, local commits and no network
+all leave the checkout alone. Set `WL_NO_UPDATE=1` to turn it off.
+
 ## skills/
 
 Skills that drive WorkflowLeaf live here rather than in a home directory, so a
