@@ -94,6 +94,11 @@ and AGENTS.md says so.
    turn (`wl_findings`, once per text) and clears the file. It is not a gate and
    never changes the run: `status` counts it, `status <run>` lists it under
    `foundNotFixed`, and `wl errors` groups it as `found, not fixed`.
+   The worker also records one itself when a file behind a symlink that
+   leads out of the worktree changes during a stage (`outside-worktree`). A
+   repository whose checkout hook links `.claude` or `.env` to the main
+   checkout lets an agent edit files there that no gate, reviewer or pull
+   request sees; this makes that visible, it does not stop it.
 6. **`it.effect` uses a test clock.** Anything that sleeps for real needs
    `it.layer(layer, { excludeTestServices: true })`.
 

@@ -895,6 +895,68 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("reports a file changed through a symlink that leaves the worktree", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-escape");
+
+      // As FBM's post-checkout hook does: the worktree's .claude is the main
+      // checkout's, so an edit through it lands in a directory git never reads.
+      const shared = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(path.join(shared, "hooks"));
+      yield* fs.writeFileString(path.join(shared, "hooks", "map.sh"), "old\n");
+      yield* fs.writeFileString(path.join(shared, "untouched.md"), "same\n");
+      // Claude Code keeps other checkouts under .claude/worktrees; they are not
+      // this run's, and a busy one must not be reported against it.
+      yield* fs.makeDirectory(path.join(shared, "worktrees", "other"), { recursive: true });
+      yield* fs.writeFileString(path.join(shared, "worktrees", "other", ".git"), "gitdir: x\n");
+      yield* fs.writeFileString(path.join(shared, "worktrees", "other", "busy.txt"), "1\n");
+      yield* fs.symlink(shared, path.join(workspace.path, ".claude"));
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (at) => {
+              write("artifact.md", ARTIFACT)(at);
+              write(".claude/hooks/map.sh", "new\n")(at);
+              write(".claude/worktrees/other/busy.txt", "2\n")(at);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-escape" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("e"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      const findings = yield* store.findingsFor("run-escape" as RunId);
+      assert.deepStrictEqual(
+        findings.map((finding) => [finding.stageId, finding.source]),
+        [["produce", "outside-worktree"]],
+      );
+      const detail = findings[0]?.detail ?? "";
+      assert.include(detail, ".claude/hooks/map.sh");
+      assert.include(detail, path.join(yield* fs.realPath(shared), "hooks", "map.sh"));
+      assert.notInclude(detail, "untouched.md");
+      assert.notInclude(detail, "busy.txt");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("reports every stage and gate verdict while it drives, not only at the end", () =>
     Effect.gen(function* () {
       const { workspace, lease, logDir } = yield* setUpRun("run-progress");

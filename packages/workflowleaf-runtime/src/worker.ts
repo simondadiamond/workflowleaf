@@ -49,8 +49,11 @@ import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import {
   changedPaths,
+  outsideChanges,
+  outsideTheWorktree,
   pathsChangedSince,
   takeSnapshot,
+  type OutsideTheWorktree,
   type SnapshotManifest,
 } from "./workspaces.ts";
 
@@ -513,6 +516,25 @@ const collectFindings = Effect.fnUntraced(
 );
 
 /**
+ * Records, as a finding, any file behind an outward symlink that changed
+ * while the stage ran. See `outsideTheWorktree` for why no gate can see these.
+ */
+const reportOutside = Effect.fnUntraced(
+  function* (runId: RunId, stageId: StageId, workspacePath: string, before: OutsideTheWorktree) {
+    const store = yield* RunStore;
+    const detail = outsideChanges(before, yield* outsideTheWorktree(workspacePath));
+    if (detail === null) return;
+    yield* store.recordFinding({
+      runId,
+      stageId: stageId as string,
+      source: "outside-worktree",
+      detail,
+    });
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
  * The path-triggered skills a stage calls for right now.
  *
  * Chosen from the paths the run has actually changed, plus what the stage
@@ -620,6 +642,7 @@ const perform = Effect.fnUntraced(function* (input: {
         kind: "start",
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
+      const outside = yield* outsideTheWorktree(deps.workspacePath);
 
       const { request, skills } = yield* stageRequestFor({ ...input, effect });
       const handle = yield* fromExecutor("startStage", () => deps.executor.startStage(request));
@@ -630,6 +653,7 @@ const perform = Effect.fnUntraced(function* (input: {
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
       yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+      yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
 
       return [
         {
@@ -659,6 +683,7 @@ const perform = Effect.fnUntraced(function* (input: {
         kind: "continue",
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
+      const outside = yield* outsideTheWorktree(deps.workspacePath);
 
       const visit = input.record.visits.find((candidate) => candidate.visitId === effect.visitId);
       const previousHandle = visit?.operation?.handle ?? null;
@@ -674,6 +699,7 @@ const perform = Effect.fnUntraced(function* (input: {
         );
         yield* store.settleOperation(effect.operationId, settlement.outcome);
         yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+        yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
         return [
           {
             type: "dispatch-acknowledged",
@@ -714,6 +740,7 @@ const perform = Effect.fnUntraced(function* (input: {
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
       yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+      yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
       return [
         ...(yield* discoveredSkills({
           plan: input.plan,
