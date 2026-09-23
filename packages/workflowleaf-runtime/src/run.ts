@@ -31,6 +31,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -285,6 +286,43 @@ export const runDirFor = Effect.fnUntraced(function* (runId: string) {
   return path.join(yield* workflowleafHome(), "runs", runId);
 });
 
+/**
+ * Notes in the run's progress log that its start has begun.
+ *
+ * `startRun` opens the worktree and the pull request before the run record
+ * exists, and that can take several seconds. Without this line, `status`
+ * reports that there is no such run while its pull request is already open.
+ */
+const markStarting = Effect.fnUntraced(
+  function* (runId: string, at: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const runDir = yield* runDirFor(runId);
+    yield* fs.makeDirectory(runDir, { recursive: true });
+    yield* fs.writeFileString(path.join(runDir, PROGRESS_LOG), `${at} run starting\n`, {
+      flag: "a",
+    });
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
+ * For a run with no record, the last progress line its start wrote, if a
+ * start has begun. A start that failed leaves the line too, so the caller
+ * shows when it was written rather than claiming the run is on its way.
+ */
+export const startingRun = Effect.fnUntraced(
+  function* (runId: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const file = path.join(yield* runDirFor(runId), PROGRESS_LOG);
+    if (!(yield* fs.exists(file))) return Option.none<string>();
+    const lines = (yield* fs.readFileString(file)).split("\n").filter((line) => line.length > 0);
+    return Option.fromUndefinedOr(lines.at(-1));
+  },
+  Effect.catchCause(() => Effect.succeed(Option.none<string>())),
+);
+
 export interface StartRunInput {
   readonly runId: RunId;
   /** The story this run delivers. Several runs of one story share it. */
@@ -324,6 +362,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     });
   }
 
+  yield* markStarting(input.runId as string, compiledAt);
   const baseRevision = yield* revParse(input.profile.repoRoot, input.baseRef);
 
   // The worktree comes first: an executor is bound to the directory its stages

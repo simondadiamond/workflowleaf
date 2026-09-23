@@ -289,6 +289,9 @@ was merely attempted. The same lines are appended to
 `~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
 them, so a second terminal or an agent between turns can see how far a run has
 got while another process is still driving it.
+`run` writes a `run starting` line there before it opens the worktree and
+the pull request, so `status <run>` in the seconds before the run record
+exists says the run is starting instead of that there is no such run.
 
 `replay` feeds a run's recorded transitions back through the controller from
 its initial state and fails at the first transition whose effects or revision

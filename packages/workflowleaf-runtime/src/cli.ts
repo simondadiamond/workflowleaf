@@ -29,6 +29,7 @@ import {
   resumeRun,
   runDirFor,
   stageInFlight,
+  startingRun,
   startRun,
   summarizeRuns,
 } from "./run.ts";
@@ -391,7 +392,12 @@ const statusCommand = Command.make(
     if (Option.isSome(run)) {
       const detail = yield* describeRun(run.value as never);
       if (Option.isNone(detail)) {
-        yield* Console.error(`No run ${run.value}.`);
+        const starting = yield* startingRun(run.value);
+        yield* Option.isSome(starting)
+          ? Console.log(
+              `${run.value} has no record yet. Its start is opening the worktree and pull request; last progress: ${starting.value}`,
+            )
+          : Console.error(`No run ${run.value}.`);
         return;
       }
       yield* Console.log(
