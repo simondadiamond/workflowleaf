@@ -20,6 +20,7 @@ import {
   RunRecord,
   type EvidenceRecord,
   type OperationId,
+  type PendingDecision,
   type RunId,
   type StageLimitation,
   type VisitId,
@@ -109,6 +110,21 @@ export interface OperationRow {
   readonly outcome: string | null;
 }
 
+export interface DecisionRow {
+  readonly decisionId: string;
+  readonly runId: string;
+  readonly visitId: string | null;
+  readonly kind: string;
+  readonly detail: string;
+  readonly raisedAt: string;
+  /** When a person was asked on a surface they already watch. Null if never. */
+  readonly askedAt: string | null;
+  readonly answeredAt: string | null;
+  readonly answer: string | null;
+  /** `cli` or `thread`: where the answer was given. */
+  readonly answeredVia: string | null;
+}
+
 export interface WorkspaceRow {
   readonly workspaceId: string;
   readonly runId: string;
@@ -126,7 +142,27 @@ export interface TransitionRow {
   readonly input: string;
   /** The effects it produced, as canonical JSON. */
   readonly effects: string;
+  /** The run's revision once this transition was committed. */
+  readonly revision: number;
 }
+
+interface TransitionColumns {
+  readonly run_id: string;
+  readonly seq: number;
+  readonly at: string;
+  readonly input: string;
+  readonly effects: string;
+  readonly revision: number;
+}
+
+const toTransitionRow = (row: TransitionColumns): TransitionRow => ({
+  runId: row.run_id,
+  seq: row.seq,
+  at: row.at,
+  input: row.input,
+  effects: row.effects,
+  revision: row.revision,
+});
 
 const decodeRunRecord = Schema.decodeUnknownResult(Schema.fromJsonString(RunRecord));
 const decodeRunPlan = Schema.decodeUnknownResult(Schema.fromJsonString(RunPlan));
@@ -169,6 +205,10 @@ export class RunStore extends Context.Service<
     /** Every committed transition since an instant, oldest first, across runs. */
     readonly transitionsSince: (
       since: string,
+    ) => Effect.Effect<readonly TransitionRow[], RunStoreError>;
+    /** One run's committed transitions, in the order they were committed. */
+    readonly transitionsFor: (
+      runId: RunId,
     ) => Effect.Effect<readonly TransitionRow[], RunStoreError>;
     /** Every evidence record since an instant whose outcome did not satisfy its gate. */
     readonly failedEvidenceSince: (
@@ -219,6 +259,22 @@ export class RunStore extends Context.Service<
     readonly unsettledOperations: (
       runId: RunId,
     ) => Effect.Effect<readonly OperationRow[], RunStoreError>;
+
+    /** Records a raised decision against the visit that raised it. Idempotent. */
+    readonly recordDecision: (input: {
+      readonly runId: RunId;
+      readonly visitId: string | null;
+      readonly decision: PendingDecision;
+    }) => Effect.Effect<void, RunStoreError>;
+    readonly markDecisionAsked: (decisionId: string) => Effect.Effect<void, RunStoreError>;
+    readonly markDecisionAnswered: (
+      decisionId: string,
+      answer: string,
+      via: "cli" | "thread",
+    ) => Effect.Effect<void, RunStoreError>;
+    readonly findDecision: (
+      decisionId: string,
+    ) => Effect.Effect<Option.Option<DecisionRow>, RunStoreError>;
 
     readonly putEvidence: (evidence: EvidenceRecord) => Effect.Effect<void, RunStoreError>;
     readonly evidenceFor: (
@@ -365,23 +421,21 @@ export class RunStore extends Context.Service<
 
       const transitionsSince: RunStore["Service"]["transitionsSince"] = Effect.fnUntraced(
         function* (since) {
-          const rows = yield* sql<{
-            run_id: string;
-            seq: number;
-            at: string;
-            input: string;
-            effects: string;
-          }>`SELECT run_id, seq, at, input, effects FROM wl_transitions
-             WHERE at >= ${since} ORDER BY at, run_id, seq`.pipe(
+          const rows = yield* sql<TransitionColumns>`
+            SELECT run_id, seq, at, input, effects, revision FROM wl_transitions
+            WHERE at >= ${since} ORDER BY at, run_id, seq`.pipe(
             Effect.mapError(fail("transitionsSince")),
           );
-          return rows.map((row) => ({
-            runId: row.run_id,
-            seq: row.seq,
-            at: row.at,
-            input: row.input,
-            effects: row.effects,
-          }));
+          return rows.map(toTransitionRow);
+        },
+      );
+
+      const transitionsFor: RunStore["Service"]["transitionsFor"] = Effect.fnUntraced(
+        function* (runId) {
+          const rows = yield* sql<TransitionColumns>`
+            SELECT run_id, seq, at, input, effects, revision FROM wl_transitions
+            WHERE run_id = ${runId} ORDER BY seq`.pipe(Effect.mapError(fail("transitionsFor")));
+          return rows.map(toTransitionRow);
         },
       );
 
@@ -632,6 +686,75 @@ export class RunStore extends Context.Service<
         },
       );
 
+      const recordDecision: RunStore["Service"]["recordDecision"] = Effect.fnUntraced(
+        function* (input) {
+          yield* sql`
+            INSERT INTO wl_decisions (decision_id, run_id, visit_id, kind, detail, plan_digest, raised_at)
+            VALUES (${input.decision.decisionId}, ${input.runId}, ${input.visitId},
+                    ${input.decision.kind}, ${input.decision.detail},
+                    ${input.decision.planDigest}, ${input.decision.raisedAt})
+            ON CONFLICT (decision_id) DO NOTHING
+          `.pipe(Effect.mapError(fail("recordDecision")));
+        },
+      );
+
+      const markDecisionAsked: RunStore["Service"]["markDecisionAsked"] = Effect.fnUntraced(
+        function* (decisionId) {
+          const at = yield* now;
+          yield* sql`UPDATE wl_decisions SET asked_at = ${at}
+                     WHERE decision_id = ${decisionId} AND asked_at IS NULL`.pipe(
+            Effect.mapError(fail("markDecisionAsked")),
+          );
+        },
+      );
+
+      const markDecisionAnswered: RunStore["Service"]["markDecisionAnswered"] = Effect.fnUntraced(
+        function* (decisionId, answer, via) {
+          const at = yield* now;
+          yield* sql`UPDATE wl_decisions
+                     SET answered_at = ${at}, answer = ${answer}, answered_via = ${via}
+                     WHERE decision_id = ${decisionId} AND answered_at IS NULL`.pipe(
+            Effect.mapError(fail("markDecisionAnswered")),
+          );
+        },
+      );
+
+      const findDecision: RunStore["Service"]["findDecision"] = Effect.fnUntraced(
+        function* (decisionId) {
+          const rows = yield* sql<{
+            decision_id: string;
+            run_id: string;
+            visit_id: string | null;
+            kind: string;
+            detail: string;
+            raised_at: string;
+            asked_at: string | null;
+            answered_at: string | null;
+            answer: string | null;
+            answered_via: string | null;
+          }>`SELECT decision_id, run_id, visit_id, kind, detail, raised_at, asked_at,
+                    answered_at, answer, answered_via
+             FROM wl_decisions WHERE decision_id = ${decisionId}`.pipe(
+            Effect.mapError(fail("findDecision")),
+          );
+          const row = rows[0];
+          return row === undefined
+            ? Option.none()
+            : Option.some({
+                decisionId: row.decision_id,
+                runId: row.run_id,
+                visitId: row.visit_id,
+                kind: row.kind,
+                detail: row.detail,
+                raisedAt: row.raised_at,
+                askedAt: row.asked_at,
+                answeredAt: row.answered_at,
+                answer: row.answer,
+                answeredVia: row.answered_via,
+              } satisfies DecisionRow);
+        },
+      );
+
       const putEvidence: RunStore["Service"]["putEvidence"] = Effect.fnUntraced(
         function* (evidence) {
           const at = yield* now;
@@ -761,6 +884,7 @@ export class RunStore extends Context.Service<
         countRunsForStory,
         transitionCount,
         transitionsSince,
+        transitionsFor,
         failedEvidenceSince,
         limitationsSince,
         findRunByPullRequest,
@@ -772,6 +896,10 @@ export class RunStore extends Context.Service<
         settleOperation,
         findOperation,
         unsettledOperations,
+        recordDecision,
+        markDecisionAsked,
+        markDecisionAnswered,
+        findDecision,
         putEvidence,
         evidenceFor,
         recordLimitation,

@@ -20,7 +20,6 @@ const profile = (defaultPlaybook?: string): Profile => ({
     createPullRequest: false,
     commentOnPullRequest: false,
     merge: false,
-    deploy: false,
     liveCanary: false,
   },
 });

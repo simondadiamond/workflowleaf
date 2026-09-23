@@ -99,6 +99,13 @@ export const StageVisit = Schema.Struct({
   lostContext: Schema.Boolean,
   /** Gates still outstanding for this visit, in declaration order. */
   pendingGates: Schema.Array(GateId),
+  /**
+   * Path-triggered skills this visit has been given, at dispatch or by a
+   * refresh. A skill the stage's changes call for that is not here forces a
+   * refresh before its gates run. Visits recorded before this field decode
+   * with none.
+   */
+  skills: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
   failure: Schema.NullOr(Schema.String),
 });
 export type StageVisit = typeof StageVisit.Type;

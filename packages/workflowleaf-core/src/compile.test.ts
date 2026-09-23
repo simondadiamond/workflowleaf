@@ -106,6 +106,21 @@ describe("playbook validation", () => {
     );
   });
 
+  it("rejects a path rule that loads a skill the stage never pinned", () => {
+    const withRule = (lazy: string[]) =>
+      rawDocument({
+        stages: [
+          rawStage({
+            skills: { required: [], lazy, lazyRules: [{ paths: "db/**", load: "migrations" }] },
+          }),
+        ],
+      });
+
+    const diagnostics = expectDiagnostics(validatePlaybook(withRule([]), "PLAYBOOK.md"));
+    expect(diagnostics.map((one) => one.field)).toEqual(["stages[0].skills.lazyRules[0].load"]);
+    expect(validatePlaybook(withRule(["migrations"]), "PLAYBOOK.md").ok).toBe(true);
+  });
+
   it("rejects a gate reference that resolves to nothing", () => {
     const document = rawDocument({
       stages: [

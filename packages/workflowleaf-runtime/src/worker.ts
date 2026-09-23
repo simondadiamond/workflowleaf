@@ -12,6 +12,7 @@
  */
 import {
   SATISFYING,
+  currentVisit,
   decide,
   findStage,
   satisfies,
@@ -21,11 +22,15 @@ import {
   type ExecutorPort,
   type GateVerdict,
   type IdSource,
+  type OperationId,
+  type ResolvedStage,
   type RunId,
   type RunPlan,
   type RunRecord,
   type StageHandle,
+  type StageId,
   type StageRequest,
+  type StageSettlement,
   type VisitId,
   type VisitState,
 } from "@t3tools/workflowleaf-core";
@@ -42,7 +47,12 @@ import { compileStagePrompt } from "./prompt.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
-import { takeSnapshot, type SnapshotManifest } from "./workspaces.ts";
+import {
+  changedPaths,
+  pathsChangedSince,
+  takeSnapshot,
+  type SnapshotManifest,
+} from "./workspaces.ts";
 
 export class WorkerError extends Schema.TaggedError<WorkerError>()("WlWorkerError", {
   message: Schema.String,
@@ -108,7 +118,28 @@ export interface WorkerDeps {
   readonly reviewer?: ReviewerConfig | undefined;
   /** The `gh` config directory for the run's repository, when the profile names one. */
   readonly ghConfigDir?: string | undefined;
+  /**
+   * How long the worktree must stay unchanged before gates may read it. Absent
+   * means gates run as soon as the stage settles, which only tests want.
+   */
+  readonly quiet?: QuietWindow | undefined;
 }
+
+/**
+ * The worktree must go this long without a change before a gate reads it, and
+ * a tree still changing after `timeoutMs` is reported instead of judged.
+ */
+export interface QuietWindow {
+  readonly windowMs: number;
+  readonly timeoutMs: number;
+}
+
+/**
+ * What a real run waits for. Long enough to outlast a formatter or a hook that
+ * fires as a turn ends, short enough not to be noticed, and a timeout past
+ * which something is plainly still running in the worktree.
+ */
+export const DEFAULT_QUIET: QuietWindow = { windowMs: 2_000, timeoutMs: 180_000 };
 
 /** Why the worker stopped. `idle` means the run is waiting on something outside it. */
 export type StopReason = "finished" | "needs-decision" | "paused" | "waiting-external" | "idle";
@@ -216,6 +247,33 @@ const appendProgress = Effect.fnUntraced(
 );
 
 /**
+ * Waits until nothing is writing to the worktree.
+ *
+ * An executor's settlement says its own turn is over. It cannot speak for a
+ * process that turn started in the background, a hook, or a formatter, and a
+ * gate that reads while any of those is still writing judges a tree that is
+ * about to change. Two snapshots a quiet window apart must agree before gates
+ * may run. The paths still changing when time runs out are returned, so the
+ * run can say what would not settle.
+ */
+export const awaitQuiet = Effect.fnUntraced(function* (workspacePath: string, quiet: QuietWindow) {
+  const snapshot = Effect.gen(function* () {
+    return yield* takeSnapshot(workspacePath, DateTime.formatIso(yield* DateTime.now));
+  });
+
+  let previous = yield* snapshot;
+  let changing: readonly string[] = [];
+  for (let waited = 0; waited < quiet.timeoutMs; waited += quiet.windowMs) {
+    yield* Effect.sleep(`${quiet.windowMs} millis`);
+    const next = yield* snapshot;
+    if (next.snapshotId === previous.snapshotId) return { quiet: true, changing: [] };
+    changing = changedPaths(previous, next);
+    previous = next;
+  }
+  return { quiet: false, changing };
+});
+
+/**
  * Runs the deterministic gates of one visit and returns a verdict per gate.
  *
  * Evidence is written before the verdicts go anywhere near the controller, so
@@ -235,6 +293,23 @@ const runGates = Effect.fnUntraced(function* (input: {
   const stage = visit === undefined ? undefined : findStage(input.plan, visit.stageId);
   if (stage === undefined) {
     return [] as readonly GateVerdict[];
+  }
+
+  // No gate reads the worktree until it has stopped changing. A tree that
+  // never settles is not judged: every gate reports that it could not run,
+  // which stops the run for a person rather than spending the stage's attempts.
+  if (input.deps.quiet !== undefined) {
+    const settled = yield* awaitQuiet(input.deps.workspacePath, input.deps.quiet);
+    if (!settled.quiet) {
+      const summary = `the worktree was still changing after ${String(input.deps.quiet.timeoutMs)}ms, so no gate ran: ${settled.changing.slice(0, 10).join(", ")}`;
+      return stage.gates
+        .filter((pinned) => input.gateIds.includes(pinned.definition.id))
+        .map((pinned): GateVerdict => ({
+          gateId: pinned.definition.id,
+          outcome: "error",
+          summary,
+        }));
+    }
   }
 
   const verdicts: GateVerdict[] = [];
@@ -410,6 +485,47 @@ const scopeSplitDeclared = Effect.fnUntraced(function* (workspacePath: string) {
   ] as readonly ControllerInput[];
 });
 
+/**
+ * The path-triggered skills a stage calls for right now.
+ *
+ * Chosen from the paths the run has actually changed, plus what the stage
+ * declares it produces, so a later stage gets the skills its predecessors'
+ * changes need and a stage that has just written a file is caught needing one.
+ * A worktree git cannot read yields the declared outputs alone rather than
+ * stopping the run.
+ */
+const skillsCalledFor = Effect.fnUntraced(function* (stage: ResolvedStage, deps: WorkerDeps) {
+  const rules = stage.contract.skills.lazyRules;
+  if (rules.length === 0) return [] as string[];
+  const changed = yield* pathsChangedSince(deps.workspacePath, deps.baseRevision ?? "HEAD").pipe(
+    Effect.catchCause(() => Effect.succeed([] as string[])),
+  );
+  return skillsForPaths(rules, [...stage.contract.produces, ...changed]);
+});
+
+/**
+ * What a stage that just settled reports before its settlement: the skills its
+ * changes call for, so the controller can refresh it before any gate runs.
+ * Only a completed turn is judged; an error or an interruption is handled as
+ * one.
+ */
+const discoveredSkills = Effect.fnUntraced(function* (input: {
+  readonly plan: RunPlan;
+  readonly stageId: StageId;
+  readonly operationId: OperationId;
+  readonly outcome: StageSettlement["outcome"];
+  readonly deps: WorkerDeps;
+}) {
+  const stage = findStage(input.plan, input.stageId);
+  if (stage === undefined || input.outcome !== "completed") return [] as ControllerInput[];
+  const skills = yield* skillsCalledFor(stage, input.deps);
+  return skills.length === 0
+    ? ([] as ControllerInput[])
+    : ([
+        { type: "skills-discovered", operationId: input.operationId, skills },
+      ] as ControllerInput[]);
+});
+
 const stageRequestFor = Effect.fnUntraced(function* (input: {
   readonly record: RunRecord;
   readonly plan: RunPlan;
@@ -421,9 +537,7 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     return yield* new WorkerError({ message: `Plan has no stage ${input.effect.stageId}.` });
   }
 
-  // Path-triggered skills are chosen from what this stage is about to touch,
-  // not from what the run looked like when it was compiled.
-  const extra = skillsForPaths(stage.contract.skills.lazyRules, [...stage.contract.produces]);
+  const extra = yield* skillsCalledFor(stage, input.deps);
   const extraSkills = extra.flatMap((id) => {
     const found = stage.lazySkills.find((skill) => skill.id === id);
     return found === undefined ? [] : [{ id: found.id, path: found.path }];
@@ -440,14 +554,17 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
   });
 
   return {
-    runId: input.record.runId,
-    visitId: input.effect.visitId,
-    attemptId: input.effect.attemptId,
-    operationId: input.effect.operationId,
-    workspaceId: input.record.workspaceId,
-    stage,
-    input: prompt,
-  } satisfies StageRequest;
+    request: {
+      runId: input.record.runId,
+      visitId: input.effect.visitId,
+      attemptId: input.effect.attemptId,
+      operationId: input.effect.operationId,
+      workspaceId: input.record.workspaceId,
+      stage,
+      input: prompt,
+    } satisfies StageRequest,
+    skills: extraSkills.map((skill) => skill.id),
+  };
 });
 
 /**
@@ -477,7 +594,7 @@ const perform = Effect.fnUntraced(function* (input: {
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
 
-      const request = yield* stageRequestFor({ ...input, effect });
+      const { request, skills } = yield* stageRequestFor({ ...input, effect });
       const handle = yield* fromExecutor("startStage", () => deps.executor.startStage(request));
       yield* store.acknowledgeOperation(effect.operationId, handle.handle);
 
@@ -491,7 +608,15 @@ const perform = Effect.fnUntraced(function* (input: {
           type: "dispatch-acknowledged",
           operationId: effect.operationId,
           handle: handle.handle,
+          ...(skills.length === 0 ? {} : { skills }),
         },
+        ...(yield* discoveredSkills({
+          plan: input.plan,
+          stageId: effect.stageId,
+          operationId: effect.operationId,
+          outcome: settlement.outcome,
+          deps,
+        })),
         { type: "settled", settlement },
         ...(yield* scopeSplitDeclared(deps.workspacePath)),
       ] as readonly ControllerInput[];
@@ -513,7 +638,7 @@ const perform = Effect.fnUntraced(function* (input: {
       if (previousHandle === null) {
         // No live context to continue, so this is a fresh dispatch carrying the
         // correction. The controller already recorded the lost continuity.
-        const request = yield* stageRequestFor({ ...input, effect });
+        const { request, skills } = yield* stageRequestFor({ ...input, effect });
         const handle = yield* fromExecutor("startStage", () => deps.executor.startStage(request));
         yield* store.acknowledgeOperation(effect.operationId, handle.handle);
         const settlement = yield* fromExecutor("awaitSettlement", () =>
@@ -521,6 +646,19 @@ const perform = Effect.fnUntraced(function* (input: {
         );
         yield* store.settleOperation(effect.operationId, settlement.outcome);
         return [
+          {
+            type: "dispatch-acknowledged",
+            operationId: effect.operationId,
+            handle: handle.handle,
+            ...(skills.length === 0 ? {} : { skills }),
+          },
+          ...(yield* discoveredSkills({
+            plan: input.plan,
+            stageId: effect.stageId,
+            operationId: effect.operationId,
+            outcome: settlement.outcome,
+            deps,
+          })),
           { type: "settled", settlement },
           ...(yield* scopeSplitDeclared(deps.workspacePath)),
         ] as readonly ControllerInput[];
@@ -547,6 +685,13 @@ const perform = Effect.fnUntraced(function* (input: {
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
       return [
+        ...(yield* discoveredSkills({
+          plan: input.plan,
+          stageId: effect.stageId,
+          operationId: effect.operationId,
+          outcome: settlement.outcome,
+          deps,
+        })),
         { type: "settled", settlement },
         ...(yield* scopeSplitDeclared(deps.workspacePath)),
       ] as readonly ControllerInput[];
@@ -572,7 +717,18 @@ const perform = Effect.fnUntraced(function* (input: {
       return [] as readonly ControllerInput[];
     }
 
-    case "raise-decision":
+    case "raise-decision": {
+      // Recorded against the visit that raised it, so the question and its
+      // answer outlive whatever surface the person was asked on.
+      const visit = currentVisit(input.record);
+      yield* store.recordDecision({
+        runId: input.record.runId,
+        visitId: (visit?.visitId as string | undefined) ?? null,
+        decision: effect.decision,
+      });
+      return [] as readonly ControllerInput[];
+    }
+
     case "interrupt":
     case "finish":
       return [] as readonly ControllerInput[];

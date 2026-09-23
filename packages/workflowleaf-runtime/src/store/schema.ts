@@ -137,6 +137,18 @@ export const MIGRATIONS: readonly {
          SET document = json_set(document, '$.pullRequest', json('null'), '$.scopeSplit', json('null'))`,
     ],
   },
+  {
+    id: 3,
+    name: "decisions-are-asked",
+    sql: [
+      // A decision is recorded against the visit that raised it, and whether a
+      // person was asked somewhere they already look, and where the answer
+      // came from.
+      `ALTER TABLE wl_decisions ADD COLUMN visit_id TEXT`,
+      `ALTER TABLE wl_decisions ADD COLUMN asked_at TEXT`,
+      `ALTER TABLE wl_decisions ADD COLUMN answered_via TEXT`,
+    ],
+  },
 ];
 
 export const runMigrations = Effect.fnUntraced(function* () {

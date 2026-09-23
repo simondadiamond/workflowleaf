@@ -168,6 +168,24 @@ export function changedPaths(before: SnapshotManifest, after: SnapshotManifest):
 }
 
 /**
+ * Every path the run has changed since it branched: committed on its branch,
+ * modified, deleted or new and untracked. This is what path-triggered skills
+ * are chosen from, because it is the shape the change actually has.
+ */
+export const pathsChangedSince = Effect.fnUntraced(function* (
+  workspacePath: string,
+  baseRevision: string,
+) {
+  const changed = splitNul(
+    yield* git(workspacePath, ["diff", "--name-only", "--no-renames", "-z", baseRevision]),
+  );
+  const untracked = splitNul(
+    yield* git(workspacePath, ["ls-files", "--others", "--exclude-standard", "-z"]),
+  );
+  return [...new Set([...changed, ...untracked])].filter((entry) => !excluded(entry)).sort();
+});
+
+/**
  * Removes the run's worktree. The branch is left behind on purpose: it is the
  * record of what the run did, and deleting work is not this function's job.
  */

@@ -67,6 +67,23 @@ With neither present the rule prints that it skipped; with an explicit
 `--orientation-base` that does not resolve it fails, so CI cannot go quietly
 green.
 
+## merge-rehearsal.sh
+
+Rehearses the next `git merge upstream/main` in a throwaway worktree and
+records the upstream SHA, what the merge brought in, the files that conflicted,
+the upstream-owned files the fork edits that upstream also changed, whether
+the lockfile had to be regenerated, and each check's result and time. The
+ownership gate runs with `--base <upstream SHA>` there, because after a merge
+the fork's own changes are what sits on top of upstream's tip, not of the
+recorded base.
+
+## bin/wl
+
+Runs the CLI from the checkout it lives in. It refuses, and names the command
+that fixes it, when that checkout has no dependencies installed or its
+`pnpm-lock.yaml` differs from the copy pnpm keeps of the lockfile it installed
+from, which is what a pull that moved dependencies leaves behind.
+
 ## skills/
 
 Skills that drive WorkflowLeaf live here rather than in a home directory, so a

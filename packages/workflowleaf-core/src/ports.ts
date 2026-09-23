@@ -21,7 +21,8 @@ import type {
   VisitId,
   WorkspaceId,
 } from "./ids.ts";
-import type { ExecutorCapabilities } from "./state.ts";
+import type { DecisionAnswer } from "./controller.ts";
+import type { ExecutorCapabilities, PendingDecision } from "./state.ts";
 
 export interface StageRequest {
   readonly runId: RunId;
@@ -66,6 +67,30 @@ export type InspectOutcome =
   | { readonly kind: "settled"; readonly settlement: StageSettlement }
   | { readonly kind: "unknown"; readonly reason: string };
 
+/**
+ * A provider asking for permission in the middle of a stage, e.g. to run a
+ * command when the profile's runtime mode requires approval.
+ */
+export interface ProviderRequest {
+  readonly requestId: string;
+  /** What the provider wants to do, in its own words. */
+  readonly detail: string;
+  readonly openedAt: Instant;
+  /**
+   * The provider can no longer receive an answer: its session ended, or it
+   * already refused one as stale. An expired request is shown as expired and
+   * never answered as if it were still live.
+   */
+  readonly expired: boolean;
+}
+
+export type ProviderDecision = "accept" | "decline";
+
+export type AnswerOutcome =
+  | { readonly kind: "answered" }
+  | { readonly kind: "expired"; readonly reason: string }
+  | { readonly kind: "not-pending"; readonly reason: string };
+
 export interface ExecutorPort {
   capabilities(): Promise<ExecutorCapabilities>;
   startStage(request: StageRequest): Promise<StageHandle>;
@@ -75,6 +100,14 @@ export interface ExecutorPort {
   interrupt(handle: StageHandle): Promise<void>;
   /** Resolves when the executor has settled, including its background writers. */
   awaitSettlement(handle: StageHandle): Promise<StageSettlement>;
+  /** Approvals the provider is waiting on in this stage's context, oldest first. */
+  pendingRequests(handle: StageHandle): Promise<readonly ProviderRequest[]>;
+  /** Answers one. An expired request is reported, never replayed. */
+  answerRequest(
+    handle: StageHandle,
+    requestId: string,
+    decision: ProviderDecision,
+  ): Promise<AnswerOutcome>;
 }
 
 export interface WorkspacePort {
@@ -129,4 +162,27 @@ export interface StageLimitation {
   readonly stageId: StageId;
   readonly capability: keyof ExecutorCapabilities;
   readonly detail: string;
+}
+
+export interface DecisionRequest {
+  readonly runId: RunId;
+  readonly decision: PendingDecision;
+  /** Where the run works, so the question sits with the run's other threads. */
+  readonly workspacePath: string;
+  readonly branch: string;
+  readonly pullRequestUrl: string | null;
+}
+
+/**
+ * Asks a person for a decision where they already look for work waiting on
+ * them, and reads back what they answered. The decision itself is recorded by
+ * the run store; this is only where the question is put.
+ */
+export interface DecisionPort {
+  /** Puts the question up. Asking the same decision twice is the caller's to avoid. */
+  ask(request: DecisionRequest): Promise<void>;
+  /** The answer given there, or null. With `wait`, resolves once one is given. */
+  answer(request: DecisionRequest, wait: boolean): Promise<DecisionAnswer | null>;
+  /** Takes the question down once it was answered somewhere else. */
+  withdraw(request: DecisionRequest): Promise<void>;
 }

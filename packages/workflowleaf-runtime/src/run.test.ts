@@ -1,13 +1,29 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { initialRun, type RunId, type WorkspaceId } from "@t3tools/workflowleaf-core";
+import {
+  initialRun,
+  type DecisionAnswer,
+  type DecisionId,
+  type DecisionPort,
+  type DecisionRequest,
+  type RunId,
+  type WorkspaceId,
+} from "@t3tools/workflowleaf-core";
 import { capabilities, twoStagePlan } from "@t3tools/workflowleaf-core/testing";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { slugify } from "./cli.ts";
-import { describeRun, holdingLease, nextRunId, summarizeRuns } from "./run.ts";
+import {
+  answeredFromCli,
+  answeredOnThread,
+  askForDecision,
+  describeRun,
+  holdingLease,
+  nextRunId,
+  summarizeRuns,
+} from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
 
@@ -106,4 +122,140 @@ it("a story id becomes something usable as a branch and a directory", () => {
   assert.strictEqual(slugify("Issue 42"), "issue-42");
   assert.strictEqual(slugify("  Retry/Backoff: the timeout  "), "retry-backoff-the-timeout");
   assert.strictEqual(slugify("issue-42"), "issue-42");
+});
+
+/** Stands in for the T3 thread a decision is asked on. */
+class RecordingDecisions implements DecisionPort {
+  readonly asked: DecisionRequest[] = [];
+  readonly withdrawn: DecisionRequest[] = [];
+  readonly reply: DecisionAnswer | null;
+  readonly failToAsk: boolean;
+  constructor(reply: DecisionAnswer | null, failToAsk = false) {
+    this.reply = reply;
+    this.failToAsk = failToAsk;
+  }
+  ask(request: DecisionRequest): Promise<void> {
+    if (this.failToAsk) return Promise.reject(new Error("socket closed"));
+    this.asked.push(request);
+    return Promise.resolve();
+  }
+  answer(): Promise<DecisionAnswer | null> {
+    return Promise.resolve(this.reply);
+  }
+  withdraw(request: DecisionRequest): Promise<void> {
+    this.withdrawn.push(request);
+    return Promise.resolve();
+  }
+}
+
+/** A run stopped on a decision, with its worktree and the recorded question. */
+const seedStopped = Effect.fnUntraced(function* (runId: string) {
+  const store = yield* RunStore;
+  const decision = {
+    decisionId: `decision-${runId}` as DecisionId,
+    kind: "budget-exhausted" as const,
+    detail: "Stage build used all 3 attempts.",
+    raisedAt: "2026-01-01T00:00:01.000Z",
+    planDigest: plan.planDigest,
+  };
+  yield* store.createRun({
+    record: { ...record(runId), state: "needs_decision", decision },
+    plan,
+    story: runId,
+    profileName: "test",
+    origin: { trigger: "manual", by: "test" },
+    repoRoot: "/repo",
+    baseRevision: "abc123",
+  });
+  yield* store.claimWorkspace({
+    workspaceId: `ws-${runId}`,
+    runId: runId as RunId,
+    path: `/worktrees/${runId}`,
+    branch: `workflowleaf/${runId}`,
+    baseRevision: "abc123",
+  });
+  yield* store.recordDecision({ runId: runId as RunId, visitId: "visit-1", decision });
+  return decision;
+});
+
+it.layer(testLayer)("decisions asked on a thread", (it) => {
+  it.effect("asks once, however many times the run stops on the same decision", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const decision = yield* seedStopped("ask-once");
+      const port = new RecordingDecisions(null);
+
+      assert.isTrue(yield* askForDecision("ask-once" as RunId, port));
+      assert.isTrue(yield* askForDecision("ask-once" as RunId, port));
+      assert.lengthOf(port.asked, 1);
+      assert.strictEqual(port.asked[0]?.workspacePath, "/worktrees/ask-once");
+
+      const row = yield* store.findDecision(decision.decisionId);
+      assert.isNotNull(Option.getOrUndefined(row)?.askedAt ?? null);
+      assert.strictEqual(Option.getOrUndefined(row)?.visitId, "visit-1");
+    }),
+  );
+
+  it.effect("does not record a question it failed to put up", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const decision = yield* seedStopped("ask-fails");
+      assert.isFalse(
+        yield* askForDecision("ask-fails" as RunId, new RecordingDecisions(null, true)),
+      );
+      const row = yield* store.findDecision(decision.decisionId);
+      assert.isNull(Option.getOrUndefined(row)?.askedAt ?? null);
+    }),
+  );
+
+  it.effect("turns the answer given on the thread into the input that resumes the run", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const decision = yield* seedStopped("answered-there");
+      const port = new RecordingDecisions("waive");
+      yield* askForDecision("answered-there" as RunId, port);
+
+      const inputs = yield* answeredOnThread("answered-there" as RunId, port, false);
+      assert.deepStrictEqual(inputs, [
+        {
+          type: "decision-answered",
+          decisionId: decision.decisionId,
+          answer: "waive",
+          planDigest: plan.planDigest,
+        },
+      ]);
+      const row = yield* store.findDecision(decision.decisionId);
+      assert.strictEqual(Option.getOrUndefined(row)?.answeredVia, "thread");
+    }),
+  );
+
+  it.effect("reads nothing from a thread it never asked on, or one not yet answered", () =>
+    Effect.gen(function* () {
+      yield* seedStopped("never-asked");
+      assert.deepStrictEqual(
+        yield* answeredOnThread("never-asked" as RunId, new RecordingDecisions("proceed"), false),
+        [],
+      );
+
+      yield* seedStopped("unanswered");
+      const port = new RecordingDecisions(null);
+      yield* askForDecision("unanswered" as RunId, port);
+      assert.deepStrictEqual(yield* answeredOnThread("unanswered" as RunId, port, false), []);
+    }),
+  );
+
+  it.effect("takes the thread's question down when the terminal answered it", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const decision = yield* seedStopped("answered-here");
+      const port = new RecordingDecisions(null);
+      yield* askForDecision("answered-here" as RunId, port);
+
+      yield* answeredFromCli("answered-here" as RunId, "abort", port);
+      assert.lengthOf(port.withdrawn, 1);
+      const row = yield* store.findDecision(decision.decisionId);
+      assert.strictEqual(Option.getOrUndefined(row)?.answer, "abort");
+      assert.strictEqual(Option.getOrUndefined(row)?.answeredVia, "cli");
+    }),
+  );
 });

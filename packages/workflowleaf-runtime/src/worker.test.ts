@@ -1,18 +1,22 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // The stand-in executor writes to the worktree the way a provider would, which
 // has to happen synchronously inside a Promise-returning port.
-import * as NodeFs from "node:fs";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  decide,
   initialRun,
+  type AnswerOutcome,
   type ContinueOutcome,
   type ExecutorCapabilities,
   type ExecutorPort,
   type InspectOutcome,
   type OperationId,
+  type ProviderRequest,
   type RunId,
   type RunPlan,
   type StageHandle,
@@ -23,6 +27,8 @@ import {
 import {
   capabilities,
   commandGatePlan,
+  LAZY_SKILL,
+  lazySkillPlan,
   sequentialIds,
   twoStagePlan,
 } from "@t3tools/workflowleaf-core/testing";
@@ -33,6 +39,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { git } from "./git.ts";
+import { replayRun } from "./replay.ts";
+import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
 import { drive, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
@@ -51,7 +59,7 @@ type Action = (workspacePath: string) => void;
 const write =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
-    NodeFs.writeFileSync(NodePath.join(workspacePath, relativePath), content);
+    NodeFS.writeFileSync(NodePath.join(workspacePath, relativePath), content);
   };
 
 /** Writes into a directory the stage may not have created yet. */
@@ -59,8 +67,8 @@ const writeUnder =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
     const target = NodePath.join(workspacePath, relativePath);
-    NodeFs.mkdirSync(NodePath.dirname(target), { recursive: true });
-    NodeFs.writeFileSync(target, content);
+    NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+    NodeFS.writeFileSync(target, content);
   };
 
 const doNothing: Action = () => {};
@@ -165,6 +173,17 @@ class WritingExecutor implements ExecutorPort {
       settled: this.#settled,
       detail: null,
       at: "2026-01-01T00:00:00.000Z",
+    });
+  }
+
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return Promise.resolve([]);
+  }
+
+  answerRequest(): Promise<AnswerOutcome> {
+    return Promise.resolve({
+      kind: "not-pending",
+      reason: "This executor has no provider to ask.",
     });
   }
 }
@@ -274,7 +293,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
           summarize: [
             (workspacePath) => {
               // Read from "outside" while the second stage is still running.
-              seenMidRun = NodeFs.readFileSync(progressLog, "utf8");
+              seenMidRun = NodeFS.readFileSync(progressLog, "utf8");
               write("summary.md", SUMMARY)(workspacePath);
             },
           ],
@@ -770,6 +789,312 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
         (event) => event.kind === "stage-started" && event.correcting,
       );
       assert.lengthOf(corrections, 1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replays a finished run's history to exactly the state it recorded", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay" as RunId,
+        deps: {
+          executor,
+          ids: idSourceFor("run-replay", 0),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      const report = yield* replayRun("run-replay" as RunId);
+      assert.isNull(report.divergence);
+      assert.isAbove(report.transitions, 6);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replays across a stop for a decision and the drive that answered it", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-decision");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder(SCOPE_SPLIT_PATH, "and the migration too\n")(workspacePath);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const deps = {
+        executor,
+        ids: idSourceFor("run-replay-decision", 0),
+        workspacePath: workspace.path,
+        logDir,
+        owner: "worker-a",
+        leaseSeconds: 60,
+      };
+      const stopped = yield* drive({
+        runId: "run-replay-decision" as RunId,
+        deps,
+        lease,
+        initial: [{ type: "start" }],
+      });
+      // A resumed run mints its ids from a new seed, as `wl resume` does.
+      yield* drive({
+        runId: "run-replay-decision" as RunId,
+        deps: { ...deps, ids: idSourceFor("run-replay-decision", 5) },
+        lease,
+        initial: [
+          {
+            type: "decision-answered",
+            decisionId: stopped.record.decision!.decisionId,
+            answer: "proceed",
+            planDigest: stopped.record.planDigest,
+          },
+        ],
+      });
+
+      const report = yield* replayRun("run-replay-decision" as RunId);
+      assert.isNull(report.divergence);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails at the first transition a changed controller would decide differently", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-changed");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay-changed" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // A controller that lets a failing gate through: the past run corrected
+      // `produce`, this one would have moved straight on to `summarize`.
+      const lenient: typeof decide = (context, input) =>
+        decide(
+          context,
+          input.type === "gates-evaluated"
+            ? {
+                ...input,
+                verdicts: input.verdicts.map((verdict) => ({ ...verdict, outcome: "passed" })),
+              }
+            : input,
+        );
+
+      const report = yield* replayRun("run-replay-changed" as RunId, lenient);
+      assert.strictEqual(report.divergence?.what, "effects");
+      assert.strictEqual(report.divergence?.seq, 4);
+      assert.include(report.divergence?.recorded ?? "", "continue-stage");
+      assert.include(report.divergence?.replayed ?? "", "summarize");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails on a changed final state even when every effect still matches", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-state");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay-state" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // Spends a repair cycle on every transition and says nothing about it.
+      const leaky: typeof decide = (context, input) => {
+        const decision = decide(context, input);
+        const budget = {
+          ...decision.run.budget,
+          repairCycles: decision.run.budget.repairCycles + 1,
+        };
+        return { ...decision, run: { ...decision.run, budget } };
+      };
+
+      const report = yield* replayRun("run-replay-state" as RunId, leaky);
+      assert.strictEqual(report.divergence?.what, "state");
+      assert.isNull(report.divergence?.seq ?? null);
+      assert.include(report.divergence?.replayed ?? "", "repairCycles");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refreshes a stage that changed paths needing a skill before its gates run", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun(
+        "run-lazy-skill",
+        capabilities(),
+        lazySkillPlan(),
+      );
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder("db/001-add-column.sql", "ALTER TABLE t ADD c int;\n")(workspacePath);
+            },
+            doNothing,
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const seen: RunProgress[] = [];
+
+      const result = yield* drive({
+        runId: "run-lazy-skill" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("s"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          progress: (event) =>
+            Effect.sync(() => {
+              seen.push(event);
+            }),
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      // The first prompt could not know: nothing under db/ existed yet.
+      assert.notInclude(executor.prompts[0] ?? "", "/skills/migrations");
+      // The refresh names the skill, and the gates ran only after it.
+      assert.lengthOf(executor.continues, 1);
+      assert.include(executor.continues[0]?.correction ?? "", "/skills/migrations/SKILL.md");
+      assert.deepStrictEqual(
+        seen.slice(0, 3).map((event) => `${event.kind} ${event.stageId}`),
+        ["stage-started produce", "stage-started produce", "gates produce"],
+      );
+      // The next stage is given it up front, chosen from what the run changed.
+      assert.include(
+        executor.prompts[1] ?? "",
+        `${LAZY_SKILL} (selected from the paths this run has changed)`,
+      );
+      assert.deepStrictEqual(result.record.visits[0]?.skills, [LAZY_SKILL]);
+      assert.strictEqual(result.record.visits[0]?.attempts, 1);
+    }).pipe(Effect.scoped),
+  );
+
+  /**
+   * A stage that ends its turn while a process it started keeps writing: a
+   * line appended every 40ms, `lines` times, or until stopped when null.
+   */
+  const backgroundWriter = (lines: number | null) => {
+    const children: NodeChildProcess.ChildProcess[] = [];
+    const loop =
+      lines === null
+        ? "while true; do echo line >> artifact.md; sleep 0.04; done"
+        : `i=0; while [ $i -lt ${String(lines)} ]; do echo line >> artifact.md; i=$((i+1)); sleep 0.04; done`;
+    const action: Action = (workspacePath) => {
+      children.push(NodeChildProcess.spawn("sh", ["-c", loop], { cwd: workspacePath }));
+    };
+    return { action, stop: () => children.forEach((child) => child.kill()) };
+  };
+
+  it.effect("holds the gates until a background writer the stage left running has finished", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-quiet");
+      const writer = backgroundWriter(10);
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: { produce: [writer.action, doNothing], summarize: [write("summary.md", SUMMARY)] },
+      });
+
+      const result = yield* drive({
+        runId: "run-quiet" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("q"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          quiet: { windowMs: 150, timeoutMs: 5_000 },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      }).pipe(Effect.ensuring(Effect.sync(writer.stop)));
+
+      assert.strictEqual(result.record.state, "succeeded");
+      // Judged once, on the finished file: no correction for a race the stage
+      // did not lose.
+      assert.lengthOf(executor.continues, 0);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops for a person when the worktree never stops changing", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-never-quiet");
+      const writer = backgroundWriter(null);
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: { produce: [writer.action] },
+      });
+
+      const result = yield* drive({
+        runId: "run-never-quiet" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("n"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          quiet: { windowMs: 60, timeoutMs: 300 },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      }).pipe(Effect.ensuring(Effect.sync(writer.stop)));
+
+      assert.strictEqual(result.stopped, "needs-decision");
+      assert.strictEqual(result.record.decision?.kind, "reconciliation");
+      assert.include(result.record.decision?.detail ?? "", "still changing");
+      assert.include(result.record.decision?.detail ?? "", "artifact.md");
+      // No attempt was spent on it.
+      assert.strictEqual(result.record.visits[0]?.attempts, 1);
+      assert.lengthOf(executor.continues, 0);
     }).pipe(Effect.scoped),
   );
 });
