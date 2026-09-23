@@ -63,6 +63,12 @@ const PullRequestConfig = Schema.Struct({
   remote: Schema.String.check(Schema.isNonEmpty()),
   /** Branch the pull request is opened against. */
   baseBranch: Schema.String.check(Schema.isNonEmpty()),
+  /**
+   * How long `converged-on-head` waits for a review on a ready pull request
+   * before converging without one. Absent means it waits for a review, which is
+   * right for a repository with review bots and wrong for one without.
+   */
+  reviewWaitMinutes: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 });
 export type PullRequestConfig = typeof PullRequestConfig.Type;
 
@@ -124,6 +130,12 @@ const ProfileDocument = Schema.Struct({
     createPullRequest: Schema.Boolean,
     /** Post and reply on that pull request, including resolving review threads it answered. */
     commentOnPullRequest: Schema.Boolean,
+    /**
+     * Mark it ready for review once the stage that produces `pull-request` has
+     * passed its gates. Review bots commonly skip drafts, so a run that leaves
+     * its pull request a draft is never reviewed. Absent means off.
+     */
+    markPullRequestReady: Schema.optional(Schema.Boolean),
     /** Merge it. Off everywhere today: merging stays a person's call. */
     merge: Schema.Boolean,
     /** Run a canary against live systems, bound to a deployed revision (#12). */
@@ -278,6 +290,7 @@ export const PROFILE_TEMPLATE = {
   permissions: {
     createPullRequest: false,
     commentOnPullRequest: false,
+    markPullRequestReady: false,
     merge: false,
     liveCanary: false,
   },

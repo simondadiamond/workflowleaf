@@ -36,6 +36,22 @@ export const commitEmpty = Effect.fnUntraced(function* (cwd: string, message: st
   return yield* revParse(cwd, "HEAD");
 });
 
+/**
+ * Fetches a remote branch and returns the ref a run should branch from.
+ *
+ * The explicit refspec updates `<remote>/<branch>` whatever the remote's
+ * configured refspecs are, so a run never starts from a stale copy of it.
+ */
+export const fetchBase = Effect.fnUntraced(function* (cwd: string, remote: string, branch: string) {
+  yield* git(cwd, [
+    "fetch",
+    "--quiet",
+    remote,
+    `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`,
+  ]);
+  return `${remote}/${branch}`;
+});
+
 /** Pushes one branch by explicit refspec. Never forced. */
 export const pushBranch = (cwd: string, remote: string, branch: string) =>
   git(cwd, ["push", "--set-upstream", remote, `refs/heads/${branch}:refs/heads/${branch}`]);

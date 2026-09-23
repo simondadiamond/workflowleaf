@@ -9,29 +9,30 @@ the same context.
 A run id is the story plus its ordinal, `issue-42-1`. A story that outgrows one
 pull request gets `issue-42-2`, so a split never collides. The draft pull
 request is opened by code at run start when the profile permits it, and its
-number is on the run record.
+number is on the run record. Code marks it ready for review once the stage that
+produces `pull-request` passes, when the profile permits that too.
 
 Everything is additive on top of T3 so upstream's main branch keeps merging.
 
 ## Where everything is
 
-| What                                        | Where                                                                                           |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Code, branch `main`                         | any worktree under `~/.t3/worktrees/t3code/`                                                    |
-| This document                               | `scripts/workflowleaf/ORIENTATION.md`, the source of truth                                      |
-| The additive rule, for every agent          | `scripts/workflowleaf/FORK-RULES.md`, imported by `CLAUDE.md`                                   |
-| Fork remote                                 | `origin` = `simondadiamond/workflowleaf`, `upstream` = `pingdotgg/t3code` (never push there)    |
-| Backlog                                     | issues on `simondadiamond/workflowleaf`, labelled `workflowleaf` + `p0`–`p3`                    |
-| Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                         |
-| Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                        |
-| Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                               |
-| The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                                  |
-| The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                             |
-| Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)                 |
-| `wl` from any directory                     | `~/Repos/t3code/scripts/workflowleaf/bin/wl`, called by full path                               |
-| Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23                 |
-| Rehearse the next upstream merge            | `scripts/workflowleaf/merge-rehearsal.sh`, recorded in `~/.workflowleaf/merge-rehearsals.jsonl` |
-| The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`           |
+| What                                        | Where                                                                                                             |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Code, branch `main`                         | any worktree under `~/.t3/worktrees/t3code/`                                                                      |
+| This document                               | `scripts/workflowleaf/ORIENTATION.md`, the source of truth                                                        |
+| The additive rule, for every agent          | `scripts/workflowleaf/FORK-RULES.md`, imported by `CLAUDE.md`                                                     |
+| Fork remote                                 | `origin` = `simondadiamond/workflowleaf`, `upstream` = `pingdotgg/t3code` (never push there)                      |
+| Backlog                                     | issues on `simondadiamond/workflowleaf`, labelled `workflowleaf` + `p0`–`p3`                                      |
+| Private material                            | `~/.workflowleaf/` — never commit any of it to the fork                                                           |
+| Seam decision, live findings, skill mapping | `~/.workflowleaf/notes/`                                                                                          |
+| Execution profiles                          | `~/.workflowleaf/profiles/*.json`                                                                                 |
+| The generic playbook                        | `scripts/workflowleaf/playbooks/implement-pr/`                                                                    |
+| The Marketplace playbook                    | `~/.workflowleaf/playbooks/fbm-t1/`                                                                               |
+| Skills that drive runs                      | `scripts/workflowleaf/skills/`, linked into `~/.claude/skills` (see the README)                                   |
+| `wl` from any directory                     | `~/Repos/t3code/scripts/workflowleaf/bin/wl`, called by full path; it keeps that checkout on `origin/main` itself |
+| Whether T3's orchestration V2 is ready      | `scripts/workflowleaf/watch-upstream.sh` reports the four start signals for #23                                   |
+| Rehearse the next upstream merge            | `scripts/workflowleaf/merge-rehearsal.sh`, recorded in `~/.workflowleaf/merge-rehearsals.jsonl`                   |
+| The sandbox runs are proven against         | `simondadiamond/workflowleaf-sandbox` (private), cloned at `~/.workflowleaf/sandbox/`                             |
 
 Two packages: `packages/workflowleaf-core` (pure domain, no T3, no filesystem,
 no clock) and `packages/workflowleaf-runtime` (loader, store, gates, worker,
@@ -184,19 +185,23 @@ named by the worktree, `t3code/<something>`, and nothing depends on the name.
 The fork checks run on pull requests and on pushes to `main`, so a pushed branch
 gets no CI until it has a pull request open.
 
-**T3's own `ci.yml` never runs on this fork. Its jobs are queued forever, not
-broken.** Every job in it asks for a Blacksmith runner
-(`blacksmith-8vcpu-ubuntu-2404` and friends), a paid service the upstream
-organisation subscribes to and this fork does not, so the nine checks named
-Check, Test, Test Server, Rust, Mobile and Release Smoke sit queued on every
-pull request and never complete. Ignore them. Editing their `runs-on` would be
-a permanent upstream edit in the file upstream changes most, so instead
-`.github/workflows/workflowleaf-t3.yml`, a fork-owned file, runs T3's Check
+**T3's own `ci.yml` never runs on this fork, and is disabled.** Every job in it
+asks for a Blacksmith runner (`blacksmith-8vcpu-ubuntu-2404` and friends), a
+paid service the upstream organisation subscribes to and this fork does not, so
+its checks would sit queued on every pull request forever. Editing their
+`runs-on` would be a permanent upstream edit in the file upstream changes most.
+Instead, `scripts/workflowleaf/disable-paid-workflows.sh` turns off, as a
+repository setting, every workflow with a Blacksmith job. The fork-owned
+`.github/workflows/workflowleaf-housekeeping.yml` runs it on every push to main
+and every pull request, so a workflow an upstream merge brings in is turned off
+too. Nothing in upstream's files changes, so merges stay conflict-free. A
+workflow GitHub has never registered cannot be disabled until it first runs,
+so one queued check can still appear once on the pull request that triggers it.
+`.github/workflows/workflowleaf-t3.yml`, also fork-owned, runs T3's Check
 (lint, format, typecheck), its package tests and its three server test shards
 on `ubuntu-latest`. Those jobs are named `T3 check`, `T3 test` and
 `T3 test server`. With the WorkflowLeaf job they are the signals that count.
-Keep every fork workflow on `ubuntu-latest`, and check `runs-on` before
-believing a queued job will start.
+Keep every fork workflow on `ubuntu-latest`.
 
 **Rehearse before merging upstream.** `scripts/workflowleaf/merge-rehearsal.sh`
 merges `upstream/main` into a throwaway worktree of `origin/main`, reinstalls,
@@ -278,7 +283,10 @@ sits at belongs to the profile, which is the local half of the pair. Passing a
 directory still wins, because one repository has more than one playbook.
 
 `run` takes `--story`, falling back to the `issue` input, and derives the run id
-from it. There is no `--id`.
+from it. There is no `--id`. Without `--base` it fetches the profile's
+`pullRequest.baseBranch` and branches from `<remote>/<baseBranch>`, so a run
+starts from what its pull request targets, not from whatever the profile's
+checkout has checked out. A profile with no `pullRequest` falls back to `HEAD`.
 
 `resume`, `pause`, `cancel` and `decide` take `--revision` and refuse when the
 run has moved since you looked. The number is on the run: `status` carries
@@ -298,10 +306,17 @@ either side of each commit, so they report what was persisted and never what
 was merely attempted. The same lines are appended to
 `~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
 them, so a second terminal or an agent between turns can see how far a run has
-got while another process is still driving it.
-`run` writes a `run starting` line there before it opens the worktree and
+got while another process is still driving it. A gate verdict carries the first
+line of its detail when it did not pass, and always for an external gate,
+because "passed" alone does not say what GitHub showed.
+`run` writes a `run starting` line to the progress log before it opens the worktree and
 the pull request, so `status <run>` in the seconds before the run record
 exists says the run is starting instead of that there is no such run.
+
+On a T3 executor each stage is a thread titled `WorkflowLeaf <run> <stage>`.
+When the next stage starts, the adapter settles the run's earlier stage
+threads with T3's own `thread.settle` command, so one stage thread per run is
+active in the sidebar. The settled ones stay readable under Settled (#47).
 
 `replay` feeds a run's recorded transitions back through the controller from
 its initial state and fails at the first transition whose effects or revision
@@ -342,9 +357,12 @@ active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
 and command gates use it, and each stage prompt tells the agent to. The active
 account is never switched.
 
-`permissions` holds exactly four flags, all false unless granted:
-`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`. They
-cover what WorkflowLeaf itself does outside the worktree. What an agent may do
+`permissions` holds four flags, all false unless granted:
+`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`, plus
+`markPullRequestReady`, which may be left out and then means false. They
+cover what WorkflowLeaf itself does outside the worktree. `markPullRequestReady`
+exists because review bots commonly skip drafts: FBM's do, so a run that leaves
+its pull request a draft is never reviewed. `fbm` has it on. What an agent may do
 inside it is the executor's `runtimeMode` (T3's own four modes) and the
 provider's approvals. With `approval-required`, a stage's provider asks before
 acting: `wl requests <run>` lists what it is waiting on and `wl answer` accepts
@@ -407,7 +425,12 @@ gate stays as the safety net, recording a pass on a tree that moved as `stale`.
   `checks-green` and `converged-on-head` exist. An unresolved condition (CI
   running, a reviewer yet to answer) records `pending`: the run parks in
   `waiting_external` and `resume` checks again. `--poll <seconds>` keeps
-  checking for up to `--poll-for` minutes.
+  checking for up to `--poll-for` minutes. `converged-on-head` also needs a
+  submitted review of the head by someone other than the pull request's
+  author, because "nothing outstanding" is also what a pull request nobody
+  looked at shows, and `SKIPPED` checks prove nothing was reviewed (#42). A
+  repository with no reviewer sets `pullRequest.reviewWaitMinutes` in the
+  profile: a ready pull request then converges after that long without one.
 
 A stage that routes back (`correction: route-to`) sends its failing verdicts
 with the dispatch, so the stage it returns to starts from the findings rather
@@ -440,6 +463,12 @@ converged with no human step.
 `issue-5-1` ran the same playbook and the same controller on Codex
 (`gpt-5.6-sol`), with only the profile changed (#16, C12). It corrected two
 failing gates inside the same context and succeeded.
+
+A sandbox proof run is finished only when it is cleaned up. Close its sandbox
+pull request and issue unmerged, so the sandbox stays at its fixture, and put
+back any profile you changed for the proof. A proof that starts stage threads on
+the live T3 install leaves them in Simon's sidebar, so archive any the run did
+not settle itself.
 
 **Not proven:** a real Marketplace story (#26 proper), which needs a profile
 pointing at that repository and the account that can push to it; recovery

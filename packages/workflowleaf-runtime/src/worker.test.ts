@@ -40,6 +40,7 @@ import * as Path from "effect/Path";
 
 import { git } from "./git.ts";
 import { readLearningLog } from "./learningLog.ts";
+import { PullRequestError } from "./pullRequest.ts";
 import { replayRun } from "./replay.ts";
 import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
@@ -228,6 +229,7 @@ const setUpRun = Effect.fnUntraced(function* (
   runId: string,
   runCapabilities: ExecutorCapabilities = capabilities(),
   runPlan: RunPlan = plan,
+  pullRequestNumber: number | null = null,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -253,6 +255,16 @@ const setUpRun = Effect.fnUntraced(function* (
       maxRepairCycles: 2,
       deadlineAt: null,
       now: "2026-01-01T00:00:00.000Z",
+      pullRequest:
+        pullRequestNumber === null
+          ? null
+          : {
+              number: pullRequestNumber,
+              url: `https://example.test/pull/${String(pullRequestNumber)}`,
+              headBranch: `workflowleaf/${runId}`,
+              baseBranch: "main",
+              openedAt: "2026-01-01T00:00:00.000Z",
+            },
     }),
     plan: runPlan,
     story: "story",
@@ -276,6 +288,19 @@ const setUpRun = Effect.fnUntraced(function* (
 });
 
 const ARTIFACT = "a paragraph that is comfortably longer than eight bytes\n";
+
+/** The two-stage plan, with its first stage delivering the pull request. */
+const deliverPlan: RunPlan = {
+  ...plan,
+  stages: plan.stages.map((stage) =>
+    stage.contract.id === "produce"
+      ? {
+          ...stage,
+          contract: { ...stage.contract, produces: [...stage.contract.produces, "pull-request"] },
+        }
+      : stage,
+  ),
+};
 const SUMMARY = "one sentence.\n";
 
 it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
@@ -997,7 +1022,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       });
 
       assert.deepStrictEqual(
-        seen.map((event) => `${event.kind} ${event.stageId}`),
+        seen.map((event) => `${event.kind} ${"stageId" in event ? event.stageId : event.number}`),
         [
           "stage-started produce",
           "gates produce",
@@ -1235,7 +1260,9 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.lengthOf(executor.continues, 1);
       assert.include(executor.continues[0]?.correction ?? "", "/skills/migrations/SKILL.md");
       assert.deepStrictEqual(
-        seen.slice(0, 3).map((event) => `${event.kind} ${event.stageId}`),
+        seen
+          .slice(0, 3)
+          .map((event) => `${event.kind} ${"stageId" in event ? event.stageId : event.number}`),
         ["stage-started produce", "stage-started produce", "gates produce"],
       );
       // The next stage is given it up front, chosen from what the run changed.
@@ -1326,6 +1353,107 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       // No attempt was spent on it.
       assert.strictEqual(result.record.visits[0]?.attempts, 1);
       assert.lengthOf(executor.continues, 0);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "marks the pull request ready once the delivering stage passes, before the next stage starts",
+    () =>
+      Effect.gen(function* () {
+        const { workspace, lease, logDir } = yield* setUpRun(
+          "run-ready",
+          capabilities(),
+          deliverPlan,
+          17,
+        );
+        const executor = new WritingExecutor({
+          workspacePath: workspace.path,
+          actions: {
+            // The first attempt fails its gate: nothing is delivered until it passes.
+            produce: [doNothing, write("artifact.md", ARTIFACT)],
+            summarize: [write("summary.md", SUMMARY)],
+          },
+        });
+        const marked: { number: number; startedBefore: string[] }[] = [];
+        const seen: string[] = [];
+
+        const result = yield* drive({
+          runId: "run-ready" as RunId,
+          deps: {
+            executor,
+            ids: sequentialIds("w"),
+            workspacePath: workspace.path,
+            logDir,
+            owner: "worker-a",
+            leaseSeconds: 60,
+            markReady: (number) =>
+              Effect.sync(() => {
+                marked.push({ number, startedBefore: [...executor.starts] });
+              }),
+            progress: (event) =>
+              Effect.sync(() => {
+                seen.push(`${event.kind} ${"stageId" in event ? event.stageId : event.number}`);
+              }),
+          },
+          lease,
+          initial: [{ type: "start" }],
+        });
+
+        assert.strictEqual(result.record.state, "succeeded");
+        assert.deepStrictEqual(marked, [{ number: 17, startedBefore: ["produce"] }]);
+        assert.deepStrictEqual(seen.slice(-5), [
+          "stage-settled produce",
+          "pull-request-ready 17",
+          "stage-started summarize",
+          "gates summarize",
+          "stage-settled summarize",
+        ]);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("reports a pull request it could not mark ready, and keeps going", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun(
+        "run-ready-fails",
+        capabilities(),
+        deliverPlan,
+        18,
+      );
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const seen: RunProgress[] = [];
+
+      const result = yield* drive({
+        runId: "run-ready-fails" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          markReady: () => Effect.fail(new PullRequestError({ message: "gh: not permitted" })),
+          progress: (event) =>
+            Effect.sync(() => {
+              seen.push(event);
+            }),
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      const ready = seen.find((event) => event.kind === "pull-request-ready");
+      assert.deepStrictEqual(ready, {
+        kind: "pull-request-ready",
+        number: 18,
+        failure: "gh: not permitted",
+      });
     }).pipe(Effect.scoped),
   );
 });

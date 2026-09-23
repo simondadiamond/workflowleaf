@@ -40,10 +40,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import type { ChildProcessSpawner } from "effect/unstable/process";
 
 import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
 import { compileStagePrompt, FINDINGS_PATH, type StagePermissions } from "./prompt.ts";
+import type { PullRequestError } from "./pullRequest.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
@@ -95,8 +97,20 @@ export type RunProgress =
       /** A correction inside an existing context rather than a fresh visit. */
       readonly correcting: boolean;
     }
-  | { readonly kind: "gates"; readonly stageId: string; readonly verdicts: readonly GateVerdict[] }
-  | { readonly kind: "stage-settled"; readonly stageId: string; readonly state: VisitState };
+  | {
+      readonly kind: "gates";
+      readonly stageId: string;
+      readonly verdicts: readonly GateVerdict[];
+      /** The first line of detail for each verdict worth reading, by gate id. See `gateDetails`. */
+      readonly details: Readonly<Record<string, string>>;
+    }
+  | { readonly kind: "stage-settled"; readonly stageId: string; readonly state: VisitState }
+  | {
+      readonly kind: "pull-request-ready";
+      readonly number: number;
+      /** Why it could not be marked ready, or null when it was. */
+      readonly failure: string | null;
+    };
 
 /** Where progress is reported to. Absent means nobody is watching. */
 export type ProgressSink = (event: RunProgress) => Effect.Effect<void>;
@@ -128,6 +142,17 @@ export interface WorkerDeps {
    * means gates run as soon as the stage settles, which only tests want.
    */
   readonly quiet?: QuietWindow | undefined;
+  /**
+   * Marks the run's pull request ready for review. Called once the stage that
+   * produces `pull-request` passes. Absent means the profile does not permit it.
+   */
+  readonly markReady?:
+    | ((
+        pullRequestNumber: number,
+      ) => Effect.Effect<void, PullRequestError, ChildProcessSpawner.ChildProcessSpawner>)
+    | undefined;
+  /** The profile's `pullRequest.reviewWaitMinutes`, for `converged-on-head`. */
+  readonly reviewWaitMinutes?: number | undefined;
 }
 
 /**
@@ -181,9 +206,34 @@ const SETTLED_VISIT_STATES: readonly VisitState[] = ["passed", "failed", "blocke
  * inside each branch of `perform`, so a watcher is told what was persisted and
  * nothing that was merely attempted.
  */
+/**
+ * The first line of detail for each verdict worth reading: every one that did
+ * not pass, and every external one. "passed" on an external gate says nothing
+ * about what GitHub showed; issue-1598-1's babysit passed on a pull request
+ * nobody had reviewed, and nothing a reader could see said so.
+ */
+export function gateDetails(
+  stage: ResolvedStage | undefined,
+  verdicts: readonly GateVerdict[],
+): Record<string, string> {
+  const external = new Set(
+    (stage?.gates ?? [])
+      .filter((gate) => gate.definition.type === "external")
+      .map((gate) => gate.definition.id as string),
+  );
+  const details: Record<string, string> = {};
+  for (const verdict of verdicts) {
+    if (SATISFYING.includes(verdict.outcome) && !external.has(verdict.gateId as string)) continue;
+    const line = verdict.summary.split("\n")[0] ?? "";
+    if (line.length > 0) details[verdict.gateId as string] = line;
+  }
+  return details;
+}
+
 function progressFor(input: {
   readonly previous: RunRecord;
   readonly next: RunRecord;
+  readonly plan: RunPlan;
   readonly transitionInput: ControllerInput;
   readonly effects: readonly ControllerEffect[];
 }): readonly RunProgress[] {
@@ -194,7 +244,13 @@ function progressFor(input: {
   if (input.transitionInput.type === "gates-evaluated") {
     const stageId = stageOf(input.transitionInput.visitId);
     if (stageId !== null) {
-      events.push({ kind: "gates", stageId, verdicts: input.transitionInput.verdicts });
+      const verdicts = input.transitionInput.verdicts;
+      events.push({
+        kind: "gates",
+        stageId,
+        verdicts,
+        details: gateDetails(findStage(input.plan, stageId as StageId), verdicts),
+      });
     }
   }
 
@@ -225,10 +281,44 @@ export function progressLine(at: string, event: RunProgress): string {
     case "stage-started":
       return `${at} ${event.stageId} ${event.correcting ? "correcting" : "started"} attempt=${String(event.attempt)}`;
     case "gates":
-      return `${at} ${event.stageId} gates ${event.verdicts.map((verdict) => `${verdict.gateId}=${verdict.outcome}`).join(" ") || "none"}`;
+      return `${at} ${event.stageId} gates ${
+        event.verdicts
+          .map((verdict) => {
+            const detail = event.details[verdict.gateId as string];
+            return `${verdict.gateId}=${verdict.outcome}${detail === undefined ? "" : ` [${detail}]`}`;
+          })
+          .join(" ") || "none"
+      }`;
     case "stage-settled":
       return `${at} ${event.stageId} ${event.state}`;
+    case "pull-request-ready":
+      return event.failure === null
+        ? `${at} pull-request #${String(event.number)} marked ready`
+        : `${at} pull-request #${String(event.number)} not marked ready: ${event.failure.split("\n")[0] ?? ""}`;
   }
+}
+
+/**
+ * The pull request to mark ready after this transition: the run's own, when a
+ * stage that produces `pull-request` has just passed. That is the delivery
+ * being complete, and review bots that skip drafts only start after it.
+ */
+function deliveredPullRequest(input: {
+  readonly previous: RunRecord;
+  readonly next: RunRecord;
+  readonly plan: RunPlan;
+}): number | null {
+  const number = input.next.pullRequest?.number ?? null;
+  if (number === null) return null;
+  const delivered = input.next.visits.some((visit) => {
+    if (visit.state !== "passed") return false;
+    const before = input.previous.visits.find((candidate) => candidate.visitId === visit.visitId);
+    if (before?.state === "passed") return false;
+    return (
+      findStage(input.plan, visit.stageId)?.contract.produces.includes("pull-request") ?? false
+    );
+  });
+  return delivered ? number : null;
 }
 
 /**
@@ -336,6 +426,7 @@ const runGates = Effect.fnUntraced(function* (input: {
       artifacts: artifactPaths([...stage.contract.consumes, ...stage.contract.produces]),
       reviewer: input.deps.reviewer,
       ghConfigDir: input.deps.ghConfigDir,
+      reviewWaitMinutes: input.deps.reviewWaitMinutes,
     };
 
     const evidence = yield* evaluateGate(pinned.definition, context);
@@ -876,12 +967,31 @@ export const drive = Effect.fnUntraced(function* (input: {
       lease: input.lease,
     });
 
-    const events = progressFor({
-      previous: record,
-      next: decision.run,
-      transitionInput: next,
-      effects: decision.effects,
-    });
+    const events = [
+      ...progressFor({
+        previous: record,
+        next: decision.run,
+        plan,
+        transitionInput: next,
+        effects: decision.effects,
+      }),
+    ];
+
+    // Before the next stage's effects run, so a watch stage that follows the
+    // delivery reads a pull request reviewers can already see. A failure is
+    // reported, not raised: the watch then waits, and says it is a draft.
+    const delivered = deliveredPullRequest({ previous: record, next: decision.run, plan });
+    if (delivered !== null && input.deps.markReady !== undefined) {
+      const marked = yield* input.deps.markReady(delivered).pipe(Effect.result);
+      // Listed before the next stage starts, which is when it happened.
+      const next = events.findIndex((event) => event.kind === "stage-started");
+      events.splice(next === -1 ? events.length : next, 0, {
+        kind: "pull-request-ready",
+        number: delivered,
+        failure: marked._tag === "Success" ? null : marked.failure.message,
+      });
+    }
+
     for (const event of events) {
       if (input.deps.progress !== undefined) yield* input.deps.progress(event);
     }
@@ -962,6 +1072,7 @@ export const cancel = Effect.fnUntraced(function* <R>(input: {
   const events = progressFor({
     previous: record,
     next: decision.run,
+    plan: loaded.value.plan,
     transitionInput,
     effects: decision.effects,
   });

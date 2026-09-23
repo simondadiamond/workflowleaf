@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import { commitEmpty, git, pushBranch, revParse } from "./git.ts";
+import { commitEmpty, fetchBase, git, pushBranch, revParse } from "./git.ts";
 
 /** A worktree on `story-1`, with `origin` pointing at a bare repository. */
 const setUpRepository = Effect.fnUntraced(function* () {
@@ -90,6 +90,29 @@ it.layer(NodeServices.layer)("the branch a run's pull request is opened from", (
 
       const theirs = yield* git(remote, ["log", "-1", "--format=%s", "story-1"]);
       assert.strictEqual(theirs.trim(), "theirs");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fetches the base before a run branches from it, so the run never starts stale", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { root, remote, local } = yield* setUpRepository();
+
+      // Someone else moves main on the remote after this checkout last fetched.
+      const other = path.join(root, "other");
+      yield* git(root, ["clone", "-q", remote, other]);
+      yield* git(other, ["config", "user.email", "fixture@example.com"]);
+      yield* git(other, ["config", "user.name", "Fixture"]);
+      yield* fs.writeFileString(path.join(other, "later.md"), "later\n");
+      yield* git(other, ["add", "."]);
+      yield* git(other, ["commit", "-qm", "later"]);
+      yield* pushBranch(other, "origin", "main");
+      const moved = yield* revParse(other, "HEAD");
+
+      const base = yield* fetchBase(local, "origin", "main");
+      assert.strictEqual(base, "origin/main");
+      assert.strictEqual(yield* revParse(local, base), moved);
     }).pipe(Effect.scoped),
   );
 });

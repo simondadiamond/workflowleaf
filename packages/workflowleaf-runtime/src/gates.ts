@@ -64,6 +64,8 @@ export interface GateContext {
   readonly reviewer?: ReviewerConfig | undefined;
   /** The `gh` config directory for this repository, when the profile names one. */
   readonly ghConfigDir?: string | undefined;
+  /** The profile's `pullRequest.reviewWaitMinutes`, read by `converged-on-head`. */
+  readonly reviewWaitMinutes?: number | undefined;
 }
 
 const TOOL_VERSION = "1";
@@ -342,6 +344,7 @@ const runExternalGate = Effect.fnUntraced(function* (
     workspacePath: context.workspacePath,
     pullRequestNumber: context.pullRequestNumber ?? null,
     ghConfigDir: context.ghConfigDir,
+    reviewWaitMinutes: context.reviewWaitMinutes,
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.succeed({
