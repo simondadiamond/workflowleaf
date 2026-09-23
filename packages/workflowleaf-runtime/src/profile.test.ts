@@ -9,6 +9,7 @@ import * as Path from "effect/Path";
 
 import { canonicalJson } from "./canonical.ts";
 import { executorToken, loadProfile, type T3ExecutorConfig } from "./profile.ts";
+import { pullRequestDeps } from "./run.ts";
 
 const executor = (overrides: Partial<T3ExecutorConfig>): T3ExecutorConfig => ({
   kind: "t3",
@@ -80,7 +81,7 @@ const four = {
 };
 
 it.layer(NodeServices.layer)("a profile's permissions", (it) => {
-  it.effect("are exactly four flags", () =>
+  it.effect("are four required flags, plus markPullRequestReady, which is optional", () =>
     Effect.gen(function* () {
       const loaded = yield* loadWritten({ permissions: four });
       assert.strictEqual(loaded._tag, "Success");
@@ -100,6 +101,22 @@ it.layer(NodeServices.layer)("a profile's permissions", (it) => {
       const loaded = yield* loadWritten({ permissions: { ...four, deploy: false } });
       assert.strictEqual(loaded._tag, "Success");
       if (loaded._tag === "Success") assert.notProperty(loaded.success.permissions, "deploy");
+    }),
+  );
+
+  it.effect("leave the pull request a draft unless markPullRequestReady is on", () =>
+    Effect.gen(function* () {
+      const pullRequest = { remote: "origin", baseBranch: "main" };
+      const off = yield* loadWritten({ permissions: four, pullRequest });
+      const on = yield* loadWritten({
+        permissions: { ...four, markPullRequestReady: true },
+        pullRequest: { ...pullRequest, reviewWaitMinutes: 20 },
+      });
+      assert.ok(off._tag === "Success" && on._tag === "Success");
+      if (off._tag !== "Success" || on._tag !== "Success") return;
+      assert.isUndefined(pullRequestDeps(off.success, "/w").markReady);
+      assert.isFunction(pullRequestDeps(on.success, "/w").markReady);
+      assert.strictEqual(pullRequestDeps(on.success, "/w").reviewWaitMinutes, 20);
     }),
   );
 

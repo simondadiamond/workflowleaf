@@ -9,7 +9,8 @@ the same context.
 A run id is the story plus its ordinal, `issue-42-1`. A story that outgrows one
 pull request gets `issue-42-2`, so a split never collides. The draft pull
 request is opened by code at run start when the profile permits it, and its
-number is on the run record.
+number is on the run record. Code marks it ready for review once the stage that
+produces `pull-request` passes, when the profile permits that too.
 
 Everything is additive on top of T3 so upstream's main branch keeps merging.
 
@@ -268,7 +269,10 @@ sits at belongs to the profile, which is the local half of the pair. Passing a
 directory still wins, because one repository has more than one playbook.
 
 `run` takes `--story`, falling back to the `issue` input, and derives the run id
-from it. There is no `--id`.
+from it. There is no `--id`. Without `--base` it fetches the profile's
+`pullRequest.baseBranch` and branches from `<remote>/<baseBranch>`, so a run
+starts from what its pull request targets, not from whatever the profile's
+checkout has checked out. A profile with no `pullRequest` falls back to `HEAD`.
 
 `resume`, `pause`, `cancel` and `decide` take `--revision` and refuse when the
 run has moved since you looked. The number is on the run: `status` carries
@@ -280,7 +284,14 @@ either side of each commit, so they report what was persisted and never what
 was merely attempted. The same lines are appended to
 `~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
 them, so a second terminal or an agent between turns can see how far a run has
-got while another process is still driving it.
+got while another process is still driving it. A gate verdict carries the first
+line of its detail when it did not pass, and always for an external gate,
+because "passed" alone does not say what GitHub showed.
+
+On a T3 executor each stage is a thread titled `WorkflowLeaf <run> <stage>`.
+When the next stage starts, the adapter settles the run's earlier stage
+threads with T3's own `thread.settle` command, so one stage thread per run is
+active in the sidebar. The settled ones stay readable under Settled (#47).
 
 `replay` feeds a run's recorded transitions back through the controller from
 its initial state and fails at the first transition whose effects or revision
@@ -321,9 +332,12 @@ active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
 and command gates use it, and each stage prompt tells the agent to. The active
 account is never switched.
 
-`permissions` holds exactly four flags, all false unless granted:
-`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`. They
-cover what WorkflowLeaf itself does outside the worktree. What an agent may do
+`permissions` holds four flags, all false unless granted:
+`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`, plus
+`markPullRequestReady`, which may be left out and then means false. They
+cover what WorkflowLeaf itself does outside the worktree. `markPullRequestReady`
+exists because review bots commonly skip drafts: FBM's do, so a run that leaves
+its pull request a draft is never reviewed. `fbm` has it on. What an agent may do
 inside it is the executor's `runtimeMode` (T3's own four modes) and the
 provider's approvals. With `approval-required`, a stage's provider asks before
 acting: `wl requests <run>` lists what it is waiting on and `wl answer` accepts
@@ -378,7 +392,12 @@ gate stays as the safety net, recording a pass on a tree that moved as `stale`.
   `checks-green` and `converged-on-head` exist. An unresolved condition (CI
   running, a reviewer yet to answer) records `pending`: the run parks in
   `waiting_external` and `resume` checks again. `--poll <seconds>` keeps
-  checking for up to `--poll-for` minutes.
+  checking for up to `--poll-for` minutes. `converged-on-head` also needs a
+  submitted review of the head by someone other than the pull request's
+  author, because "nothing outstanding" is also what a pull request nobody
+  looked at shows, and `SKIPPED` checks prove nothing was reviewed (#42). A
+  repository with no reviewer sets `pullRequest.reviewWaitMinutes` in the
+  profile: a ready pull request then converges after that long without one.
 
 A stage that routes back (`correction: route-to`) sends its failing verdicts
 with the dispatch, so the stage it returns to starts from the findings rather

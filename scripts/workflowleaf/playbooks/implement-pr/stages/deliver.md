@@ -8,7 +8,9 @@ request.
    - `## Tests`: what the tests cover and how to run them.
    - `## Done when`: copied from `.workflowleaf/plan.md`.
 
-Do not mark the pull request ready and do not merge it. A person does that.
+Leave the pull request as a draft and never merge it. Once this stage's checks
+pass, WorkflowLeaf marks it ready for review when the profile permits that, so
+reviewers see it before the run waits for them. Merging stays a person's call.
 
 If this delivery follows a correction that listed review threads, answer each
 thread on the pull request after pushing. Reply with what changed and the

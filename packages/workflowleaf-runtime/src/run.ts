@@ -43,7 +43,7 @@ import { digestOf } from "./digest.ts";
 import { revParse } from "./git.ts";
 import { loadPlaybook } from "./load.ts";
 import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
-import { openDraftPullRequest } from "./pullRequest.ts";
+import { markPullRequestReady, openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import {
   DEFAULT_QUIET,
@@ -91,6 +91,8 @@ export const nextRunId = Effect.fnUntraced(function* (story: string) {
 export interface ExecutorBinding {
   readonly workspacePath: string;
   readonly branch: string;
+  /** The run whose stages this executor starts. Only a stage-starting executor needs it. */
+  readonly runId?: RunId | undefined;
 }
 
 /**
@@ -115,6 +117,7 @@ export const executorFor = Effect.fnUntraced(function* (
   const store = yield* RunStore;
   const token = yield* executorToken(profile.executor);
   const client = yield* connect(profile.executor.origin, token);
+  const runId = binding.runId;
 
   return new T3Executor({
     client,
@@ -134,6 +137,22 @@ export const executorFor = Effect.fnUntraced(function* (
           Effect.catchCause(() => Effect.succeed(null)),
         ),
       ),
+    earlierHandles:
+      runId === undefined
+        ? undefined
+        : () =>
+            Effect.runPromise(
+              store.loadRun(runId).pipe(
+                Effect.map((loaded) =>
+                  Option.isNone(loaded)
+                    ? []
+                    : loaded.value.record.visits.flatMap((visit) =>
+                        visit.operation?.handle == null ? [] : [visit.operation.handle],
+                      ),
+                ),
+                Effect.catchCause(() => Effect.succeed([] as string[])),
+              ),
+            ),
     now: () => DateTime.formatIso(DateTime.nowUnsafe()),
   }) as ExecutorPort;
 });
@@ -348,6 +367,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.path,
     branch: workspace.branch,
+    runId: input.runId,
   });
   const capabilities = yield* Effect.promise(() => executor.capabilities());
 
@@ -387,6 +407,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
         quiet: DEFAULT_QUIET,
+        ...pullRequestDeps(input.profile, workspace.path),
       },
       lease,
       initial: [{ type: "start" }],
@@ -433,6 +454,18 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
     ghConfigDir: input.profile.ghConfigDir,
   });
 });
+
+/** What the worker may do with the run's pull request, as the profile permits. */
+export function pullRequestDeps(profile: Profile, workspacePath: string) {
+  return {
+    markReady:
+      profile.permissions.markPullRequestReady === true
+        ? (number: number) =>
+            markPullRequestReady({ workspacePath, number, ghConfigDir: profile.ghConfigDir })
+        : undefined,
+    reviewWaitMinutes: profile.pullRequest?.reviewWaitMinutes,
+  };
+}
 
 /** How long a lease lasts without renewal. The holder renews it well inside this. */
 const LEASE_SECONDS = 300;
@@ -510,6 +543,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.value.path,
     branch: workspace.value.branch,
+    runId: input.runId,
   });
   const runDir = yield* runDirFor(input.runId as string);
   const answered =
@@ -540,6 +574,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
         quiet: DEFAULT_QUIET,
+        ...pullRequestDeps(input.profile, workspace.value.path),
       },
       lease,
       initial: answered.length > 0 ? answered : input.inputs,

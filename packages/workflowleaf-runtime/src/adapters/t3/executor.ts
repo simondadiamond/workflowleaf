@@ -145,7 +145,28 @@ export interface T3ExecutorOptions {
    * "unknown" for work the executor has no memory of.
    */
   readonly handleFor: (operationId: OperationId) => Promise<string | null>;
+  /**
+   * The recorded handles of the run's stages so far, read from the run store.
+   * Their threads are settled when the next stage starts, so a run shows one
+   * active stage thread at a time. Absent means nothing is settled.
+   */
+  readonly earlierHandles?: (() => Promise<readonly string[]>) | undefined;
   readonly now: () => string;
+}
+
+/**
+ * The threads to settle when `current` starts: every earlier stage thread of
+ * the run that is not this one and was not settled already by this process.
+ */
+export function threadsToSettle(
+  current: string,
+  earlierHandles: readonly string[],
+  settled: ReadonlySet<string>,
+): string[] {
+  const threads = earlierHandles
+    .map((handle) => decodeHandle(handle)?.threadId)
+    .filter((threadId): threadId is string => threadId !== undefined);
+  return [...new Set(threads)].filter((threadId) => threadId !== current && !settled.has(threadId));
 }
 
 /**
@@ -198,6 +219,7 @@ function threadIdFor(request: StageRequest): string {
 export class T3Executor implements ExecutorPort {
   #options: T3ExecutorOptions;
   #threads = new Map<string, string>();
+  #settled = new Set<string>();
   /**
    * The settlement watch for an operation, started before that operation was
    * dispatched. See `#watch`: a subscription attached afterwards never sees the
@@ -298,7 +320,7 @@ export class T3Executor implements ExecutorPort {
           commandId: createCommandId,
           threadId: handle.threadId,
           projectId: options.projectId,
-          title: `WorkflowLeaf ${request.stage.contract.id}`,
+          title: `WorkflowLeaf ${request.runId} ${request.stage.contract.id}`,
           modelSelection: { instanceId: options.instanceId, model: options.model },
           runtimeMode: options.runtimeMode,
           interactionMode: "default",
@@ -309,7 +331,34 @@ export class T3Executor implements ExecutorPort {
 
         return yield* startTurn();
       }),
-    );
+    ).then(async (started) => {
+      await this.#settleEarlier(handle.threadId);
+      return started;
+    });
+  }
+
+  /**
+   * Settles the run's earlier stage threads once the next one has started, so
+   * they move under Settled in T3 and stay readable there (#47). Their turns
+   * have ended by then, which T3 requires before it settles a thread. Best
+   * effort: the stage is already running, and a thread left in the active list
+   * is clutter, not a fault.
+   */
+  async #settleEarlier(current: string): Promise<void> {
+    const options = this.#options;
+    if (options.earlierHandles === undefined) return;
+    const earlier = await options.earlierHandles().catch(() => [] as readonly string[]);
+    for (const threadId of threadsToSettle(current, earlier, this.#settled)) {
+      this.#settled.add(threadId);
+      await this.#run(
+        "settleThread",
+        options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+          type: "thread.settle",
+          commandId: `${threadId}-settle`,
+          threadId,
+        } as never),
+      ).catch(() => undefined);
+    }
   }
 
   continueStage(handle: StageHandle, correction: string): Promise<ContinueOutcome> {
