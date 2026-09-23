@@ -6,9 +6,12 @@
  * contexts: stage B reads what stage A produced, not how stage A talked itself
  * into producing it.
  *
- * Skills are referenced by path rather than pasted in. A stage that needs the
- * testing skill can read it; copying the whole library into every prompt makes
- * the stage more expensive and worse at its job.
+ * Skills are named rather than pasted in. A stage that needs the testing skill
+ * loads it; copying the whole library into every prompt makes the stage more
+ * expensive and worse at its job. The name comes first and the path is a
+ * fallback, because naming a path is an invitation to `cat` the file, and a
+ * `cat` that trips the harness output cap hands the stage a truncated skill
+ * that still looks like a skill.
  */
 import type { ResolvedStage, RunPlan, StageId } from "@t3tools/workflowleaf-core";
 
@@ -115,12 +118,21 @@ export function compileStagePrompt(input: PromptInput): string {
       [
         "## Skills",
         "",
-        "Read these before you start. They are instructions for this repository, not suggestions.",
+        "Load each of these by name, with your harness's skill tool, before you start.",
+        "In Claude Code that is `Skill(<name>)`. They are instructions for this repository,",
+        "not suggestions.",
         "",
         ...skills.map(
           (skill) =>
-            `- ${skill.id}${skill.required ? "" : " (selected from the paths this run has changed)"}: \`${skill.path}/SKILL.md\``,
+            `- \`${skill.id}\`${skill.required ? "" : " (selected from the paths this run has changed)"}`,
         ),
+        "",
+        "Do not open a skill's file instead. The skill tool gives you the whole skill, while",
+        "a `cat` or a `Read` can be silently truncated, and a truncated skill is worse than no",
+        "skill. Only if your harness has no skill tool, read these files, one per command, and",
+        "confirm you got the whole file before you use it:",
+        "",
+        ...skills.map((skill) => `- ${skill.id}: \`${skill.path}/SKILL.md\``),
       ].join("\n"),
     );
   }

@@ -1010,7 +1010,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       // The next stage is given it up front, chosen from what the run changed.
       assert.include(
         executor.prompts[1] ?? "",
-        `${LAZY_SKILL} (selected from the paths this run has changed)`,
+        `\`${LAZY_SKILL}\` (selected from the paths this run has changed)`,
       );
       assert.deepStrictEqual(result.record.visits[0]?.skills, [LAZY_SKILL]);
       assert.strictEqual(result.record.visits[0]?.attempts, 1);

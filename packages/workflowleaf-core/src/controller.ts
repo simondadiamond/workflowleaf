@@ -763,8 +763,10 @@ function onSkillsDiscovered(
 
   const handoff = [
     "The paths you changed call for skills you were not given when this stage started:",
+    ...pinned.map((skill) => `- \`${skill.id}\``),
+    "Load each one by name with your harness's skill tool now; in Claude Code that is `Skill(<name>)`. Do not open the skill's file instead, because a `cat` or a `Read` can be silently truncated. Only if your harness has no skill tool, read these files, one per command, and confirm you got the whole file:",
     ...pinned.map((skill) => `- ${skill.id}: \`${skill.path}/SKILL.md\``),
-    "Read them now. Then check the work you have already done in this stage against them, fix whatever they say is wrong, and finish the stage.",
+    "Then check the work you have already done in this stage against them, fix whatever they say is wrong, and finish the stage.",
   ].join("\n");
 
   const continues = run.capabilities.sameContextContinuation;
