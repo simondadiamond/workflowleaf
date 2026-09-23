@@ -11,7 +11,8 @@
   "ownedFiles": [
     "packages/contracts/src/workflowleaf.ts",
     ".github/workflows/workflowleaf.yml",
-    ".github/workflows/workflowleaf-t3.yml"
+    ".github/workflows/workflowleaf-t3.yml",
+    ".github/workflows/workflowleaf-housekeeping.yml"
   ],
   "maxUpstreamEdits": 2,
   "allowedUpstreamEdits": [

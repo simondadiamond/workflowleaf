@@ -175,19 +175,23 @@ named by the worktree, `t3code/<something>`, and nothing depends on the name.
 The fork checks run on pull requests and on pushes to `main`, so a pushed branch
 gets no CI until it has a pull request open.
 
-**T3's own `ci.yml` never runs on this fork. Its jobs are queued forever, not
-broken.** Every job in it asks for a Blacksmith runner
-(`blacksmith-8vcpu-ubuntu-2404` and friends), a paid service the upstream
-organisation subscribes to and this fork does not, so the nine checks named
-Check, Test, Test Server, Rust, Mobile and Release Smoke sit queued on every
-pull request and never complete. Ignore them. Editing their `runs-on` would be
-a permanent upstream edit in the file upstream changes most, so instead
-`.github/workflows/workflowleaf-t3.yml`, a fork-owned file, runs T3's Check
+**T3's own `ci.yml` never runs on this fork, and is disabled.** Every job in it
+asks for a Blacksmith runner (`blacksmith-8vcpu-ubuntu-2404` and friends), a
+paid service the upstream organisation subscribes to and this fork does not, so
+its checks would sit queued on every pull request forever. Editing their
+`runs-on` would be a permanent upstream edit in the file upstream changes most.
+Instead, `scripts/workflowleaf/disable-paid-workflows.sh` turns off, as a
+repository setting, every workflow with a Blacksmith job. The fork-owned
+`.github/workflows/workflowleaf-housekeeping.yml` runs it on every push to main
+and every pull request, so a workflow an upstream merge brings in is turned off
+too. Nothing in upstream's files changes, so merges stay conflict-free. A
+workflow GitHub has never registered cannot be disabled until it first runs,
+so one queued check can still appear once on the pull request that triggers it.
+`.github/workflows/workflowleaf-t3.yml`, also fork-owned, runs T3's Check
 (lint, format, typecheck), its package tests and its three server test shards
 on `ubuntu-latest`. Those jobs are named `T3 check`, `T3 test` and
 `T3 test server`. With the WorkflowLeaf job they are the signals that count.
-Keep every fork workflow on `ubuntu-latest`, and check `runs-on` before
-believing a queued job will start.
+Keep every fork workflow on `ubuntu-latest`.
 
 **Rehearse before merging upstream.** `scripts/workflowleaf/merge-rehearsal.sh`
 merges `upstream/main` into a throwaway worktree of `origin/main`, reinstalls,

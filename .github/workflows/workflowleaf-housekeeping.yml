@@ -1,0 +1,30 @@
+# Fork-owned. Keeps upstream workflows that need Blacksmith runners disabled.
+#
+# This fork has no Blacksmith subscription, so those jobs queue forever and
+# clutter every pull request with checks that never report. Disabling is a
+# repository setting, not an edit to upstream's files, so `git merge
+# upstream/main` stays conflict-free. A workflow upstream adds later arrives
+# enabled; this runs after every push to main (which is where an upstream
+# merge lands) and on pull requests, and turns it off. A workflow GitHub has
+# never registered cannot be disabled yet; it is caught the first time it runs.
+name: WorkflowLeaf housekeeping
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  disable-paid-workflows:
+    name: Disable Blacksmith-only workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/workflowleaf/disable-paid-workflows.sh "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
