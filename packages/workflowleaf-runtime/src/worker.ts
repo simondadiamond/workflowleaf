@@ -94,7 +94,13 @@ export type RunProgress =
       /** A correction inside an existing context rather than a fresh visit. */
       readonly correcting: boolean;
     }
-  | { readonly kind: "gates"; readonly stageId: string; readonly verdicts: readonly GateVerdict[] }
+  | {
+      readonly kind: "gates";
+      readonly stageId: string;
+      readonly verdicts: readonly GateVerdict[];
+      /** The first line of detail for each verdict worth reading, by gate id. See `gateDetails`. */
+      readonly details: Readonly<Record<string, string>>;
+    }
   | { readonly kind: "stage-settled"; readonly stageId: string; readonly state: VisitState }
   | {
       readonly kind: "pull-request-ready";
@@ -195,9 +201,34 @@ const SETTLED_VISIT_STATES: readonly VisitState[] = ["passed", "failed", "blocke
  * inside each branch of `perform`, so a watcher is told what was persisted and
  * nothing that was merely attempted.
  */
+/**
+ * The first line of detail for each verdict worth reading: every one that did
+ * not pass, and every external one. "passed" on an external gate says nothing
+ * about what GitHub showed; issue-1598-1's babysit passed on a pull request
+ * nobody had reviewed, and nothing a reader could see said so.
+ */
+export function gateDetails(
+  stage: ResolvedStage | undefined,
+  verdicts: readonly GateVerdict[],
+): Record<string, string> {
+  const external = new Set(
+    (stage?.gates ?? [])
+      .filter((gate) => gate.definition.type === "external")
+      .map((gate) => gate.definition.id as string),
+  );
+  const details: Record<string, string> = {};
+  for (const verdict of verdicts) {
+    if (SATISFYING.includes(verdict.outcome) && !external.has(verdict.gateId as string)) continue;
+    const line = verdict.summary.split("\n")[0] ?? "";
+    if (line.length > 0) details[verdict.gateId as string] = line;
+  }
+  return details;
+}
+
 function progressFor(input: {
   readonly previous: RunRecord;
   readonly next: RunRecord;
+  readonly plan: RunPlan;
   readonly transitionInput: ControllerInput;
   readonly effects: readonly ControllerEffect[];
 }): readonly RunProgress[] {
@@ -208,7 +239,13 @@ function progressFor(input: {
   if (input.transitionInput.type === "gates-evaluated") {
     const stageId = stageOf(input.transitionInput.visitId);
     if (stageId !== null) {
-      events.push({ kind: "gates", stageId, verdicts: input.transitionInput.verdicts });
+      const verdicts = input.transitionInput.verdicts;
+      events.push({
+        kind: "gates",
+        stageId,
+        verdicts,
+        details: gateDetails(findStage(input.plan, stageId as StageId), verdicts),
+      });
     }
   }
 
@@ -239,7 +276,14 @@ export function progressLine(at: string, event: RunProgress): string {
     case "stage-started":
       return `${at} ${event.stageId} ${event.correcting ? "correcting" : "started"} attempt=${String(event.attempt)}`;
     case "gates":
-      return `${at} ${event.stageId} gates ${event.verdicts.map((verdict) => `${verdict.gateId}=${verdict.outcome}`).join(" ") || "none"}`;
+      return `${at} ${event.stageId} gates ${
+        event.verdicts
+          .map((verdict) => {
+            const detail = event.details[verdict.gateId as string];
+            return `${verdict.gateId}=${verdict.outcome}${detail === undefined ? "" : ` [${detail}]`}`;
+          })
+          .join(" ") || "none"
+      }`;
     case "stage-settled":
       return `${at} ${event.stageId} ${event.state}`;
     case "pull-request-ready":
@@ -867,6 +911,7 @@ export const drive = Effect.fnUntraced(function* (input: {
       ...progressFor({
         previous: record,
         next: decision.run,
+        plan,
         transitionInput: next,
         effects: decision.effects,
       }),

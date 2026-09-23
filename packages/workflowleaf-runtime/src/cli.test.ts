@@ -2,16 +2,20 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { assert, it } from "@effect/vitest";
+import { commandGatePlan } from "@t3tools/workflowleaf-core/testing";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { Command } from "effect/unstable/cli";
+
+import type { GateVerdict } from "@t3tools/workflowleaf-core";
 
 import { formatProgress, playbookDirFor, wlCommand } from "./cli.ts";
 import type { Profile } from "./profile.ts";
 import { DEFAULT_REVIEWER } from "./reviewer.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
+import { gateDetails, progressLine } from "./worker.ts";
 
 const profile = (defaultPlaybook?: string): Profile => ({
   name: "fixture",
@@ -61,13 +65,15 @@ it.layer(NodeServices.layer)("which playbook a command means", (it) => {
 });
 
 it("a failing gate's verdict carries its first line of detail", () => {
+  const verdicts: GateVerdict[] = [
+    { gateId: "tests" as never, outcome: "failed", summary: "exit 1, 2 failing\nstack trace" },
+    { gateId: "lint" as never, outcome: "passed", summary: "exit 0" },
+  ];
   const line = formatProgress({
     kind: "gates",
     stageId: "build",
-    verdicts: [
-      { gateId: "tests" as never, outcome: "failed", summary: "exit 1, 2 failing\nstack trace" },
-      { gateId: "lint" as never, outcome: "passed", summary: "exit 0" },
-    ],
+    verdicts,
+    details: gateDetails(undefined, verdicts),
   });
 
   assert.include(line, "tests failed, lint passed");
@@ -93,4 +99,43 @@ it.layer(cliServices)("wl errors", (it) => {
       assert.strictEqual(outcome._tag, "Success");
     }),
   );
+});
+
+it("the progress log says what an external gate saw, even when it passed", () => {
+  const stage = commandGatePlan().stages[0]!;
+  const external = {
+    ...stage,
+    gates: [
+      ...stage.gates,
+      {
+        definition: {
+          id: "converged" as never,
+          type: "external" as const,
+          check: "converged-on-head",
+          boundTo: "head-sha" as const,
+        },
+        digest: "sha256:x" as never,
+      },
+    ],
+  };
+  const verdicts: GateVerdict[] = [
+    { gateId: stage.gates[0]!.definition.id, outcome: "passed", summary: "exit 0" },
+    {
+      gateId: "converged" as never,
+      outcome: "passed",
+      summary: "converged-on-head: satisfied. Reviewed on this head by copilot.\nmore",
+    },
+  ];
+  const line = progressLine("T", {
+    kind: "gates",
+    stageId: "babysit",
+    verdicts,
+    details: gateDetails(external as never, verdicts),
+  });
+  assert.include(
+    line,
+    "converged=passed [converged-on-head: satisfied. Reviewed on this head by copilot.]",
+  );
+  assert.notInclude(line, "exit 0");
+  assert.notInclude(line, "more");
 });

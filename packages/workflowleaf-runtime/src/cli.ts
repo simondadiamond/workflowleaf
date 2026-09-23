@@ -6,7 +6,7 @@
  * terminal that has been sitting open cannot advance a run that moved on
  * without it.
  */
-import { formatDiagnostics, SATISFYING } from "@t3tools/workflowleaf-core";
+import { formatDiagnostics } from "@t3tools/workflowleaf-core";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -261,10 +261,10 @@ export function formatProgress(event: RunProgress): string {
         .map((verdict) => `${verdict.gateId} ${verdict.outcome}`)
         .join(", ");
       // A failing gate's first line of detail is what makes the verdict
-      // actionable; the rest of it is already in the evidence log.
-      const detail = event.verdicts
-        .filter((verdict) => !SATISFYING.includes(verdict.outcome))
-        .map((verdict) => `\n    ${verdict.gateId}: ${verdict.summary.split("\n")[0] ?? ""}`)
+      // actionable, and an external gate's says what GitHub showed; the rest
+      // is already in the evidence log.
+      const detail = Object.entries(event.details)
+        .map(([gateId, line]) => `\n    ${gateId}: ${line}`)
         .join("");
       return `  ${event.stageId}: gates ${verdicts || "none"}${detail}`;
     }

@@ -284,7 +284,9 @@ either side of each commit, so they report what was persisted and never what
 was merely attempted. The same lines are appended to
 `~/.workflowleaf/runs/<run>/progress.log`, and `status <run>` shows the last of
 them, so a second terminal or an agent between turns can see how far a run has
-got while another process is still driving it.
+got while another process is still driving it. A gate verdict carries the first
+line of its detail when it did not pass, and always for an external gate,
+because "passed" alone does not say what GitHub showed.
 
 On a T3 executor each stage is a thread titled `WorkflowLeaf <run> <stage>`.
 When the next stage starts, the adapter archives the run's earlier stage
