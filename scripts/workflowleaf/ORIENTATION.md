@@ -283,6 +283,11 @@ was merely attempted. The same lines are appended to
 them, so a second terminal or an agent between turns can see how far a run has
 got while another process is still driving it.
 
+On a T3 executor each stage is a thread titled `WorkflowLeaf <run> <stage>`.
+When the next stage starts, the adapter archives the run's earlier stage
+threads with T3's own `thread.archive` command, so one stage thread per run is
+active in the sidebar. The archived ones are still there to read.
+
 `replay` feeds a run's recorded transitions back through the controller from
 its initial state and fails at the first transition whose effects or revision
 differ, or on a different final state. With no run it replays every run in the

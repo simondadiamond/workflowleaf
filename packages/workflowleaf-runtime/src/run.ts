@@ -91,6 +91,8 @@ export const nextRunId = Effect.fnUntraced(function* (story: string) {
 export interface ExecutorBinding {
   readonly workspacePath: string;
   readonly branch: string;
+  /** The run whose stages this executor starts. Only a stage-starting executor needs it. */
+  readonly runId?: RunId | undefined;
 }
 
 /**
@@ -115,6 +117,7 @@ export const executorFor = Effect.fnUntraced(function* (
   const store = yield* RunStore;
   const token = yield* executorToken(profile.executor);
   const client = yield* connect(profile.executor.origin, token);
+  const runId = binding.runId;
 
   return new T3Executor({
     client,
@@ -134,6 +137,22 @@ export const executorFor = Effect.fnUntraced(function* (
           Effect.catchCause(() => Effect.succeed(null)),
         ),
       ),
+    earlierHandles:
+      runId === undefined
+        ? undefined
+        : () =>
+            Effect.runPromise(
+              store.loadRun(runId).pipe(
+                Effect.map((loaded) =>
+                  Option.isNone(loaded)
+                    ? []
+                    : loaded.value.record.visits.flatMap((visit) =>
+                        visit.operation?.handle == null ? [] : [visit.operation.handle],
+                      ),
+                ),
+                Effect.catchCause(() => Effect.succeed([] as string[])),
+              ),
+            ),
     now: () => DateTime.formatIso(DateTime.nowUnsafe()),
   }) as ExecutorPort;
 });
@@ -348,6 +367,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.path,
     branch: workspace.branch,
+    runId: input.runId,
   });
   const capabilities = yield* Effect.promise(() => executor.capabilities());
 
@@ -523,6 +543,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.value.path,
     branch: workspace.value.branch,
+    runId: input.runId,
   });
   const runDir = yield* runDirFor(input.runId as string);
   const answered =

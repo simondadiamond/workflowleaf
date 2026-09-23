@@ -145,7 +145,30 @@ export interface T3ExecutorOptions {
    * "unknown" for work the executor has no memory of.
    */
   readonly handleFor: (operationId: OperationId) => Promise<string | null>;
+  /**
+   * The recorded handles of the run's stages so far, read from the run store.
+   * Their threads are archived when the next stage starts, so a run shows one
+   * active stage thread at a time. Absent means nothing is archived.
+   */
+  readonly earlierHandles?: (() => Promise<readonly string[]>) | undefined;
   readonly now: () => string;
+}
+
+/**
+ * The threads to archive when `current` starts: every earlier stage thread of
+ * the run that is not this one and was not archived already by this process.
+ */
+export function threadsToArchive(
+  current: string,
+  earlierHandles: readonly string[],
+  archived: ReadonlySet<string>,
+): string[] {
+  const threads = earlierHandles
+    .map((handle) => decodeHandle(handle)?.threadId)
+    .filter((threadId): threadId is string => threadId !== undefined);
+  return [...new Set(threads)].filter(
+    (threadId) => threadId !== current && !archived.has(threadId),
+  );
 }
 
 /**
@@ -198,6 +221,7 @@ function threadIdFor(request: StageRequest): string {
 export class T3Executor implements ExecutorPort {
   #options: T3ExecutorOptions;
   #threads = new Map<string, string>();
+  #archived = new Set<string>();
   /**
    * The settlement watch for an operation, started before that operation was
    * dispatched. See `#watch`: a subscription attached afterwards never sees the
@@ -298,7 +322,7 @@ export class T3Executor implements ExecutorPort {
           commandId: createCommandId,
           threadId: handle.threadId,
           projectId: options.projectId,
-          title: `WorkflowLeaf ${request.stage.contract.id}`,
+          title: `WorkflowLeaf ${request.runId} ${request.stage.contract.id}`,
           modelSelection: { instanceId: options.instanceId, model: options.model },
           runtimeMode: options.runtimeMode,
           interactionMode: "default",
@@ -309,7 +333,32 @@ export class T3Executor implements ExecutorPort {
 
         return yield* startTurn();
       }),
-    );
+    ).then(async (started) => {
+      await this.#archiveEarlier(handle.threadId);
+      return started;
+    });
+  }
+
+  /**
+   * Archives the run's earlier stage threads once the next one has started.
+   * Best effort: the stage is already running, and a thread left in the sidebar
+   * is clutter, not a fault. T3 closes an archived thread's session itself.
+   */
+  async #archiveEarlier(current: string): Promise<void> {
+    const options = this.#options;
+    if (options.earlierHandles === undefined) return;
+    const earlier = await options.earlierHandles().catch(() => [] as readonly string[]);
+    for (const threadId of threadsToArchive(current, earlier, this.#archived)) {
+      this.#archived.add(threadId);
+      await this.#run(
+        "archiveThread",
+        options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+          type: "thread.archive",
+          commandId: `${threadId}-archive`,
+          threadId,
+        } as never),
+      ).catch(() => undefined);
+    }
   }
 
   continueStage(handle: StageHandle, correction: string): Promise<ContinueOutcome> {
