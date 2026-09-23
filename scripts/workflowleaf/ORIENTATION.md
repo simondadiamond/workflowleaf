@@ -223,19 +223,19 @@ WorkflowLeaf is `main` now. It is the branch the work lands on, and
 mergeable is the ownership gate, not a side branch. There is no
 `workflowleaf/main` any more.
 
-`gh` has two accounts on this machine and Simon switches the active one for his
-own work, so never rely on it and never switch it yourself. This repository
-carries its own:
+The global `gh` config on this machine holds only Simon's work account,
+because T3's pull request panel reads through it. `simondadiamond` lives in its
+own config dir, and nothing else has it:
 
 ```bash
 export GH_CONFIG_DIR=$HOME/.workflowleaf/gh   # authed as simondadiamond, only
 ```
 
-`git push` needs nothing: the repository's local credential helper already
-pins that config dir, so a push authenticates as `simondadiamond` whichever
-account `gh` happens to be on. Only the `gh` command itself needs the variable.
-A session started after this was set up gets it from
-`.claude/settings.local.json`; one that did not, prefixes the command.
+Prefix every `gh` command against this repository or the sandbox with that
+variable, and every profile sets `ghConfigDir` to it. Never add `simondadiamond`
+back to the global config or switch the global account: a stage that did once
+left T3 showing merged work pull requests as open. `git push` needs nothing,
+because the repository's local credential helper already pins that config dir.
 
 ## Where to start
 
