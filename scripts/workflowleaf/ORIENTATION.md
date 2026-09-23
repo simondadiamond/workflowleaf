@@ -435,6 +435,12 @@ converged with no human step.
 (`gpt-5.6-sol`), with only the profile changed (#16, C12). It corrected two
 failing gates inside the same context and succeeded.
 
+A sandbox proof run is finished only when it is cleaned up. Close its sandbox
+pull request and issue unmerged, so the sandbox stays at its fixture, and put
+back any profile you changed for the proof. A proof that starts stage threads on
+the live T3 install leaves them in Simon's sidebar, so archive any the run did
+not settle itself.
+
 **Not proven:** a real Marketplace story (#26 proper), which needs a profile
 pointing at that repository and the account that can push to it; recovery
 against a live server (#18).
