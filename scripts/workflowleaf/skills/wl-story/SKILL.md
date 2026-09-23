@@ -184,9 +184,12 @@ Under `/loop`, a wakeup is: read `wl status`, resume anything `paused` that
 Simon has unblocked or anything `waiting-external`, report anything new, and
 stop again. A wakeup with nothing new says nothing.
 
-A `babysit` stage whose reviews have not converged sends the work back to
-`build` with every unresolved thread in the correction. That is the playbook
-fixing review findings, not something for you to do by hand.
+Review findings are the playbook's to fix, not yours. In the generic playbook
+a `babysit` stage whose reviews have not converged sends the work back to
+`build`. In the Marketplace playbook `babysit` runs the babysit-pr skill in its
+own context, and the run succeeds only once the repository's ready check passes
+and the `ready` label is on the pull request. Do not run `/babysit-pr` on a
+run's pull request by hand while the run is live.
 
 ## 6. Done
 

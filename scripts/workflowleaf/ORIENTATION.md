@@ -375,7 +375,7 @@ also says what the profile permits on GitHub: no issues ever (findings go in
 replies unless `commentOnPullRequest`, and no merge unless `merge`. This asks
 and cannot enforce. Only the provider's approvals stand between an agent and a
 `gh` call. The fixer loop replies to review threads, so a profile that wants
-it needs `commentOnPullRequest`; the sandbox profiles have it, `fbm` does not.
+it needs `commentOnPullRequest`; the sandbox profiles and `fbm` have it.
 
 `fbm` drives the live T3 install against FB-marketplace-uploader and opens
 draft pull requests against `staging`. `sandbox-live` drives the live install
@@ -412,6 +412,11 @@ gate stays as the safety net, recording a pass on a tree that moved as `stale`.
   `WORKFLOWLEAF_RUN_ID` and `WORKFLOWLEAF_WORKTREE` in their environment. The
   generic playbook reads the target repository's `.workflowleaf/commands` at the
   base revision, so a stage cannot loosen the command that checks it.
+  A command gate may also declare `expect.pendingExitCode`. That exit code
+  records `pending`, exactly as an unresolved external gate does, so a
+  playbook can wait on a repository's own readiness script instead of one of
+  the built-in external checks. The Marketplace playbook's `babysit` does this
+  with FBM's ready check.
 - `review`: by the profile's `reviewer`, a separate process started by code
   and never the stage's own context. Absent, it is a fresh `claude -p` with
   read-only tools and no user settings. One call per entry in the gate's
