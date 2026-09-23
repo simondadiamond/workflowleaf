@@ -74,6 +74,7 @@ export const ensureWorkspace = Effect.fnUntraced(function* (input: {
   readonly repoRoot: string;
   readonly worktreeRoot: string;
   readonly baseRevision: string;
+  readonly branchPrefix: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -95,7 +96,7 @@ export const ensureWorkspace = Effect.fnUntraced(function* (input: {
     } satisfies Workspace;
   }
 
-  const branch = `workflowleaf/${input.runId}`;
+  const branch = `${input.branchPrefix}/${input.runId}`;
   const target = path.join(input.worktreeRoot, input.runId as string);
   yield* fs.makeDirectory(input.worktreeRoot, { recursive: true });
 

@@ -90,6 +90,12 @@ const ProfileDocument = Schema.Struct({
   /** Where run worktrees are created. */
   worktreeRoot: Schema.optional(Schema.String),
   /**
+   * A run's branch is `<branchPrefix>/<run>`. Absent means `workflowleaf`. The
+   * branch name is what the repository and its pull requests show, and what
+   * the repository's own hooks can match on.
+   */
+  branchPrefix: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
+  /**
    * The playbook this machine runs by default, as an absolute directory.
    *
    * A playbook is portable: it is copied between repositories and shared, so it
@@ -147,6 +153,7 @@ export type ProfileDocument = typeof ProfileDocument.Type;
 export interface Profile extends Omit<ProfileDocument, "reviewer"> {
   readonly name: string;
   readonly worktreeRoot: string;
+  readonly branchPrefix: string;
   readonly reviewer: ReviewerConfig;
 }
 
@@ -235,6 +242,7 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
     ...document,
     name,
     reviewer: document.reviewer ?? DEFAULT_REVIEWER,
+    branchPrefix: document.branchPrefix ?? "workflowleaf",
     worktreeRoot:
       document.worktreeRoot !== undefined && document.worktreeRoot.length > 0
         ? document.worktreeRoot

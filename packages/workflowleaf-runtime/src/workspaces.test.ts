@@ -77,6 +77,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
       assert.isTrue(yield* fs.exists(first.path));
 
@@ -86,9 +87,27 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
       assert.strictEqual(second.path, first.path);
       assert.strictEqual(second.workspaceId, first.workspaceId);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("checks the worktree out on the profile's branch prefix", () =>
+    Effect.gen(function* () {
+      const { repo, head, worktreeRoot } = yield* makeRepo();
+      yield* seedRun("run-ws-prefix", repo, head);
+
+      const workspace = yield* ensureWorkspace({
+        runId: "run-ws-prefix" as RunId,
+        repoRoot: repo,
+        worktreeRoot,
+        baseRevision: head,
+        branchPrefix: "run",
+      });
+      const checkedOut = (yield* git(workspace.path, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+      assert.strictEqual(checkedOut, "run/run-ws-prefix");
     }).pipe(Effect.scoped),
   );
 
@@ -103,6 +122,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
       yield* fs.remove(workspace.path, { recursive: true });
 
@@ -111,6 +131,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       }).pipe(Effect.result);
 
       assert.strictEqual(outcome._tag, "Failure");
@@ -129,6 +150,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const before = yield* takeSnapshot(workspace.path, "t0");
@@ -152,6 +174,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const before = yield* takeSnapshot(workspace.path, "t0");
@@ -172,6 +195,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const snapshot = yield* takeSnapshot(workspace.path, "t0");
@@ -191,6 +215,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const before = yield* takeSnapshot(workspace.path, "t0");
@@ -211,6 +236,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const first = yield* takeSnapshot(workspace.path, "t0");
@@ -238,6 +264,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: base,
+        branchPrefix: "workflowleaf",
       });
       yield* fs.writeFileString(path.join(workspace.path, ".workflowleaf", "plan.md"), "# plan\n");
       assert.strictEqual(yield* git(workspace.path, ["status", "--porcelain"]), "");

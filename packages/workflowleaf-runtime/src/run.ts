@@ -391,6 +391,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     repoRoot: input.profile.repoRoot,
     worktreeRoot: input.profile.worktreeRoot,
     baseRevision,
+    branchPrefix: input.profile.branchPrefix,
   });
 
   // Before any stage runs: the run's pull request is what the work is scoped
@@ -488,7 +489,7 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
     remote: config.remote,
     title: `${input.story}: ${input.outcome}`,
     body: [
-      `WorkflowLeaf run \`${input.runId}\` for story \`${input.story}\`.`,
+      `Run \`${input.runId}\` for story \`${input.story}\`.`,
       "",
       "Draft until the run's stages and gates have passed. The run fills this in.",
     ].join("\n"),
