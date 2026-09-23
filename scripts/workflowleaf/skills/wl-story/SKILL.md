@@ -127,15 +127,15 @@ twice and then passed is one report, and the corrections are worth a line each.
 `wl run` and `wl resume` end with the run's state and why they stopped. Each
 stop has exactly one right move:
 
-| Stopped                       | What it means                                                                                                                                             | What you do                                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `finished`, state `succeeded` | Every stage passed its gates                                                                                                                              | Report, with the pull request link. Stop.                                                     |
-| `finished`, state `failed`    | A stage ran out of attempts                                                                                                                               | Report the failing gate and its evidence. Stop.                                               |
-| `finished`, state `cancelled` | Someone cancelled it                                                                                                                                      | Say who and why, and stop.                                                                    |
-| `needs-decision`              | The run is asking a person                                                                                                                                | §4.1                                                                                          |
-| `paused`                      | Someone paused it                                                                                                                                         | Say who, and stop.                                                                            |
-| `waiting-external`            | A gate is waiting on something outside the run: CI still running, or a reviewer yet to answer                                                             | `wl resume <run> --profile <p> --poll 120` checks again every two minutes for up to an hour.  |
-| `idle`                        | The run stopped without reaching a terminal or a waiting state: either the drive loop hit its transition bound, or the input it was given changed nothing | Report it with the run id, and say which of the two it looks like. Do not restart it blindly. |
+| Stopped                       | What it means                                                                                                                                             | What you do                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `finished`, state `succeeded` | Every stage passed its gates                                                                                                                              | Report, with the pull request link. Stop.                                                                                                |
+| `finished`, state `failed`    | A stage ran out of attempts                                                                                                                               | Report the failing gate and its evidence. Stop.                                                                                          |
+| `finished`, state `cancelled` | Someone cancelled it                                                                                                                                      | Say who and why, and stop.                                                                                                               |
+| `needs-decision`              | The run is asking a person                                                                                                                                | §4.1                                                                                                                                     |
+| `paused`                      | Someone paused it                                                                                                                                         | Say who, and stop.                                                                                                                       |
+| `waiting-external`            | A gate is waiting on something outside the run: CI still running, or a reviewer yet to answer                                                             | `wl resume <run> --profile <p> --poll 120` checks again every two minutes for up to an hour. Still waiting after the hour: resume again. |
+| `idle`                        | The run stopped without reaching a terminal or a waiting state: either the drive loop hit its transition bound, or the input it was given changed nothing | Report it with the run id, and say which of the two it looks like. Do not restart it blindly.                                            |
 
 A pull request being open is not the same as the run having succeeded. Report
 both.
@@ -196,9 +196,13 @@ run's pull request by hand while the run is live.
 An open pull request on the run record, and the run in state `succeeded`. Not a
 merged one. Simon merges, always. When the profile has
 `permissions.markPullRequestReady`, code marks the pull request ready after
-deliver passes, so review bots see it, and `babysit` waits for a review on the
-head before it converges. Without it the pull request stays a draft and
-`babysit` waits until someone marks it ready.
+deliver passes, so review bots see it. Without it the pull request stays a
+draft and `babysit` waits until someone marks it ready.
+
+With the Marketplace playbook, `succeeded` means the pull request is READY by
+the repository's own ready check: the `ready` label is on it and the
+`<!-- finisher: ready <head> -->` table is its last comment. There is no
+`/babysit-pr` step after the run; its `babysit` stage is that skill.
 
 ## 7. Everything you had to do by hand is the output
 
