@@ -245,6 +245,12 @@ merges. Each issue holds the detail. `parked-v2` issues wait on T3's
 orchestration V2, and `scripts/workflowleaf/watch-upstream.sh` says when that
 has shipped.
 
+What goes wrong has two registries. `wl errors --since 30d` reads what runs
+hit from the run store. Issues labelled `wl-error` are the fix queue. A small
+finding inside the fork with an obvious fix gets fixed on the branch you are
+on, as its own commit. File a `wl-error` issue only for what needs Simon's
+decision, lives in another repository, or cannot be proven in the session.
+
 To run a story rather than change WorkflowLeaf, use the `wl-story` skill from
 inside the target repository: `/wl-story <issue number>`.
 
