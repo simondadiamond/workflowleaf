@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { prettyJson } from "./canonical.ts";
+import { fetchBase } from "./git.ts";
 import { groupByCause, readLearningLog, sinceInstant } from "./learningLog.ts";
 import { loadPlaybook } from "./load.ts";
 import {
@@ -315,6 +316,18 @@ export function slugify(story: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Where a run branches from when `--base` is not given: the branch its pull
+ * request targets, fetched now. HEAD of the profile's checkout is whatever
+ * someone last left there, which for FBM was a dirty working branch.
+ */
+const baseRefFor = Effect.fnUntraced(function* (profile: Profile, typed: Option.Option<string>) {
+  if (Option.isSome(typed)) return typed.value;
+  const pullRequest = profile.pullRequest;
+  if (pullRequest === undefined) return "HEAD";
+  return yield* fetchBase(profile.repoRoot, pullRequest.remote, pullRequest.baseBranch);
+});
+
 const runCommand = Command.make(
   "run",
   {
@@ -323,8 +336,10 @@ const runCommand = Command.make(
     input: inputFlag,
     owner: ownerFlag,
     base: Flag.String("base").pipe(
-      Flag.withDescription("Revision the run's worktree branches from."),
-      Flag.withDefault("HEAD"),
+      Flag.withDescription(
+        "Revision the run's worktree branches from. Defaults to the profile's pull request base branch, freshly fetched, or HEAD when the profile opens no pull request.",
+      ),
+      Flag.optional,
     ),
     story: Flag.String("story").pipe(
       Flag.withDescription(
@@ -356,7 +371,7 @@ const runCommand = Command.make(
       profile,
       playbookDir,
       inputs,
-      baseRef: base,
+      baseRef: yield* baseRefFor(profile, base),
       owner,
       progress: printProgress,
     });

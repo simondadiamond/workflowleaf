@@ -269,7 +269,10 @@ sits at belongs to the profile, which is the local half of the pair. Passing a
 directory still wins, because one repository has more than one playbook.
 
 `run` takes `--story`, falling back to the `issue` input, and derives the run id
-from it. There is no `--id`.
+from it. There is no `--id`. Without `--base` it fetches the profile's
+`pullRequest.baseBranch` and branches from `<remote>/<baseBranch>`, so a run
+starts from what its pull request targets, not from whatever the profile's
+checkout has checked out. A profile with no `pullRequest` falls back to `HEAD`.
 
 `resume`, `pause`, `cancel` and `decide` take `--revision` and refuse when the
 run has moved since you looked. The number is on the run: `status` carries

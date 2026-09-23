@@ -83,11 +83,14 @@ criteria is a question for Simon, not a gap for you to fill in.
 For the generic `implement-pr` playbook:
 
 ```bash
-wl run --profile <p> --owner wl-story --story issue-<N> --base origin/main \
+wl run --profile <p> --owner wl-story --story issue-<N> \
   --input issue=<N> --input story="<title and body, verbatim from the issue>"
 ```
 
 The Marketplace playbook takes `acceptance_criteria` instead of `story`.
+
+No `--base` either. The run fetches the branch the profile's pull request
+targets (`staging` for FBM) and branches from that.
 
 No playbook path. The profile's `defaultPlaybook` is the answer, and typing a
 path over it silently runs something other than what this machine is set up to
