@@ -413,12 +413,16 @@ const statusCommand = Command.make(
     }
     for (const summary of summaries) {
       const attention = summary.attention === null ? "" : `  ${summary.attention}`;
+      const findings =
+        summary.findings === 0
+          ? ""
+          : `  ${String(summary.findings)} found, not fixed (status ${summary.runId})`;
       // Every run shows its pull request, including the runs that have none:
       // "no pull request" is a fact about the run, not a blank.
       const pullRequest =
         summary.pullRequest === null ? "no PR" : `#${String(summary.pullRequest.number)}`;
       yield* Console.log(
-        `${(summary.stale ? "running, stale" : summary.state).padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}`,
+        `${(summary.stale ? "running, stale" : summary.state).padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}${findings}`,
       );
     }
   }),

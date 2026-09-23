@@ -43,7 +43,7 @@ import * as Schema from "effect/Schema";
 
 import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
-import { compileStagePrompt } from "./prompt.ts";
+import { compileStagePrompt, FINDINGS_PATH } from "./prompt.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
@@ -486,6 +486,33 @@ const scopeSplitDeclared = Effect.fnUntraced(function* (workspacePath: string) {
 });
 
 /**
+ * Records what a stage wrote to `FINDINGS_PATH` and clears the file.
+ *
+ * A stage's closing message reaches only its own thread, so a problem it
+ * noticed outside its task (a broken check, a nit it left alone) never reached
+ * whoever drives the run. Code reads this file after every turn, records it on
+ * the run and removes it, so the next stage starts with an empty one. It is
+ * not a gate: whether a finding matters is a person's call.
+ */
+const collectFindings = Effect.fnUntraced(
+  function* (runId: RunId, stageId: StageId, workspacePath: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const store = yield* RunStore;
+    const file = path.join(workspacePath, FINDINGS_PATH);
+    if (!(yield* fs.exists(file))) return;
+    const detail = (yield* fs.readFileString(file)).trim();
+    if (detail.length > 0) {
+      yield* store.recordFinding({ runId, stageId: stageId as string, source: "stage", detail });
+    }
+    yield* fs.remove(file);
+  },
+  // A finding that cannot be read is lost, which is what happened before this
+  // existed. It must never be the reason a run stops.
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
  * The path-triggered skills a stage calls for right now.
  *
  * Chosen from the paths the run has actually changed, plus what the stage
@@ -602,6 +629,7 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
+      yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
 
       return [
         {
@@ -645,6 +673,7 @@ const perform = Effect.fnUntraced(function* (input: {
           deps.executor.awaitSettlement(handle),
         );
         yield* store.settleOperation(effect.operationId, settlement.outcome);
+        yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
         return [
           {
             type: "dispatch-acknowledged",
@@ -684,6 +713,7 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(outcome.handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
+      yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
       return [
         ...(yield* discoveredSkills({
           plan: input.plan,

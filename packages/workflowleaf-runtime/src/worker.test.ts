@@ -39,6 +39,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { git } from "./git.ts";
+import { readLearningLog } from "./learningLog.ts";
 import { replayRun } from "./replay.ts";
 import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
@@ -828,6 +829,70 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
         assert.strictEqual(after.value.record.state, "cancelled");
         assert.lengthOf(yield* store.unsettledOperations("run-cancel-stale" as RunId), 0);
       }).pipe(Effect.scoped),
+  );
+
+  it.effect("records what a stage found and did not fix, once, and clears the file", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-findings");
+      const note = "checks/mapped-tests.sh misses top-level functions/*.js files.\n";
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (at) => {
+              write("artifact.md", ARTIFACT)(at);
+              writeUnder(".workflowleaf/findings.md", note)(at);
+            },
+          ],
+          // The next stage writes the same note again, as a stage that read the
+          // same broken check would.
+          summarize: [
+            (at) => {
+              write("summary.md", SUMMARY)(at);
+              writeUnder(".workflowleaf/findings.md", note)(at);
+            },
+          ],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-findings" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("f"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // Not a gate: the run finishes as it would have without the note.
+      assert.strictEqual(result.record.state, "succeeded");
+      const findings = yield* store.findingsFor("run-findings" as RunId);
+      assert.deepStrictEqual(
+        findings.map((finding) => [finding.stageId, finding.source, finding.detail]),
+        [["produce", "stage", note.trim()]],
+      );
+      assert.isFalse(yield* fs.exists(path.join(workspace.path, ".workflowleaf/findings.md")));
+      assert.include(executor.prompts[0] ?? "", ".workflowleaf/findings.md");
+
+      const logged = yield* readLearningLog("");
+      assert.isTrue(
+        logged.some(
+          (entry) =>
+            entry.kind === "finding" &&
+            entry.runId === "run-findings" &&
+            entry.stageId === "produce",
+        ),
+      );
+    }).pipe(Effect.scoped),
   );
 
   it.effect("reports every stage and gate verdict while it drives, not only at the end", () =>

@@ -15,6 +15,9 @@
  */
 import type { ResolvedStage, RunPlan, StageId } from "@t3tools/workflowleaf-core";
 
+/** Where a stage records what it found and did not fix. Read by the worker after each turn. */
+export const FINDINGS_PATH = ".workflowleaf/findings.md";
+
 export interface PromptInput {
   readonly runId: string;
   readonly stage: ResolvedStage;
@@ -146,6 +149,17 @@ export function compileStagePrompt(input: PromptInput): string {
       ].join("\n"),
     );
   }
+
+  sections.push(
+    [
+      "## Found, not fixed",
+      "",
+      `If you notice a problem you are not fixing in this stage, such as a broken check, a`,
+      `bug outside your task, or a nit you left alone, append it to \`${FINDINGS_PATH}\`, one`,
+      "short paragraph each with the file it concerns. Your closing message reaches only this",
+      "thread; that file reaches whoever runs the work. Do not open an issue for it instead.",
+    ].join("\n"),
+  );
 
   if (stage.gates.length > 0) {
     sections.push(

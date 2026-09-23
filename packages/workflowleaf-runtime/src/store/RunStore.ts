@@ -34,6 +34,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { canonicalJson } from "../canonical.ts";
+import { digestOf } from "../digest.ts";
 import { runMigrations } from "./schema.ts";
 
 export class RunStoreError extends Schema.TaggedError<RunStoreError>()("WlRunStoreError", {
@@ -123,6 +124,22 @@ export interface DecisionRow {
   readonly answer: string | null;
   /** `cli` or `thread`: where the answer was given. */
   readonly answeredVia: string | null;
+}
+
+/**
+ * Something a run noticed that is not a gate's business: whether it matters is
+ * a person's call, so it is recorded to reach one and never changes the run.
+ * `stage` means the stage wrote it; anything else names the code that saw it.
+ */
+export interface Finding {
+  readonly runId: RunId;
+  readonly stageId: string;
+  readonly source: string;
+  readonly detail: string;
+}
+
+export interface RecordedFinding extends Finding {
+  readonly at: string;
 }
 
 export interface WorkspaceRow {
@@ -291,6 +308,15 @@ export class RunStore extends Context.Service<
     readonly limitationsFor: (
       runId: RunId,
     ) => Effect.Effect<readonly (StageLimitation & { readonly at: string })[], RunStoreError>;
+
+    /** Records a finding once; the same text for the same run again is a no-op. */
+    readonly recordFinding: (finding: Finding) => Effect.Effect<void, RunStoreError>;
+    readonly findingsFor: (
+      runId: RunId,
+    ) => Effect.Effect<readonly RecordedFinding[], RunStoreError>;
+    readonly findingsSince: (
+      since: string,
+    ) => Effect.Effect<readonly RecordedFinding[], RunStoreError>;
 
     readonly saveCursor: (runId: RunId, cursor: string) => Effect.Effect<void, RunStoreError>;
     readonly loadCursor: (runId: RunId) => Effect.Effect<Option.Option<string>, RunStoreError>;
@@ -822,6 +848,51 @@ export class RunStore extends Context.Service<
         },
       );
 
+      const recordFinding: RunStore["Service"]["recordFinding"] = Effect.fnUntraced(
+        function* (finding) {
+          const at = yield* now;
+          yield* sql`
+          INSERT INTO wl_findings (run_id, stage_id, source, digest, detail, at)
+          VALUES (${finding.runId}, ${finding.stageId}, ${finding.source},
+                  ${digestOf(`${finding.source}:${finding.detail}`)}, ${finding.detail}, ${at})
+          ON CONFLICT (run_id, digest) DO NOTHING
+        `.pipe(Effect.mapError(fail("recordFinding")));
+        },
+      );
+
+      type FindingColumns = {
+        run_id: string;
+        stage_id: string;
+        source: string;
+        detail: string;
+        at: string;
+      };
+      const toFinding = (row: FindingColumns): RecordedFinding => ({
+        runId: row.run_id as RunId,
+        stageId: row.stage_id,
+        source: row.source,
+        detail: row.detail,
+        at: row.at,
+      });
+
+      const findingsFor: RunStore["Service"]["findingsFor"] = Effect.fnUntraced(function* (runId) {
+        const rows = yield* sql<FindingColumns>`
+          SELECT run_id, stage_id, source, detail, at FROM wl_findings
+           WHERE run_id = ${runId} ORDER BY at
+        `.pipe(Effect.mapError(fail("findingsFor")));
+        return rows.map(toFinding);
+      });
+
+      const findingsSince: RunStore["Service"]["findingsSince"] = Effect.fnUntraced(
+        function* (since) {
+          const rows = yield* sql<FindingColumns>`
+          SELECT run_id, stage_id, source, detail, at FROM wl_findings
+           WHERE at >= ${since} ORDER BY at
+        `.pipe(Effect.mapError(fail("findingsSince")));
+          return rows.map(toFinding);
+        },
+      );
+
       const saveCursor: RunStore["Service"]["saveCursor"] = Effect.fnUntraced(
         function* (runId, cursor) {
           const at = yield* now;
@@ -915,6 +986,9 @@ export class RunStore extends Context.Service<
         evidenceFor,
         recordLimitation,
         limitationsFor,
+        recordFinding,
+        findingsFor,
+        findingsSince,
         saveCursor,
         loadCursor,
         claimWorkspace,

@@ -660,6 +660,8 @@ export interface RunSummary {
    * until someone resumes or cancels it, so it should not look like live work.
    */
   readonly stale: boolean;
+  /** How many things the run found and did not act on. `status <run>` lists them. */
+  readonly findings: number;
   readonly stage: string | null;
   readonly attention: string | null;
   /** Null only for a run started under a profile that may not open one. */
@@ -675,6 +677,7 @@ function summaryOf(
     readonly story: string;
   },
   leased: ReadonlySet<string>,
+  findings: number,
 ): RunSummary {
   const stale = run.record.state === "running" && !leased.has(run.record.runId as string);
   return {
@@ -683,6 +686,7 @@ function summaryOf(
     state: run.record.state,
     revision: run.record.revision,
     stale,
+    findings,
     stage: run.record.currentStageId as string | null,
     attention: stale
       ? `no worker has held this run since ${run.record.updatedAt}; resume or cancel it`
@@ -703,8 +707,12 @@ export const summarizeRuns = Effect.fnUntraced(function* (state?: string) {
   const store = yield* RunStore;
   const runs = yield* store.listRuns(state === undefined ? undefined : { state });
   const leased = yield* store.leasedRuns();
+  const findings = new Map<string, number>();
+  for (const finding of yield* store.findingsSince("")) {
+    findings.set(finding.runId, (findings.get(finding.runId) ?? 0) + 1);
+  }
 
-  return runs.map((run) => summaryOf(run, leased));
+  return runs.map((run) => summaryOf(run, leased, findings.get(run.record.runId as string) ?? 0));
 });
 
 export interface RunDetail extends RunSummary {
@@ -722,6 +730,13 @@ export interface RunDetail extends RunSummary {
     readonly lostContext: boolean;
   }[];
   readonly limitations: readonly { readonly stageId: string; readonly detail: string }[];
+  /** What the run found and did not act on, oldest first. */
+  readonly foundNotFixed: readonly {
+    readonly stageId: string;
+    readonly source: string;
+    readonly detail: string;
+    readonly at: string;
+  }[];
 }
 
 export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
@@ -731,10 +746,11 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
 
   const workspace = yield* store.findWorkspace(runId);
   const limitations = yield* store.limitationsFor(runId);
+  const findings = yield* store.findingsFor(runId);
   const record = loaded.value.record;
 
   return Option.some({
-    ...summaryOf(loaded.value, yield* store.leasedRuns()),
+    ...summaryOf(loaded.value, yield* store.leasedRuns(), findings.length),
     workspacePath: Option.isSome(workspace) ? workspace.value.path : null,
     scopeSplit:
       record.scopeSplit === null
@@ -753,6 +769,12 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
     limitations: limitations.map((limitation) => ({
       stageId: limitation.stageId as string,
       detail: limitation.detail,
+    })),
+    foundNotFixed: findings.map((finding) => ({
+      stageId: finding.stageId,
+      source: finding.source,
+      detail: finding.detail,
+      at: finding.at,
     })),
   } satisfies RunDetail);
 });

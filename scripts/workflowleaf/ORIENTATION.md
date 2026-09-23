@@ -89,6 +89,11 @@ and AGENTS.md says so.
    The worker reads it after every settlement and the run stops before the next
    stage. Nothing infers a split from the size of a diff, and the file lives
    under a snapshot exclusion so declaring one disturbs no gate.
+   A stage reports what it found and did not fix the same way, in
+   `.workflowleaf/findings.md`. The worker records it on the run after each
+   turn (`wl_findings`, once per text) and clears the file. It is not a gate and
+   never changes the run: `status` counts it, `status <run>` lists it under
+   `foundNotFixed`, and `wl errors` groups it as `found, not fixed`.
 6. **`it.effect` uses a test clock.** Anything that sleeps for real needs
    `it.layer(layer, { excludeTestServices: true })`.
 

@@ -149,6 +149,24 @@ export const MIGRATIONS: readonly {
       `ALTER TABLE wl_decisions ADD COLUMN answered_via TEXT`,
     ],
   },
+  {
+    id: 4,
+    name: "findings",
+    sql: [
+      // What a run noticed and did not act on: a stage's "found, not fixed"
+      // notes, and what code saw that no gate judges. Keyed by content, so
+      // reading the same note twice records it once.
+      `CREATE TABLE IF NOT EXISTS wl_findings (
+         run_id TEXT NOT NULL,
+         stage_id TEXT NOT NULL,
+         source TEXT NOT NULL,
+         digest TEXT NOT NULL,
+         detail TEXT NOT NULL,
+         at TEXT NOT NULL,
+         PRIMARY KEY (run_id, digest)
+       )`,
+    ],
+  },
 ];
 
 export const runMigrations = Effect.fnUntraced(function* () {
