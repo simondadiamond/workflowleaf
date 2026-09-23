@@ -239,27 +239,20 @@ because the repository's local credential helper already pins that config dir.
 
 ## Where to start
 
-`gh issue list --repo simondadiamond/workflowleaf --label p0`
+The order of work is pinned issue #39, the roadmap. Take the first unchecked
+item under **Now**, or any **Fork-side** item, and tick it off in #39 when it
+merges. Each issue holds the detail. `parked-v2` issues wait on T3's
+orchestration V2, and `scripts/workflowleaf/watch-upstream.sh` says when that
+has shipped.
 
-The five p0 issues are mostly independent, with two couplings worth respecting:
+What goes wrong has two registries. `wl errors --since 30d` reads what runs
+hit from the run store. Issues labelled `wl-error` are the fix queue. A small
+finding inside the fork with an obvious fix gets fixed on the branch you are
+on, as its own commit. File a `wl-error` issue only for what needs Simon's
+decision, lives in another repository, or cannot be proven in the session.
 
-- **#4** (per-check entry point in `lane-dod.sh`) is fully independent and about
-  an hour. It deletes duplication introduced during the first build. Good first
-  task. Strictly additive: no existing check may stop running.
-- **#5** (worker meets the live T3 adapter) is the untested seam and the gate on
-  any real use. Do it early. The live recipe is in
-  `~/.workflowleaf/notes/T08-live-seam-findings.md`.
-- **#3** (run = story = pull request) changes run identity, so land it before
-  **#1** (the story skill), which reports against it.
-- **#2** (genericize the playbook) touches the same playbook as #3. Do not run
-  both at once.
-
-**Dogfooding starts at #26, not #21.** #26 is the first real story end to end,
-gated only on #5, #3 and #1; the Marketplace playbook at
-`~/.workflowleaf/playbooks/fbm-t1/` already validates and compiles as-is, so it
-does not wait for the playbook to be made generic. #21 is the later ten-story
-comparison against a baseline — the measurement, not the start. Run real stories
-as soon as those three land and let #6 (the learning log) collect what breaks.
+To run a story rather than change WorkflowLeaf, use the `wl-story` skill from
+inside the target repository: `/wl-story <issue number>`.
 
 ## Driving it today
 
