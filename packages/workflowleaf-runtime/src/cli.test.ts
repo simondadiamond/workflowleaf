@@ -22,6 +22,7 @@ const profile = (defaultPlaybook?: string): Profile => ({
   executor: { kind: "fake" },
   repoRoot: "/repo",
   worktreeRoot: "/worktrees",
+  branchPrefix: "workflowleaf",
   ...(defaultPlaybook === undefined ? {} : { defaultPlaybook }),
   skillRoots: [],
   reviewer: DEFAULT_REVIEWER,

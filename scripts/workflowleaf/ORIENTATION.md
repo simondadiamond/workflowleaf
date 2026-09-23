@@ -352,6 +352,11 @@ without exporting anything first. Tokens live in `~/.workflowleaf/tokens/`,
 mode 0600, and last 30 days. To mint one, run `t3 pair --base-dir <home>`,
 then exchange the pairing token at `POST /oauth/token`.
 
+`branchPrefix` names a run's branch, `<branchPrefix>/<run>`, and defaults to
+`workflowleaf`. FBM's is `run`, so its branches and pull requests do not carry
+the project's name, and its `post-checkout` hook keeps the tracked `.claude` in
+`run/*` worktrees instead of linking the main checkout's.
+
 `ghConfigDir` names the `gh` config for a repository whose account is not the
 active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
 and command gates use it, and each stage prompt tells the agent to. The active

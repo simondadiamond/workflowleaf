@@ -279,6 +279,7 @@ const setUpRun = Effect.fnUntraced(function* (
     repoRoot: repo,
     worktreeRoot: path.join(root, "worktrees"),
     baseRevision: head,
+    branchPrefix: "workflowleaf",
   });
 
   const lease = yield* store.acquireLease(runId as RunId, "worker-a", 60);

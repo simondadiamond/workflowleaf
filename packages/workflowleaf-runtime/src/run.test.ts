@@ -346,6 +346,7 @@ it.layer(testLayer, { excludeTestServices: true })("a run that is still starting
           executor: { kind: "fake" },
           repoRoot: repo,
           worktreeRoot: path.join(home, "worktrees"),
+          branchPrefix: "workflowleaf",
           skillRoots: [path.join(fixtures, "skills")],
           reviewer: DEFAULT_REVIEWER,
           budgets: { maxRepairCycles: 2, runDeadlineMs: null },
