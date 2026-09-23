@@ -75,11 +75,15 @@ and AGENTS.md says so.
 2. **The ownership gate fails any upstream file you edit** without an entry in
    `scripts/workflowleaf/ownership.json` giving a purpose and a removal
    condition, and `maxUpstreamEdits` caps how many such entries may exist at
-   all. Today two upstream files are touched: `pnpm-lock.yaml`, which pnpm
-   regenerates, and one `@import` line in `CLAUDE.md` that carries
-   `FORK-RULES.md` to every agent in the repository. Adding a third is a
-   decision, not a detail; the whole fork strategy rests on that number staying
-   small.
+   all. Today three upstream files are touched: `pnpm-lock.yaml`, which pnpm
+   regenerates, one `@import` line in `CLAUDE.md` that carries
+   `FORK-RULES.md` to every agent in the repository, and
+   `AppSidebarLayout.tsx`, which mounts the Threads/Worktrees sidebar switch.
+   The worktree view itself is a whole-file copy of `components/Sidebar.tsx`
+   under `apps/web/src/features/workflowleaf/sidebar/`, so upstream sidebar
+   changes never conflict but also never reach it until someone re-copies.
+   Adding a fourth is a decision, not a detail; the whole fork strategy rests
+   on that number staying small.
 3. **Core must import nothing.** No T3, no filesystem, no environment, no
    clock, no provider name. A test asserts this against the source with
    comments and strings stripped. Digests and timestamps are inputs.

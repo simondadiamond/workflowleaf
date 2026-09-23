@@ -14,7 +14,7 @@
     ".github/workflows/workflowleaf-t3.yml",
     ".github/workflows/workflowleaf-housekeeping.yml"
   ],
-  "maxUpstreamEdits": 2,
+  "maxUpstreamEdits": 3,
   "allowedUpstreamEdits": [
     {
       "path": "pnpm-lock.yaml",
@@ -25,6 +25,11 @@
       "path": "CLAUDE.md",
       "purpose": "One @import line so every agent in this repository is told the fork stays additive, without having to find scripts/workflowleaf/. AGENTS.md was the alternative and changes far more often upstream.",
       "removeWhen": "WorkflowLeaf is removed from the repository, or Claude Code gains a project instruction source that upstream does not own."
+    },
+    {
+      "path": "apps/web/src/components/AppSidebarLayout.tsx",
+      "purpose": "Mounts the Threads/Worktrees switch in place of the default thread sidebar. The worktree view folds a story's stage threads into one folder per worktree; it lives in apps/web/src/features/workflowleaf/sidebar/.",
+      "removeWhen": "Upstream groups sidebar threads by worktree, or WorkflowLeaf stops opening one thread per stage."
     }
   ],
   "orientation": {
