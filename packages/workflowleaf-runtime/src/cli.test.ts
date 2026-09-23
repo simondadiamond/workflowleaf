@@ -1,11 +1,17 @@
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { Command } from "effect/unstable/cli";
 
-import { formatProgress, playbookDirFor } from "./cli.ts";
+import { formatProgress, playbookDirFor, wlCommand } from "./cli.ts";
 import type { Profile } from "./profile.ts";
 import { DEFAULT_REVIEWER } from "./reviewer.ts";
+import { RunStore } from "./store/RunStore.ts";
+import { layerMemory } from "./store/Sqlite.ts";
 
 const profile = (defaultPlaybook?: string): Profile => ({
   name: "fixture",
@@ -67,4 +73,24 @@ it("a failing gate's verdict carries its first line of detail", () => {
   assert.include(line, "tests failed, lint passed");
   assert.include(line, "exit 1, 2 failing");
   assert.notInclude(line, "stack trace");
+});
+
+// The same services bin.ts provides, over an empty in-memory store.
+const cliServices = Layer.mergeAll(
+  RunStore.layer.pipe(Layer.provide(layerMemory)),
+  NodeHttpClient.layerUndici,
+  NodeSocket.layerWebSocketConstructor,
+).pipe(Layer.provideMerge(NodeServices.layer));
+
+it.layer(cliServices)("wl errors", (it) => {
+  it.effect("prints the grouped view without --json, the form every document names", () =>
+    Effect.gen(function* () {
+      const outcome = yield* Command.runWith(wlCommand, { version: "0.0.0" })([
+        "errors",
+        "--since",
+        "1d",
+      ]).pipe(Effect.result);
+      assert.strictEqual(outcome._tag, "Success");
+    }),
+  );
 });

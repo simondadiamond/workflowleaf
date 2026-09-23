@@ -513,7 +513,10 @@ const errorsCommand = Command.make(
       Flag.withDescription("How far back: 30d, 12h, 90m, or an ISO instant."),
       Flag.withDefault("30d"),
     ),
-    json: Flag.Boolean("json").pipe(Flag.withDescription("Print every entry as JSON.")),
+    json: Flag.Boolean("json").pipe(
+      Flag.withDescription("Print every entry as JSON."),
+      Flag.withDefault(false),
+    ),
   },
   Effect.fnUntraced(function* ({ since, json }) {
     const from = yield* sinceInstant(since);
