@@ -289,9 +289,9 @@ line of its detail when it did not pass, and always for an external gate,
 because "passed" alone does not say what GitHub showed.
 
 On a T3 executor each stage is a thread titled `WorkflowLeaf <run> <stage>`.
-When the next stage starts, the adapter archives the run's earlier stage
-threads with T3's own `thread.archive` command, so one stage thread per run is
-active in the sidebar. The archived ones are still there to read.
+When the next stage starts, the adapter settles the run's earlier stage
+threads with T3's own `thread.settle` command, so one stage thread per run is
+active in the sidebar. The settled ones stay readable under Settled (#47).
 
 `replay` feeds a run's recorded transitions back through the controller from
 its initial state and fails at the first transition whose effects or revision
