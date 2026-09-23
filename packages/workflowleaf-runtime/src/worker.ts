@@ -43,7 +43,7 @@ import * as Schema from "effect/Schema";
 
 import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
-import { compileStagePrompt, FINDINGS_PATH } from "./prompt.ts";
+import { compileStagePrompt, FINDINGS_PATH, type StagePermissions } from "./prompt.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
@@ -121,6 +121,8 @@ export interface WorkerDeps {
   readonly reviewer?: ReviewerConfig | undefined;
   /** The `gh` config directory for the run's repository, when the profile names one. */
   readonly ghConfigDir?: string | undefined;
+  /** What the profile permits on GitHub, which each stage is told. */
+  readonly permissions?: StagePermissions | undefined;
   /**
    * How long the worktree must stay unchanged before gates may read it. Absent
    * means gates run as soon as the stage settles, which only tests want.
@@ -600,6 +602,7 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     extraSkills,
     correction: input.effect.correction ?? null,
     ghConfigDir: input.deps.ghConfigDir,
+    permissions: input.deps.permissions,
   });
 
   return {

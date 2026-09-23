@@ -115,7 +115,9 @@ const ProfileDocument = Schema.Struct({
    * its worktree is the executor's runtime mode and the provider's own
    * approvals, which `wl answer` passes through; a second permission layer
    * over the same actions would only disagree with the first. That is why the
-   * Firestore flag and `deploy` are gone.
+   * Firestore flag and `deploy` are gone. Each stage is still told what these
+   * permit, since an agent with `gh` can comment or merge on its own; that
+   * asks and does not enforce.
    */
   permissions: Schema.Struct({
     /** Open the run's draft pull request at run start. Every later stage delivers into it. */

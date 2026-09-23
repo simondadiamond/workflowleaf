@@ -353,6 +353,14 @@ without closing it is shown as expired and never answered as if it were live.
 A profile that still carries the retired `deploy` flag loads; the key is
 dropped.
 
+An agent with `gh` can do what those flags describe, so every stage prompt
+also says what the profile permits on GitHub: no issues ever (findings go in
+`.workflowleaf/findings.md`), no pull request comments, reviews or thread
+replies unless `commentOnPullRequest`, and no merge unless `merge`. This asks
+and cannot enforce. Only the provider's approvals stand between an agent and a
+`gh` call. The fixer loop replies to review threads, so a profile that wants
+it needs `commentOnPullRequest`; the sandbox profiles have it, `fbm` does not.
+
 `fbm` drives the live T3 install against FB-marketplace-uploader and opens
 draft pull requests against `staging`. `sandbox-live` drives the live install
 against the sandbox. The other `sandbox*` profiles drive a dev server.

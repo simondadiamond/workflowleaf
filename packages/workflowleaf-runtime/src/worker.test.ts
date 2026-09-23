@@ -868,6 +868,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
           logDir,
           owner: "worker-a",
           leaseSeconds: 60,
+          permissions: { commentOnPullRequest: false, merge: false },
         },
         lease,
         initial: [{ type: "start" }],
@@ -882,6 +883,10 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       );
       assert.isFalse(yield* fs.exists(path.join(workspace.path, ".workflowleaf/findings.md")));
       assert.include(executor.prompts[0] ?? "", ".workflowleaf/findings.md");
+      // The profile's permissions reach every dispatched stage.
+      for (const prompt of executor.prompts) {
+        assert.include(prompt, "Do not comment on or review any pull request");
+      }
 
       const logged = yield* readLearningLog("");
       assert.isTrue(

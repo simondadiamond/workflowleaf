@@ -29,6 +29,40 @@ export interface PromptInput {
   readonly correction: string | null;
   /** The `gh` config directory this repository needs, when it is not the active account's. */
   readonly ghConfigDir?: string | undefined;
+  /** The profile's permissions, which the stage is told and asked to keep. */
+  readonly permissions?: StagePermissions | undefined;
+}
+
+export interface StagePermissions {
+  readonly commentOnPullRequest: boolean;
+  readonly merge: boolean;
+}
+
+/**
+ * What the profile lets the run do on GitHub, as the stage has to hear it.
+ *
+ * The flags describe what WorkflowLeaf does, but an agent with `gh` can do the
+ * same things, and in issue-1598-1 one commented on a pull request and opened an
+ * issue under a profile that permits neither. This asks. It cannot enforce:
+ * only the provider's approvals stand between an agent and a `gh` call.
+ */
+function permissionsSection(permissions: StagePermissions): string {
+  const rules = [
+    "Do not open issues. Put anything you would have filed in `" + FINDINGS_PATH + "`.",
+    permissions.commentOnPullRequest
+      ? "You may comment on this run's pull request and reply to or resolve its review threads."
+      : "Do not comment on or review any pull request, and do not reply to or resolve review threads. That includes scripts that post for you. If your instructions ask for a comment, do the rest and write what you would have posted in `" +
+        FINDINGS_PATH +
+        "`.",
+    ...(permissions.merge ? [] : ["Do not merge any pull request."]),
+  ];
+  return [
+    "## What this run may do on GitHub",
+    "",
+    "Pushing the run's branch is always allowed. Beyond that, this run's profile says:",
+    "",
+    ...rules.map((rule) => `- ${rule}`),
+  ].join("\n");
 }
 
 function describeGate(gate: ResolvedStage["gates"][number]): string {
@@ -75,6 +109,10 @@ export function compileStagePrompt(input: PromptInput): string {
     sections.push(
       `This repository's GitHub account is configured in \`${input.ghConfigDir}\`. Run every \`gh\` command with \`GH_CONFIG_DIR=${input.ghConfigDir}\` set, and never switch the active account.`,
     );
+  }
+
+  if (input.permissions !== undefined) {
+    sections.push(permissionsSection(input.permissions));
   }
 
   if (input.correction !== null) {
