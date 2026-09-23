@@ -92,6 +92,53 @@ it.layer(testLayer)("run ids", (it) => {
     }),
   );
 
+  it.effect("a running run no worker holds is stale, and one being driven is not", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* store.createRun({
+        record: { ...record("run-dead"), state: "running" },
+        plan,
+        story: "story-dead",
+        profileName: "test",
+        origin: { trigger: "manual", by: "test" },
+        repoRoot: "/repo",
+        baseRevision: "abc123",
+      });
+      yield* store.createRun({
+        record: { ...record("run-live"), state: "running" },
+        plan,
+        story: "story-live",
+        profileName: "test",
+        origin: { trigger: "manual", by: "test" },
+        repoRoot: "/repo",
+        baseRevision: "abc123",
+      });
+
+      const staleness = (runs: readonly { runId: string; stale: boolean }[]) =>
+        Object.fromEntries(
+          runs
+            .filter((run) => run.runId === "run-dead" || run.runId === "run-live")
+            .map((run) => [run.runId, run.stale]),
+        );
+
+      yield* holdingLease("run-live" as RunId, "worker", () =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(staleness(yield* summarizeRuns()), {
+            "run-dead": true,
+            "run-live": false,
+          });
+          const detail = yield* describeRun("run-dead" as RunId);
+          assert.include(Option.getOrUndefined(detail)?.attention ?? "", "resume or cancel");
+        }),
+      );
+      // Once the drive ends, nothing is moving it either.
+      assert.deepStrictEqual(staleness(yield* summarizeRuns()), {
+        "run-dead": true,
+        "run-live": true,
+      });
+    }),
+  );
+
   it.effect("gives the lease back when a drive ends, however it ends", () =>
     Effect.gen(function* () {
       const store = yield* RunStore;

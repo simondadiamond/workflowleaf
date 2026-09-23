@@ -235,6 +235,8 @@ export class RunStore extends Context.Service<
       ttlSeconds: number,
     ) => Effect.Effect<void, RunStoreError | LeaseLost>;
     readonly releaseLease: (lease: Lease) => Effect.Effect<void, RunStoreError>;
+    /** The runs some worker holds an unexpired lease on right now. */
+    readonly leasedRuns: () => Effect.Effect<ReadonlySet<string>, RunStoreError>;
 
     readonly recordIntent: (input: {
       readonly operationId: OperationId;
@@ -607,6 +609,14 @@ export class RunStore extends Context.Service<
         },
       );
 
+      const leasedRuns: RunStore["Service"]["leasedRuns"] = Effect.fnUntraced(function* () {
+        const at = yield* now;
+        const rows = yield* sql<{ run_id: string }>`
+          SELECT run_id FROM wl_leases WHERE expires_at > ${at}
+        `.pipe(Effect.mapError(fail("leasedRuns")));
+        return new Set(rows.map((row) => row.run_id)) as ReadonlySet<string>;
+      });
+
       const recordIntent: RunStore["Service"]["recordIntent"] = Effect.fnUntraced(
         function* (input) {
           const at = yield* now;
@@ -891,6 +901,7 @@ export class RunStore extends Context.Service<
         acquireLease,
         renewLease,
         releaseLease,
+        leasedRuns,
         recordIntent,
         acknowledgeOperation,
         settleOperation,

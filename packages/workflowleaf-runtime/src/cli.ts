@@ -412,7 +412,7 @@ const statusCommand = Command.make(
       const pullRequest =
         summary.pullRequest === null ? "no PR" : `#${String(summary.pullRequest.number)}`;
       yield* Console.log(
-        `${summary.state.padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}`,
+        `${(summary.stale ? "running, stale" : summary.state).padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}`,
       );
     }
   }),

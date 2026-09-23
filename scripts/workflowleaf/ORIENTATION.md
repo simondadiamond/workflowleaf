@@ -274,6 +274,10 @@ from it. There is no `--id`.
 run has moved since you looked. The number is on the run: `status` carries
 `revision` in both its detail forms.
 
+A run in `running` that no worker holds a lease on shows as `running, stale`
+in `status`, with `stale: true` in its detail. Nothing will move it until
+someone resumes or cancels it.
+
 `cancel` commits the cancel and nothing else. It never reconciles or starts a
 stage, so it works on a run whose executor is gone. A stage still in flight is
 interrupted if its executor answers, and its operation is closed either way.

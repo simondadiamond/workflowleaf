@@ -616,6 +616,11 @@ export interface RunSummary {
    * way to use that flag would be to guess at the number it is there to check.
    */
   readonly revision: number;
+  /**
+   * A run in `running` that no worker holds a lease on. Nothing will move it
+   * until someone resumes or cancels it, so it should not look like live work.
+   */
+  readonly stale: boolean;
   readonly stage: string | null;
   readonly attention: string | null;
   /** Null only for a run started under a profile that may not open one. */
@@ -624,19 +629,25 @@ export interface RunSummary {
   readonly updatedAt: string;
 }
 
-function summaryOf(run: {
-  readonly record: RunRecord;
-  readonly plan: RunPlan;
-  readonly story: string;
-}): RunSummary {
+function summaryOf(
+  run: {
+    readonly record: RunRecord;
+    readonly plan: RunPlan;
+    readonly story: string;
+  },
+  leased: ReadonlySet<string>,
+): RunSummary {
+  const stale = run.record.state === "running" && !leased.has(run.record.runId as string);
   return {
     runId: run.record.runId as string,
     story: run.story,
     state: run.record.state,
     revision: run.record.revision,
+    stale,
     stage: run.record.currentStageId as string | null,
-    attention:
-      run.record.decision === null
+    attention: stale
+      ? `no worker has held this run since ${run.record.updatedAt}; resume or cancel it`
+      : run.record.decision === null
         ? run.record.failure
         : `${run.record.decision.kind}: ${run.record.decision.detail}`,
     pullRequest:
@@ -652,8 +663,9 @@ function summaryOf(run: {
 export const summarizeRuns = Effect.fnUntraced(function* (state?: string) {
   const store = yield* RunStore;
   const runs = yield* store.listRuns(state === undefined ? undefined : { state });
+  const leased = yield* store.leasedRuns();
 
-  return runs.map(summaryOf);
+  return runs.map((run) => summaryOf(run, leased));
 });
 
 export interface RunDetail extends RunSummary {
@@ -683,7 +695,7 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
   const record = loaded.value.record;
 
   return Option.some({
-    ...summaryOf(loaded.value),
+    ...summaryOf(loaded.value, yield* store.leasedRuns()),
     workspacePath: Option.isSome(workspace) ? workspace.value.path : null,
     scopeSplit:
       record.scopeSplit === null
