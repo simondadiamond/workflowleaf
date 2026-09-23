@@ -100,6 +100,7 @@ export const ensureWorkspace = Effect.fnUntraced(function* (input: {
   yield* fs.makeDirectory(input.worktreeRoot, { recursive: true });
 
   yield* git(input.repoRoot, ["worktree", "add", "-b", branch, target, input.baseRevision]);
+  yield* ignoreRunFiles(target);
 
   const workspaceId = digestOf(`${input.runId}:${target}`) as unknown as WorkspaceId;
   yield* store.claimWorkspace({
@@ -117,6 +118,30 @@ export const ensureWorkspace = Effect.fnUntraced(function* (input: {
     branch,
     baseRevision: input.baseRevision,
   } satisfies Workspace;
+});
+
+/**
+ * Hides `.workflowleaf/` from git in a run's worktree, with a `.gitignore`
+ * that ignores the directory's untracked contents and itself.
+ *
+ * Stages write their plan and review there, and a playbook check that wants a
+ * clean tree sees them as untracked files. Without this, issue-1598-1's
+ * deliver stage got past `worktree-clean` by adding the directory to the
+ * repository's shared `info/exclude`, which every checkout of it reads. Files
+ * the repository already tracks there, such as `.workflowleaf/commands`, are
+ * unaffected, and a repository that tracks its own `.workflowleaf/.gitignore`
+ * keeps it.
+ */
+const ignoreRunFiles = Effect.fnUntraced(function* (worktree: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const file = path.join(worktree, ".workflowleaf", ".gitignore");
+  if (yield* fs.exists(file)) return;
+  yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+  yield* fs.writeFileString(
+    file,
+    "# Written by WorkflowLeaf: run files, not repository content.\n*\n",
+  );
 });
 
 /**

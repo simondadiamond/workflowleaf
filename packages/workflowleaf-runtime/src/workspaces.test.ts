@@ -219,4 +219,40 @@ it.layer(testLayer)("workspaces", (it) => {
       assert.strictEqual(first.snapshotId, second.snapshotId);
     }).pipe(Effect.scoped),
   );
+
+  it.effect("keeps the run's own files out of git status, and leaves tracked ones alone", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { repo, worktreeRoot } = yield* makeRepo();
+      // A repository that tracks a file under .workflowleaf/, as the generic playbook's do.
+      yield* fs.makeDirectory(path.join(repo, ".workflowleaf"));
+      yield* fs.writeFileString(path.join(repo, ".workflowleaf", "commands"), "test: true\n");
+      yield* git(repo, ["add", "."]);
+      yield* git(repo, ["commit", "-qm", "commands"]);
+      const base = (yield* git(repo, ["rev-parse", "HEAD"])).trim();
+      yield* seedRun("run-ws-ignore", repo, base);
+
+      const workspace = yield* ensureWorkspace({
+        runId: "run-ws-ignore" as RunId,
+        repoRoot: repo,
+        worktreeRoot,
+        baseRevision: base,
+      });
+      yield* fs.writeFileString(path.join(workspace.path, ".workflowleaf", "plan.md"), "# plan\n");
+      assert.strictEqual(yield* git(workspace.path, ["status", "--porcelain"]), "");
+
+      yield* fs.writeFileString(
+        path.join(workspace.path, ".workflowleaf", "commands"),
+        "test: false\n",
+      );
+      assert.include(
+        yield* git(workspace.path, ["status", "--porcelain"]),
+        ".workflowleaf/commands",
+      );
+      // Nothing was written to the configuration every checkout shares.
+      const exclude = yield* fs.readFileString(path.join(repo, ".git", "info", "exclude"));
+      assert.notInclude(exclude, ".workflowleaf");
+    }),
+  );
 });
