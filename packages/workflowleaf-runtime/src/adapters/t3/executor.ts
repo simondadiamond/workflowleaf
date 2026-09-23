@@ -13,11 +13,14 @@
 import { ORCHESTRATION_WS_METHODS } from "@t3tools/contracts";
 import type { WsRpcProtocolClient } from "@t3tools/client-runtime/rpc";
 import type {
+  AnswerOutcome,
   ContinueOutcome,
   ExecutorCapabilities,
   ExecutorPort,
   InspectOutcome,
   OperationId,
+  ProviderDecision,
+  ProviderRequest,
   StageHandle,
   StageRequest,
   StageSettlement,
@@ -26,6 +29,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import type { T3ExecutorConfig } from "../../profile.ts";
+
 import {
   applyStreamItem,
   initialWatch,
@@ -33,6 +38,51 @@ import {
   type StreamItem,
   type WatchState,
 } from "./mapEvents.ts";
+import {
+  answerOutcomeFrom,
+  approvalsFrom,
+  repliesTo,
+  type ThreadActivity,
+  type ThreadSession,
+} from "./requests.ts";
+
+interface ThreadView {
+  readonly activities: readonly ThreadActivity[];
+  readonly session: ThreadSession | null;
+  readonly synchronized: boolean;
+}
+
+/** Folds a thread subscription into its activities and current session. */
+function foldThread(view: ThreadView, item: unknown): ThreadView {
+  const value = item as Record<string, unknown>;
+  if (value.kind === "synchronized") return { ...view, synchronized: true };
+  if (value.kind === "snapshot") {
+    const thread = (
+      value.snapshot as {
+        thread?: { activities?: readonly ThreadActivity[]; session?: ThreadSession | null };
+      }
+    ).thread;
+    return {
+      ...view,
+      activities: [...view.activities, ...(thread?.activities ?? [])],
+      session: thread?.session ?? null,
+    };
+  }
+  if (value.kind === "event") {
+    const event = value.event as { type?: string; payload?: Record<string, unknown> };
+    if (event.type === "thread.activity-appended") {
+      const activity = event.payload?.activity as ThreadActivity | undefined;
+      return activity === undefined
+        ? view
+        : { ...view, activities: [...view.activities, activity] };
+    }
+    if (event.type === "thread.session-set") {
+      const session = event.payload?.session as ThreadSession | undefined;
+      return session === undefined ? view : { ...view, session };
+    }
+  }
+  return view;
+}
 
 /**
  * What the V1 seam actually provides.
@@ -86,7 +136,7 @@ export interface T3ExecutorOptions {
   readonly projectId: string;
   readonly instanceId: string;
   readonly model: string;
-  readonly runtimeMode: "full-access" | "read-only";
+  readonly runtimeMode: T3ExecutorConfig["runtimeMode"];
   readonly worktreePath: string;
   readonly branch: string;
   /**
@@ -95,7 +145,28 @@ export interface T3ExecutorOptions {
    * "unknown" for work the executor has no memory of.
    */
   readonly handleFor: (operationId: OperationId) => Promise<string | null>;
+  /**
+   * The recorded handles of the run's stages so far, read from the run store.
+   * Their threads are settled when the next stage starts, so a run shows one
+   * active stage thread at a time. Absent means nothing is settled.
+   */
+  readonly earlierHandles?: (() => Promise<readonly string[]>) | undefined;
   readonly now: () => string;
+}
+
+/**
+ * The threads to settle when `current` starts: every earlier stage thread of
+ * the run that is not this one and was not settled already by this process.
+ */
+export function threadsToSettle(
+  current: string,
+  earlierHandles: readonly string[],
+  settled: ReadonlySet<string>,
+): string[] {
+  const threads = earlierHandles
+    .map((handle) => decodeHandle(handle)?.threadId)
+    .filter((threadId): threadId is string => threadId !== undefined);
+  return [...new Set(threads)].filter((threadId) => threadId !== current && !settled.has(threadId));
 }
 
 /**
@@ -148,6 +219,7 @@ function threadIdFor(request: StageRequest): string {
 export class T3Executor implements ExecutorPort {
   #options: T3ExecutorOptions;
   #threads = new Map<string, string>();
+  #settled = new Set<string>();
   /**
    * The settlement watch for an operation, started before that operation was
    * dispatched. See `#watch`: a subscription attached afterwards never sees the
@@ -248,7 +320,7 @@ export class T3Executor implements ExecutorPort {
           commandId: createCommandId,
           threadId: handle.threadId,
           projectId: options.projectId,
-          title: `WorkflowLeaf ${request.stage.contract.id}`,
+          title: `WorkflowLeaf ${request.runId} ${request.stage.contract.id}`,
           modelSelection: { instanceId: options.instanceId, model: options.model },
           runtimeMode: options.runtimeMode,
           interactionMode: "default",
@@ -259,7 +331,34 @@ export class T3Executor implements ExecutorPort {
 
         return yield* startTurn();
       }),
-    );
+    ).then(async (started) => {
+      await this.#settleEarlier(handle.threadId);
+      return started;
+    });
+  }
+
+  /**
+   * Settles the run's earlier stage threads once the next one has started, so
+   * they move under Settled in T3 and stay readable there (#47). Their turns
+   * have ended by then, which T3 requires before it settles a thread. Best
+   * effort: the stage is already running, and a thread left in the active list
+   * is clutter, not a fault.
+   */
+  async #settleEarlier(current: string): Promise<void> {
+    const options = this.#options;
+    if (options.earlierHandles === undefined) return;
+    const earlier = await options.earlierHandles().catch(() => [] as readonly string[]);
+    for (const threadId of threadsToSettle(current, earlier, this.#settled)) {
+      this.#settled.add(threadId);
+      await this.#run(
+        "settleThread",
+        options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+          type: "thread.settle",
+          commandId: `${threadId}-settle`,
+          threadId,
+        } as never),
+      ).catch(() => undefined);
+    }
   }
 
   continueStage(handle: StageHandle, correction: string): Promise<ContinueOutcome> {
@@ -315,6 +414,101 @@ export class T3Executor implements ExecutorPort {
       return Promise.reject(new Error("The stage handle is unreadable."));
     }
     return this.#watch(handle.operationId, decoded, 0);
+  }
+
+  /**
+   * Reads a thread's activities and session: its snapshot and catch-up, and
+   * then live events for as long as `until` has not been met.
+   */
+  #readThread(
+    operation: string,
+    threadId: string,
+    until: (view: ThreadView) => boolean = (view) => view.synchronized,
+  ): Promise<ThreadView> {
+    const options = this.#options;
+    return this.#run(
+      operation,
+      Effect.gen(function* () {
+        const empty: ThreadView = { activities: [], session: null, synchronized: false };
+        const final = yield* options.client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+          threadId,
+          requestCompletionMarker: true,
+        } as never).pipe(Stream.scan(empty, foldThread), Stream.takeUntil(until), Stream.runLast);
+        return final._tag === "Some" ? final.value : empty;
+      }),
+    );
+  }
+
+  pendingRequests(handle: StageHandle): Promise<readonly ProviderRequest[]> {
+    const decoded = decodeHandle(handle.handle);
+    if (decoded === null) return Promise.resolve([]);
+    return this.#readThread("pendingRequests", decoded.threadId).then((view) =>
+      approvalsFrom(view.activities, view.session),
+    );
+  }
+
+  /**
+   * Answers one approval, and reports what the provider made of it.
+   *
+   * An expired request is reported without sending anything: answering it
+   * would ask T3 to replay a callback the provider no longer holds. Otherwise
+   * the answer is sent and the thread is read until T3 records either the
+   * resolution or the provider's refusal.
+   */
+  answerRequest(
+    handle: StageHandle,
+    requestId: string,
+    decision: ProviderDecision,
+  ): Promise<AnswerOutcome> {
+    const decoded = decodeHandle(handle.handle);
+    if (decoded === null) {
+      return Promise.resolve({ kind: "not-pending", reason: "The stage handle is unreadable." });
+    }
+    const options = this.#options;
+    const threadId = decoded.threadId;
+
+    return this.#readThread("answerRequest", threadId).then(async (before) => {
+      const request = approvalsFrom(before.activities, before.session).find(
+        (candidate) => candidate.requestId === requestId,
+      );
+      if (request === undefined) {
+        return {
+          kind: "not-pending",
+          reason: `No approval ${requestId} is waiting on this stage.`,
+        };
+      }
+      if (request.expired) {
+        return {
+          kind: "expired",
+          reason:
+            "The provider session that asked for this approval has ended, so it can no longer take an answer. Restart the stage to continue.",
+        };
+      }
+
+      const seen = repliesTo(before.activities, requestId).length;
+      await this.#run(
+        "answerRequest",
+        options.client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+          type: "thread.approval.respond",
+          commandId: `wl-answer-${requestId}-${String(seen)}`,
+          threadId,
+          requestId,
+          decision,
+          createdAt: options.now(),
+        } as never),
+      );
+      const after = await this.#readThread(
+        "answerRequest",
+        threadId,
+        (view) => answerOutcomeFrom(view.activities, requestId, seen) !== null,
+      );
+      return (
+        answerOutcomeFrom(after.activities, requestId, seen) ?? {
+          kind: "not-pending",
+          reason: "The thread subscription ended before the provider replied.",
+        }
+      );
+    });
   }
 
   /**

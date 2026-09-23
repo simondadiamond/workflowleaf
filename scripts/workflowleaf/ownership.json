@@ -8,7 +8,12 @@
     "apps/server/src/workflowleaf/",
     "apps/web/src/features/workflowleaf/"
   ],
-  "ownedFiles": ["packages/contracts/src/workflowleaf.ts", ".github/workflows/workflowleaf.yml"],
+  "ownedFiles": [
+    "packages/contracts/src/workflowleaf.ts",
+    ".github/workflows/workflowleaf.yml",
+    ".github/workflows/workflowleaf-t3.yml",
+    ".github/workflows/workflowleaf-housekeeping.yml"
+  ],
   "maxUpstreamEdits": 2,
   "allowedUpstreamEdits": [
     {

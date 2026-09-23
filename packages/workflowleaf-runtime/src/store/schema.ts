@@ -137,6 +137,36 @@ export const MIGRATIONS: readonly {
          SET document = json_set(document, '$.pullRequest', json('null'), '$.scopeSplit', json('null'))`,
     ],
   },
+  {
+    id: 3,
+    name: "decisions-are-asked",
+    sql: [
+      // A decision is recorded against the visit that raised it, and whether a
+      // person was asked somewhere they already look, and where the answer
+      // came from.
+      `ALTER TABLE wl_decisions ADD COLUMN visit_id TEXT`,
+      `ALTER TABLE wl_decisions ADD COLUMN asked_at TEXT`,
+      `ALTER TABLE wl_decisions ADD COLUMN answered_via TEXT`,
+    ],
+  },
+  {
+    id: 4,
+    name: "findings",
+    sql: [
+      // What a run noticed and did not act on: a stage's "found, not fixed"
+      // notes, and what code saw that no gate judges. Keyed by content, so
+      // reading the same note twice records it once.
+      `CREATE TABLE IF NOT EXISTS wl_findings (
+         run_id TEXT NOT NULL,
+         stage_id TEXT NOT NULL,
+         source TEXT NOT NULL,
+         digest TEXT NOT NULL,
+         detail TEXT NOT NULL,
+         at TEXT NOT NULL,
+         PRIMARY KEY (run_id, digest)
+       )`,
+    ],
+  },
 ];
 
 export const runMigrations = Effect.fnUntraced(function* () {

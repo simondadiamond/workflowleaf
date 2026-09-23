@@ -6,23 +6,63 @@
  * contexts: stage B reads what stage A produced, not how stage A talked itself
  * into producing it.
  *
- * Skills are referenced by path rather than pasted in. A stage that needs the
- * testing skill can read it; copying the whole library into every prompt makes
- * the stage more expensive and worse at its job.
+ * Skills are named rather than pasted in. A stage that needs the testing skill
+ * loads it; copying the whole library into every prompt makes the stage more
+ * expensive and worse at its job. The name comes first and the path is a
+ * fallback, because naming a path is an invitation to `cat` the file, and a
+ * `cat` that trips the harness output cap hands the stage a truncated skill
+ * that still looks like a skill.
  */
 import type { ResolvedStage, RunPlan, StageId } from "@t3tools/workflowleaf-core";
+
+/** Where a stage records what it found and did not fix. Read by the worker after each turn. */
+export const FINDINGS_PATH = ".workflowleaf/findings.md";
 
 export interface PromptInput {
   readonly runId: string;
   readonly stage: ResolvedStage;
   readonly plan: RunPlan;
   readonly workspacePath: string;
-  /** Path-triggered skills selected from the paths this stage will touch. */
+  /** Path-triggered skills selected from the paths the run has changed. */
   readonly extraSkills: readonly { readonly id: string; readonly path: string }[];
   /** Present only when this is a correction inside an existing context. */
   readonly correction: string | null;
   /** The `gh` config directory this repository needs, when it is not the active account's. */
   readonly ghConfigDir?: string | undefined;
+  /** The profile's permissions, which the stage is told and asked to keep. */
+  readonly permissions?: StagePermissions | undefined;
+}
+
+export interface StagePermissions {
+  readonly commentOnPullRequest: boolean;
+  readonly merge: boolean;
+}
+
+/**
+ * What the profile lets the run do on GitHub, as the stage has to hear it.
+ *
+ * The flags describe what WorkflowLeaf does, but an agent with `gh` can do the
+ * same things, and in issue-1598-1 one commented on a pull request and opened an
+ * issue under a profile that permits neither. This asks. It cannot enforce:
+ * only the provider's approvals stand between an agent and a `gh` call.
+ */
+function permissionsSection(permissions: StagePermissions): string {
+  const rules = [
+    "Do not open issues. Put anything you would have filed in `" + FINDINGS_PATH + "`.",
+    permissions.commentOnPullRequest
+      ? "You may comment on this run's pull request and reply to or resolve its review threads."
+      : "Do not comment on or review any pull request, and do not reply to or resolve review threads. That includes scripts that post for you. If your instructions ask for a comment, do the rest and write what you would have posted in `" +
+        FINDINGS_PATH +
+        "`.",
+    ...(permissions.merge ? [] : ["Do not merge any pull request."]),
+  ];
+  return [
+    "## What this run may do on GitHub",
+    "",
+    "Pushing the run's branch is always allowed. Beyond that, this run's profile says:",
+    "",
+    ...rules.map((rule) => `- ${rule}`),
+  ].join("\n");
 }
 
 function describeGate(gate: ResolvedStage["gates"][number]): string {
@@ -71,6 +111,10 @@ export function compileStagePrompt(input: PromptInput): string {
     );
   }
 
+  if (input.permissions !== undefined) {
+    sections.push(permissionsSection(input.permissions));
+  }
+
   if (input.correction !== null) {
     sections.push(`## This is a correction\n\n${input.correction}`);
   }
@@ -115,12 +159,21 @@ export function compileStagePrompt(input: PromptInput): string {
       [
         "## Skills",
         "",
-        "Read these before you start. They are instructions for this repository, not suggestions.",
+        "Load each of these by name, with your harness's skill tool, before you start.",
+        "In Claude Code that is `Skill(<name>)`. They are instructions for this repository,",
+        "not suggestions.",
         "",
         ...skills.map(
           (skill) =>
-            `- ${skill.id}${skill.required ? "" : " (selected from the paths you will touch)"}: \`${skill.path}/SKILL.md\``,
+            `- \`${skill.id}\`${skill.required ? "" : " (selected from the paths this run has changed)"}`,
         ),
+        "",
+        "Do not open a skill's file instead. The skill tool gives you the whole skill, while",
+        "a `cat` or a `Read` can be silently truncated, and a truncated skill is worse than no",
+        "skill. Only if your harness has no skill tool, read these files, one per command, and",
+        "confirm you got the whole file before you use it:",
+        "",
+        ...skills.map((skill) => `- ${skill.id}: \`${skill.path}/SKILL.md\``),
       ].join("\n"),
     );
   }
@@ -134,6 +187,17 @@ export function compileStagePrompt(input: PromptInput): string {
       ].join("\n"),
     );
   }
+
+  sections.push(
+    [
+      "## Found, not fixed",
+      "",
+      `If you notice a problem you are not fixing in this stage, such as a broken check, a`,
+      `bug outside your task, or a nit you left alone, append it to \`${FINDINGS_PATH}\`, one`,
+      "short paragraph each with the file it concerns. Your closing message reaches only this",
+      "thread; that file reaches whoever runs the work. Do not open an issue for it instead.",
+    ].join("\n"),
+  );
 
   if (stage.gates.length > 0) {
     sections.push(

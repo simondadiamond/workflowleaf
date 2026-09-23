@@ -6,7 +6,7 @@
  * terminal that has been sitting open cannot advance a run that moved on
  * without it.
  */
-import { formatDiagnostics, SATISFYING } from "@t3tools/workflowleaf-core";
+import { formatDiagnostics } from "@t3tools/workflowleaf-core";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -17,14 +17,20 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { prettyJson } from "./canonical.ts";
+import { fetchBase } from "./git.ts";
 import { groupByCause, readLearningLog, sinceInstant } from "./learningLog.ts";
 import { loadPlaybook } from "./load.ts";
 import {
+  answeredFromCli,
+  cancelRun,
+  decisionPortFor,
   describeRun,
   nextRunId,
   PROGRESS_LOG,
   resumeRun,
   runDirFor,
+  stageInFlight,
+  startingRun,
   startRun,
   summarizeRuns,
 } from "./run.ts";
@@ -37,6 +43,7 @@ import {
 } from "./profile.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { loadSkillCatalog } from "./skillCatalog.ts";
+import { replayRun } from "./replay.ts";
 import type { RunProgress } from "./worker.ts";
 
 export class PlaybookInvalid extends Schema.TaggedError<PlaybookInvalid>()("WlPlaybookInvalid", {
@@ -256,15 +263,19 @@ export function formatProgress(event: RunProgress): string {
         .map((verdict) => `${verdict.gateId} ${verdict.outcome}`)
         .join(", ");
       // A failing gate's first line of detail is what makes the verdict
-      // actionable; the rest of it is already in the evidence log.
-      const detail = event.verdicts
-        .filter((verdict) => !SATISFYING.includes(verdict.outcome))
-        .map((verdict) => `\n    ${verdict.gateId}: ${verdict.summary.split("\n")[0] ?? ""}`)
+      // actionable, and an external gate's says what GitHub showed; the rest
+      // is already in the evidence log.
+      const detail = Object.entries(event.details)
+        .map(([gateId, line]) => `\n    ${gateId}: ${line}`)
         .join("");
       return `  ${event.stageId}: gates ${verdicts || "none"}${detail}`;
     }
     case "stage-settled":
       return `  ${event.stageId}: ${event.state}`;
+    case "pull-request-ready":
+      return event.failure === null
+        ? `  pull request #${String(event.number)}: marked ready for review`
+        : `  pull request #${String(event.number)}: could not be marked ready: ${event.failure.split("\n")[0] ?? ""}`;
   }
 }
 
@@ -284,6 +295,15 @@ const reportResult = Effect.fnUntraced(function* (runId: string, stopped: string
   }
   if (detail.value.stage !== null) yield* Console.log(`  stage: ${detail.value.stage}`);
   if (detail.value.attention !== null) yield* Console.log(`  needs you: ${detail.value.attention}`);
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId as never);
+  const pending = Option.isSome(loaded) ? loaded.value.record.decision : null;
+  const asked = pending === null ? Option.none() : yield* store.findDecision(pending.decisionId);
+  if (Option.isSome(asked) && asked.value.askedAt !== null && asked.value.answeredAt === null) {
+    yield* Console.log(
+      `  asked on the T3 thread "WorkflowLeaf decision: ${runId}". Answer there, then \`wl resume ${runId} --profile <profile> --poll 30\` picks it up; or \`wl decide ${runId} <answer>\`.`,
+    );
+  }
   for (const limitation of detail.value.limitations) {
     yield* Console.log(`  limitation at ${limitation.stageId}: ${limitation.detail}`);
   }
@@ -298,6 +318,18 @@ export function slugify(story: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Where a run branches from when `--base` is not given: the branch its pull
+ * request targets, fetched now. HEAD of the profile's checkout is whatever
+ * someone last left there, which for FBM was a dirty working branch.
+ */
+const baseRefFor = Effect.fnUntraced(function* (profile: Profile, typed: Option.Option<string>) {
+  if (Option.isSome(typed)) return typed.value;
+  const pullRequest = profile.pullRequest;
+  if (pullRequest === undefined) return "HEAD";
+  return yield* fetchBase(profile.repoRoot, pullRequest.remote, pullRequest.baseBranch);
+});
+
 const runCommand = Command.make(
   "run",
   {
@@ -306,8 +338,10 @@ const runCommand = Command.make(
     input: inputFlag,
     owner: ownerFlag,
     base: Flag.String("base").pipe(
-      Flag.withDescription("Revision the run's worktree branches from."),
-      Flag.withDefault("HEAD"),
+      Flag.withDescription(
+        "Revision the run's worktree branches from. Defaults to the profile's pull request base branch, freshly fetched, or HEAD when the profile opens no pull request.",
+      ),
+      Flag.optional,
     ),
     story: Flag.String("story").pipe(
       Flag.withDescription(
@@ -339,7 +373,7 @@ const runCommand = Command.make(
       profile,
       playbookDir,
       inputs,
-      baseRef: base,
+      baseRef: yield* baseRefFor(profile, base),
       owner,
       progress: printProgress,
     });
@@ -377,7 +411,12 @@ const statusCommand = Command.make(
     if (Option.isSome(run)) {
       const detail = yield* describeRun(run.value as never);
       if (Option.isNone(detail)) {
-        yield* Console.error(`No run ${run.value}.`);
+        const starting = yield* startingRun(run.value);
+        yield* Option.isSome(starting)
+          ? Console.log(
+              `${run.value} has no record yet. Its start is opening the worktree and pull request; last progress: ${starting.value}`,
+            )
+          : Console.error(`No run ${run.value}.`);
         return;
       }
       yield* Console.log(
@@ -393,12 +432,16 @@ const statusCommand = Command.make(
     }
     for (const summary of summaries) {
       const attention = summary.attention === null ? "" : `  ${summary.attention}`;
+      const findings =
+        summary.findings === 0
+          ? ""
+          : `  ${String(summary.findings)} found, not fixed (status ${summary.runId})`;
       // Every run shows its pull request, including the runs that have none:
       // "no pull request" is a fact about the run, not a blank.
       const pullRequest =
         summary.pullRequest === null ? "no PR" : `#${String(summary.pullRequest.number)}`;
       yield* Console.log(
-        `${summary.state.padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}`,
+        `${(summary.stale ? "running, stale" : summary.state).padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}${findings}`,
       );
     }
   }),
@@ -454,12 +497,35 @@ const resumeCommand = Command.make(
     if (Option.isSome(poll)) {
       // Waiting on CI or reviewers is waiting on something that cannot notify
       // us, so this asks again on an interval, bounded so it cannot run forever.
+      // A decision asked on a thread is waited on directly: its answer arrives
+      // on the thread's subscription, so there is nothing to poll.
       const interval = Math.max(10, poll.value);
+      const deadline = pollFor * 60;
       let waited = 0;
-      while (result.stopped === "waiting-external" && waited + interval <= pollFor * 60) {
-        yield* Effect.sleep(`${interval} seconds`);
-        waited += interval;
-        result = yield* resumeOnce();
+      while (waited + interval <= deadline) {
+        if (result.stopped === "waiting-external") {
+          yield* Effect.sleep(`${interval} seconds`);
+          waited += interval;
+          result = yield* resumeOnce();
+          continue;
+        }
+        if (result.stopped === "needs-decision") {
+          const answered = yield* resumeRun({
+            runId: run as never,
+            profile,
+            owner,
+            inputs: [{ type: "resume" }],
+            progress: printProgress,
+            waitForAnswer: true,
+          }).pipe(Effect.timeoutOption(`${deadline - waited} seconds`));
+          if (Option.isNone(answered)) break;
+          if (answered.value.stopped === "needs-decision" && answered.value.transitions === 0) {
+            break;
+          }
+          result = answered.value;
+          continue;
+        }
+        break;
       }
     }
     yield* reportResult(run, result.stopped);
@@ -477,7 +543,10 @@ const errorsCommand = Command.make(
       Flag.withDescription("How far back: 30d, 12h, 90m, or an ISO instant."),
       Flag.withDefault("30d"),
     ),
-    json: Flag.Boolean("json").pipe(Flag.withDescription("Print every entry as JSON.")),
+    json: Flag.Boolean("json").pipe(
+      Flag.withDescription("Print every entry as JSON."),
+      Flag.withDefault(false),
+    ),
   },
   Effect.fnUntraced(function* ({ since, json }) {
     const from = yield* sinceInstant(since);
@@ -541,16 +610,20 @@ const cancelCommand = Command.make(
   Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision, reason }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const result = yield* resumeRun({
+    const result = yield* cancelRun({
       runId: run as never,
       profile,
       owner,
-      inputs: [{ type: "cancel", reason }],
+      reason,
       progress: printProgress,
     });
     yield* reportResult(run, result.stopped);
   }),
-).pipe(Command.withDescription("Cancel a run, interrupting whatever it is doing."));
+).pipe(
+  Command.withDescription(
+    "Cancel a run without starting anything. A stage still in flight is interrupted if its executor answers.",
+  ),
+);
 
 const decideCommand = Command.make(
   "decide",
@@ -576,6 +649,7 @@ const decideCommand = Command.make(
     }
 
     const profile = yield* loadProfile(profileName);
+    yield* answeredFromCli(run as never, answer, yield* decisionPortFor(profile));
     const result = yield* resumeRun({
       runId: run as never,
       profile,
@@ -596,6 +670,130 @@ const decideCommand = Command.make(
   }),
 ).pipe(Command.withDescription("Answer the decision a run is waiting on."));
 
+const requestsCommand = Command.make(
+  "requests",
+  { run: runIdArgument, profile: profileFlag },
+  Effect.fnUntraced(function* ({ run, profile: profileName }) {
+    const stage = yield* stageInFlight(run as never, yield* loadProfile(profileName));
+    if (stage === null) {
+      yield* Console.log(`${run}: no stage is running, so no provider is asking.`);
+      return;
+    }
+    const requests = yield* Effect.promise(() => stage.executor.pendingRequests(stage.handle));
+    if (requests.length === 0) {
+      yield* Console.log(`${run} ${stage.stageId}: the provider is not waiting on an approval.`);
+      return;
+    }
+    for (const request of requests) {
+      yield* Console.log(
+        `${request.expired ? "expired " : "waiting "} ${request.requestId}  ${request.detail}`,
+      );
+    }
+  }),
+).pipe(
+  Command.withDescription(
+    "List the approvals the provider is waiting on in the run's current stage.",
+  ),
+);
+
+const answerCommand = Command.make(
+  "answer",
+  {
+    run: runIdArgument,
+    request: Argument.String("request").pipe(
+      Argument.withDescription("The request id `wl requests` shows."),
+    ),
+    decision: Argument.String("decision").pipe(Argument.withDescription("accept | decline")),
+    profile: profileFlag,
+  },
+  Effect.fnUntraced(function* ({ run, request, decision, profile: profileName }) {
+    if (decision !== "accept" && decision !== "decline") {
+      yield* Console.error("The decision must be accept or decline.");
+      return;
+    }
+    const stage = yield* stageInFlight(run as never, yield* loadProfile(profileName));
+    if (stage === null) {
+      yield* Console.error(`${run}: no stage is running, so there is nothing to answer.`);
+      return;
+    }
+    const outcome = yield* Effect.promise(() =>
+      stage.executor.answerRequest(stage.handle, request, decision),
+    );
+    switch (outcome.kind) {
+      case "answered":
+        yield* Console.log(`${request}: ${decision === "accept" ? "accepted" : "declined"}.`);
+        return;
+      case "expired":
+        return yield* new RequestNotAnswered({
+          requestId: request,
+          state: "expired",
+          reason: outcome.reason,
+        });
+      case "not-pending":
+        return yield* new RequestNotAnswered({
+          requestId: request,
+          state: "not pending",
+          reason: outcome.reason,
+        });
+    }
+  }),
+).pipe(
+  Command.withDescription(
+    "Accept or decline an approval the provider is waiting on. An expired one is reported, never replayed.",
+  ),
+);
+
+export class RequestNotAnswered extends Schema.TaggedError<RequestNotAnswered>()(
+  "WlRequestNotAnswered",
+  { requestId: Schema.String, state: Schema.String, reason: Schema.String },
+) {
+  override get message(): string {
+    return `${this.requestId} is ${this.state}: ${this.reason}`;
+  }
+}
+
+/** A replay that disagreed with the recorded history. The exit status is the point. */
+export class ReplayDiverged extends Schema.TaggedError<ReplayDiverged>()("WlReplayDiverged", {
+  runs: Schema.Array(Schema.String),
+}) {
+  override get message(): string {
+    return `The controller no longer reproduces ${this.runs.join(", ")}.`;
+  }
+}
+
+const replayCommand = Command.make(
+  "replay",
+  { run: Argument.String("run").pipe(Argument.optional) },
+  Effect.fnUntraced(function* ({ run }) {
+    const store = yield* RunStore;
+    const runIds = Option.isSome(run)
+      ? [run.value]
+      : (yield* store.listRuns()).map((loaded) => loaded.record.runId as string).sort();
+
+    const diverged: string[] = [];
+    for (const runId of runIds) {
+      const report = yield* replayRun(runId as never);
+      const divergence = report.divergence;
+      if (divergence === null) {
+        yield* Console.log(`${runId}: ${String(report.transitions)} transition(s) reproduced`);
+        continue;
+      }
+      diverged.push(runId);
+      const where =
+        divergence.seq === null ? "the final state" : `transition ${String(divergence.seq)}`;
+      yield* Console.error(`${runId}: diverged at ${where} (${divergence.what})`);
+      yield* Console.error(`  recorded:\n${divergence.recorded}`);
+      yield* Console.error(`  replayed:\n${divergence.replayed}`);
+    }
+
+    if (diverged.length > 0) return yield* new ReplayDiverged({ runs: diverged });
+  }),
+).pipe(
+  Command.withDescription(
+    "Re-run a run's recorded transitions through the controller and fail if the outcome differs. Every run when none is named.",
+  ),
+);
+
 export const wlCommand = Command.make("wl").pipe(
   Command.withDescription("WorkflowLeaf: run playbooks as staged, gated, evidence-backed work."),
   Command.withSubcommands([
@@ -607,7 +805,10 @@ export const wlCommand = Command.make("wl").pipe(
     pauseCommand,
     cancelCommand,
     decideCommand,
+    requestsCommand,
+    answerCommand,
     errorsCommand,
+    replayCommand,
     skillsCommand,
     profileCommand,
   ]),

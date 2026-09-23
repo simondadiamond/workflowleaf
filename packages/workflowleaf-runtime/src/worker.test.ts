@@ -1,18 +1,22 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // The stand-in executor writes to the worktree the way a provider would, which
 // has to happen synchronously inside a Promise-returning port.
-import * as NodeFs from "node:fs";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  decide,
   initialRun,
+  type AnswerOutcome,
   type ContinueOutcome,
   type ExecutorCapabilities,
   type ExecutorPort,
   type InspectOutcome,
   type OperationId,
+  type ProviderRequest,
   type RunId,
   type RunPlan,
   type StageHandle,
@@ -23,6 +27,8 @@ import {
 import {
   capabilities,
   commandGatePlan,
+  LAZY_SKILL,
+  lazySkillPlan,
   sequentialIds,
   twoStagePlan,
 } from "@t3tools/workflowleaf-core/testing";
@@ -33,9 +39,13 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { git } from "./git.ts";
+import { readLearningLog } from "./learningLog.ts";
+import { PullRequestError } from "./pullRequest.ts";
+import { replayRun } from "./replay.ts";
+import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
-import { drive, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
+import { cancel, drive, ExecutorFailed, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 const plan: RunPlan = twoStagePlan();
@@ -51,7 +61,7 @@ type Action = (workspacePath: string) => void;
 const write =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
-    NodeFs.writeFileSync(NodePath.join(workspacePath, relativePath), content);
+    NodeFS.writeFileSync(NodePath.join(workspacePath, relativePath), content);
   };
 
 /** Writes into a directory the stage may not have created yet. */
@@ -59,8 +69,8 @@ const writeUnder =
   (relativePath: string, content: string): Action =>
   (workspacePath) => {
     const target = NodePath.join(workspacePath, relativePath);
-    NodeFs.mkdirSync(NodePath.dirname(target), { recursive: true });
-    NodeFs.writeFileSync(target, content);
+    NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+    NodeFS.writeFileSync(target, content);
   };
 
 const doNothing: Action = () => {};
@@ -167,12 +177,59 @@ class WritingExecutor implements ExecutorPort {
       at: "2026-01-01T00:00:00.000Z",
     });
   }
+
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return Promise.resolve([]);
+  }
+
+  answerRequest(): Promise<AnswerOutcome> {
+    return Promise.resolve({
+      kind: "not-pending",
+      reason: "This executor has no provider to ask.",
+    });
+  }
+}
+
+/** An executor whose server is gone. It records what it was asked, then refuses. */
+class FailingExecutor implements ExecutorPort {
+  readonly calls: string[] = [];
+
+  #refuse(call: string): Promise<never> {
+    this.calls.push(call);
+    return Promise.reject(new Error("socket ticket refused"));
+  }
+
+  capabilities(): Promise<ExecutorCapabilities> {
+    return this.#refuse("capabilities");
+  }
+  startStage(request: StageRequest): Promise<StageHandle> {
+    return this.#refuse(`startStage ${request.stage.contract.id as string}`);
+  }
+  continueStage(handle: StageHandle): Promise<ContinueOutcome> {
+    return this.#refuse(`continueStage ${handle.handle}`);
+  }
+  inspect(operationId: OperationId): Promise<InspectOutcome> {
+    return this.#refuse(`inspect ${operationId as string}`);
+  }
+  interrupt(handle: StageHandle): Promise<void> {
+    return this.#refuse(`interrupt ${handle.handle}`);
+  }
+  awaitSettlement(handle: StageHandle): Promise<StageSettlement> {
+    return this.#refuse(`awaitSettlement ${handle.handle}`);
+  }
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return this.#refuse("pendingRequests");
+  }
+  answerRequest(): Promise<AnswerOutcome> {
+    return this.#refuse("answerRequest");
+  }
 }
 
 const setUpRun = Effect.fnUntraced(function* (
   runId: string,
   runCapabilities: ExecutorCapabilities = capabilities(),
   runPlan: RunPlan = plan,
+  pullRequestNumber: number | null = null,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -198,6 +255,16 @@ const setUpRun = Effect.fnUntraced(function* (
       maxRepairCycles: 2,
       deadlineAt: null,
       now: "2026-01-01T00:00:00.000Z",
+      pullRequest:
+        pullRequestNumber === null
+          ? null
+          : {
+              number: pullRequestNumber,
+              url: `https://example.test/pull/${String(pullRequestNumber)}`,
+              headBranch: `workflowleaf/${runId}`,
+              baseBranch: "main",
+              openedAt: "2026-01-01T00:00:00.000Z",
+            },
     }),
     plan: runPlan,
     story: "story",
@@ -212,6 +279,7 @@ const setUpRun = Effect.fnUntraced(function* (
     repoRoot: repo,
     worktreeRoot: path.join(root, "worktrees"),
     baseRevision: head,
+    branchPrefix: "workflowleaf",
   });
 
   const lease = yield* store.acquireLease(runId as RunId, "worker-a", 60);
@@ -221,6 +289,19 @@ const setUpRun = Effect.fnUntraced(function* (
 });
 
 const ARTIFACT = "a paragraph that is comfortably longer than eight bytes\n";
+
+/** The two-stage plan, with its first stage delivering the pull request. */
+const deliverPlan: RunPlan = {
+  ...plan,
+  stages: plan.stages.map((stage) =>
+    stage.contract.id === "produce"
+      ? {
+          ...stage,
+          contract: { ...stage.contract, produces: [...stage.contract.produces, "pull-request"] },
+        }
+      : stage,
+  ),
+};
 const SUMMARY = "one sentence.\n";
 
 it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
@@ -274,7 +355,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
           summarize: [
             (workspacePath) => {
               // Read from "outside" while the second stage is still running.
-              seenMidRun = NodeFs.readFileSync(progressLog, "utf8");
+              seenMidRun = NodeFS.readFileSync(progressLog, "utf8");
               write("summary.md", SUMMARY)(workspacePath);
             },
           ],
@@ -712,6 +793,201 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.deepStrictEqual(executor.starts, []);
     }).pipe(Effect.scoped),
   );
+  it.effect(
+    "cancels a run with a lost dispatch without starting it again or reaching the executor",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* RunStore;
+        const { lease } = yield* setUpRun("run-cancel-stale");
+
+        // The run was started and its worker died with the first stage in flight:
+        // the dispatch is on record and nothing ever settled it.
+        const loaded = yield* store.loadRun("run-cancel-stale" as RunId);
+        if (Option.isNone(loaded)) return yield* Effect.die("no run");
+        const started = decide(
+          {
+            run: loaded.value.record,
+            plan,
+            now: "2026-01-01T00:00:00.000Z",
+            ids: sequentialIds("s"),
+          },
+          { type: "start" },
+        );
+        yield* store.commit({
+          previous: loaded.value.record,
+          next: started.run,
+          transitionInput: { type: "start" },
+          effects: started.effects,
+          lease,
+        });
+        const dispatch = started.effects.find((effect) => effect.type === "dispatch-stage");
+        if (dispatch?.type !== "dispatch-stage") return yield* Effect.die("no dispatch");
+        yield* store.recordIntent({
+          operationId: dispatch.operationId,
+          runId: "run-cancel-stale" as RunId,
+          visitId: dispatch.visitId as string,
+          attemptId: dispatch.attemptId as string,
+          kind: "start",
+          idempotencyKey: "run-cancel-stale:first",
+        });
+        yield* store.acknowledgeOperation(dispatch.operationId, "thread-of-a-dead-server");
+
+        // The executor the run was started on is gone: every call fails.
+        const executor = new FailingExecutor();
+        const result = yield* cancel({
+          runId: "run-cancel-stale" as RunId,
+          reason: "dead experiment",
+          lease,
+          ids: sequentialIds("c"),
+          interrupt: (handle) =>
+            Effect.tryPromise({
+              try: () => executor.interrupt(handle),
+              catch: (cause) =>
+                new ExecutorFailed({ operation: "interrupt", detail: String(cause) }),
+            }),
+        });
+
+        assert.strictEqual(result.record.state, "cancelled");
+        assert.strictEqual(result.stopped, "finished");
+        assert.deepStrictEqual(executor.calls, ["interrupt thread-of-a-dead-server"]);
+        const after = yield* store.loadRun("run-cancel-stale" as RunId);
+        if (Option.isNone(after)) return yield* Effect.die("no run");
+        assert.strictEqual(after.value.record.state, "cancelled");
+        assert.lengthOf(yield* store.unsettledOperations("run-cancel-stale" as RunId), 0);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("records what a stage found and did not fix, once, and clears the file", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-findings");
+      const note = "checks/mapped-tests.sh misses top-level functions/*.js files.\n";
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (at) => {
+              write("artifact.md", ARTIFACT)(at);
+              writeUnder(".workflowleaf/findings.md", note)(at);
+            },
+          ],
+          // The next stage writes the same note again, as a stage that read the
+          // same broken check would.
+          summarize: [
+            (at) => {
+              write("summary.md", SUMMARY)(at);
+              writeUnder(".workflowleaf/findings.md", note)(at);
+            },
+          ],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-findings" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("f"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          permissions: { commentOnPullRequest: false, merge: false },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // Not a gate: the run finishes as it would have without the note.
+      assert.strictEqual(result.record.state, "succeeded");
+      const findings = yield* store.findingsFor("run-findings" as RunId);
+      assert.deepStrictEqual(
+        findings.map((finding) => [finding.stageId, finding.source, finding.detail]),
+        [["produce", "stage", note.trim()]],
+      );
+      assert.isFalse(yield* fs.exists(path.join(workspace.path, ".workflowleaf/findings.md")));
+      assert.include(executor.prompts[0] ?? "", ".workflowleaf/findings.md");
+      // The profile's permissions reach every dispatched stage.
+      for (const prompt of executor.prompts) {
+        assert.include(prompt, "Do not comment on or review any pull request");
+      }
+
+      const logged = yield* readLearningLog("");
+      assert.isTrue(
+        logged.some(
+          (entry) =>
+            entry.kind === "finding" &&
+            entry.runId === "run-findings" &&
+            entry.stageId === "produce",
+        ),
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("reports a file changed through a symlink that leaves the worktree", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-escape");
+
+      // As FBM's post-checkout hook does: the worktree's .claude is the main
+      // checkout's, so an edit through it lands in a directory git never reads.
+      const shared = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(path.join(shared, "hooks"));
+      yield* fs.writeFileString(path.join(shared, "hooks", "map.sh"), "old\n");
+      yield* fs.writeFileString(path.join(shared, "untouched.md"), "same\n");
+      // Claude Code keeps other checkouts under .claude/worktrees; they are not
+      // this run's, and a busy one must not be reported against it.
+      yield* fs.makeDirectory(path.join(shared, "worktrees", "other"), { recursive: true });
+      yield* fs.writeFileString(path.join(shared, "worktrees", "other", ".git"), "gitdir: x\n");
+      yield* fs.writeFileString(path.join(shared, "worktrees", "other", "busy.txt"), "1\n");
+      yield* fs.symlink(shared, path.join(workspace.path, ".claude"));
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (at) => {
+              write("artifact.md", ARTIFACT)(at);
+              write(".claude/hooks/map.sh", "new\n")(at);
+              write(".claude/worktrees/other/busy.txt", "2\n")(at);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-escape" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("e"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      const findings = yield* store.findingsFor("run-escape" as RunId);
+      assert.deepStrictEqual(
+        findings.map((finding) => [finding.stageId, finding.source]),
+        [["produce", "outside-worktree"]],
+      );
+      const detail = findings[0]?.detail ?? "";
+      assert.include(detail, ".claude/hooks/map.sh");
+      assert.include(detail, path.join(yield* fs.realPath(shared), "hooks", "map.sh"));
+      assert.notInclude(detail, "untouched.md");
+      assert.notInclude(detail, "busy.txt");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("reports every stage and gate verdict while it drives, not only at the end", () =>
     Effect.gen(function* () {
       const { workspace, lease, logDir } = yield* setUpRun("run-progress");
@@ -747,7 +1023,7 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       });
 
       assert.deepStrictEqual(
-        seen.map((event) => `${event.kind} ${event.stageId}`),
+        seen.map((event) => `${event.kind} ${"stageId" in event ? event.stageId : event.number}`),
         [
           "stage-started produce",
           "gates produce",
@@ -770,6 +1046,415 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
         (event) => event.kind === "stage-started" && event.correcting,
       );
       assert.lengthOf(corrections, 1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replays a finished run's history to exactly the state it recorded", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay" as RunId,
+        deps: {
+          executor,
+          ids: idSourceFor("run-replay", 0),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      const report = yield* replayRun("run-replay" as RunId);
+      assert.isNull(report.divergence);
+      assert.isAbove(report.transitions, 6);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("replays across a stop for a decision and the drive that answered it", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-decision");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder(SCOPE_SPLIT_PATH, "and the migration too\n")(workspacePath);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const deps = {
+        executor,
+        ids: idSourceFor("run-replay-decision", 0),
+        workspacePath: workspace.path,
+        logDir,
+        owner: "worker-a",
+        leaseSeconds: 60,
+      };
+      const stopped = yield* drive({
+        runId: "run-replay-decision" as RunId,
+        deps,
+        lease,
+        initial: [{ type: "start" }],
+      });
+      // A resumed run mints its ids from a new seed, as `wl resume` does.
+      yield* drive({
+        runId: "run-replay-decision" as RunId,
+        deps: { ...deps, ids: idSourceFor("run-replay-decision", 5) },
+        lease,
+        initial: [
+          {
+            type: "decision-answered",
+            decisionId: stopped.record.decision!.decisionId,
+            answer: "proceed",
+            planDigest: stopped.record.planDigest,
+          },
+        ],
+      });
+
+      const report = yield* replayRun("run-replay-decision" as RunId);
+      assert.isNull(report.divergence);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails at the first transition a changed controller would decide differently", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-changed");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [doNothing, write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay-changed" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // A controller that lets a failing gate through: the past run corrected
+      // `produce`, this one would have moved straight on to `summarize`.
+      const lenient: typeof decide = (context, input) =>
+        decide(
+          context,
+          input.type === "gates-evaluated"
+            ? {
+                ...input,
+                verdicts: input.verdicts.map((verdict) => ({ ...verdict, outcome: "passed" })),
+              }
+            : input,
+        );
+
+      const report = yield* replayRun("run-replay-changed" as RunId, lenient);
+      assert.strictEqual(report.divergence?.what, "effects");
+      assert.strictEqual(report.divergence?.seq, 4);
+      assert.include(report.divergence?.recorded ?? "", "continue-stage");
+      assert.include(report.divergence?.replayed ?? "", "summarize");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails on a changed final state even when every effect still matches", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-replay-state");
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      yield* drive({
+        runId: "run-replay-state" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // Spends a repair cycle on every transition and says nothing about it.
+      const leaky: typeof decide = (context, input) => {
+        const decision = decide(context, input);
+        const budget = {
+          ...decision.run.budget,
+          repairCycles: decision.run.budget.repairCycles + 1,
+        };
+        return { ...decision, run: { ...decision.run, budget } };
+      };
+
+      const report = yield* replayRun("run-replay-state" as RunId, leaky);
+      assert.strictEqual(report.divergence?.what, "state");
+      assert.isNull(report.divergence?.seq ?? null);
+      assert.include(report.divergence?.replayed ?? "", "repairCycles");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refreshes a stage that changed paths needing a skill before its gates run", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun(
+        "run-lazy-skill",
+        capabilities(),
+        lazySkillPlan(),
+      );
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (workspacePath) => {
+              write("artifact.md", ARTIFACT)(workspacePath);
+              writeUnder("db/001-add-column.sql", "ALTER TABLE t ADD c int;\n")(workspacePath);
+            },
+            doNothing,
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const seen: RunProgress[] = [];
+
+      const result = yield* drive({
+        runId: "run-lazy-skill" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("s"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          progress: (event) =>
+            Effect.sync(() => {
+              seen.push(event);
+            }),
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      // The first prompt could not know: nothing under db/ existed yet.
+      assert.notInclude(executor.prompts[0] ?? "", "/skills/migrations");
+      // The refresh names the skill, and the gates ran only after it.
+      assert.lengthOf(executor.continues, 1);
+      assert.include(executor.continues[0]?.correction ?? "", "/skills/migrations/SKILL.md");
+      assert.deepStrictEqual(
+        seen
+          .slice(0, 3)
+          .map((event) => `${event.kind} ${"stageId" in event ? event.stageId : event.number}`),
+        ["stage-started produce", "stage-started produce", "gates produce"],
+      );
+      // The next stage is given it up front, chosen from what the run changed.
+      assert.include(
+        executor.prompts[1] ?? "",
+        `\`${LAZY_SKILL}\` (selected from the paths this run has changed)`,
+      );
+      assert.deepStrictEqual(result.record.visits[0]?.skills, [LAZY_SKILL]);
+      assert.strictEqual(result.record.visits[0]?.attempts, 1);
+    }).pipe(Effect.scoped),
+  );
+
+  /**
+   * A stage that ends its turn while a process it started keeps writing: a
+   * line appended every 40ms, `lines` times, or until stopped when null.
+   */
+  const backgroundWriter = (lines: number | null) => {
+    const children: NodeChildProcess.ChildProcess[] = [];
+    const loop =
+      lines === null
+        ? "while true; do echo line >> artifact.md; sleep 0.04; done"
+        : `i=0; while [ $i -lt ${String(lines)} ]; do echo line >> artifact.md; i=$((i+1)); sleep 0.04; done`;
+    const action: Action = (workspacePath) => {
+      children.push(NodeChildProcess.spawn("sh", ["-c", loop], { cwd: workspacePath }));
+    };
+    return { action, stop: () => children.forEach((child) => child.kill()) };
+  };
+
+  it.effect("holds the gates until a background writer the stage left running has finished", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-quiet");
+      const writer = backgroundWriter(10);
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: { produce: [writer.action, doNothing], summarize: [write("summary.md", SUMMARY)] },
+      });
+
+      const result = yield* drive({
+        runId: "run-quiet" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("q"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          quiet: { windowMs: 150, timeoutMs: 5_000 },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      }).pipe(Effect.ensuring(Effect.sync(writer.stop)));
+
+      assert.strictEqual(result.record.state, "succeeded");
+      // Judged once, on the finished file: no correction for a race the stage
+      // did not lose.
+      assert.lengthOf(executor.continues, 0);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops for a person when the worktree never stops changing", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun("run-never-quiet");
+      const writer = backgroundWriter(null);
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: { produce: [writer.action] },
+      });
+
+      const result = yield* drive({
+        runId: "run-never-quiet" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("n"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          quiet: { windowMs: 60, timeoutMs: 300 },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      }).pipe(Effect.ensuring(Effect.sync(writer.stop)));
+
+      assert.strictEqual(result.stopped, "needs-decision");
+      assert.strictEqual(result.record.decision?.kind, "reconciliation");
+      assert.include(result.record.decision?.detail ?? "", "still changing");
+      assert.include(result.record.decision?.detail ?? "", "artifact.md");
+      // No attempt was spent on it.
+      assert.strictEqual(result.record.visits[0]?.attempts, 1);
+      assert.lengthOf(executor.continues, 0);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "marks the pull request ready once the delivering stage passes, before the next stage starts",
+    () =>
+      Effect.gen(function* () {
+        const { workspace, lease, logDir } = yield* setUpRun(
+          "run-ready",
+          capabilities(),
+          deliverPlan,
+          17,
+        );
+        const executor = new WritingExecutor({
+          workspacePath: workspace.path,
+          actions: {
+            // The first attempt fails its gate: nothing is delivered until it passes.
+            produce: [doNothing, write("artifact.md", ARTIFACT)],
+            summarize: [write("summary.md", SUMMARY)],
+          },
+        });
+        const marked: { number: number; startedBefore: string[] }[] = [];
+        const seen: string[] = [];
+
+        const result = yield* drive({
+          runId: "run-ready" as RunId,
+          deps: {
+            executor,
+            ids: sequentialIds("w"),
+            workspacePath: workspace.path,
+            logDir,
+            owner: "worker-a",
+            leaseSeconds: 60,
+            markReady: (number) =>
+              Effect.sync(() => {
+                marked.push({ number, startedBefore: [...executor.starts] });
+              }),
+            progress: (event) =>
+              Effect.sync(() => {
+                seen.push(`${event.kind} ${"stageId" in event ? event.stageId : event.number}`);
+              }),
+          },
+          lease,
+          initial: [{ type: "start" }],
+        });
+
+        assert.strictEqual(result.record.state, "succeeded");
+        assert.deepStrictEqual(marked, [{ number: 17, startedBefore: ["produce"] }]);
+        assert.deepStrictEqual(seen.slice(-5), [
+          "stage-settled produce",
+          "pull-request-ready 17",
+          "stage-started summarize",
+          "gates summarize",
+          "stage-settled summarize",
+        ]);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("reports a pull request it could not mark ready, and keeps going", () =>
+    Effect.gen(function* () {
+      const { workspace, lease, logDir } = yield* setUpRun(
+        "run-ready-fails",
+        capabilities(),
+        deliverPlan,
+        18,
+      );
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [write("artifact.md", ARTIFACT)],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+      const seen: RunProgress[] = [];
+
+      const result = yield* drive({
+        runId: "run-ready-fails" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("w"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          markReady: () => Effect.fail(new PullRequestError({ message: "gh: not permitted" })),
+          progress: (event) =>
+            Effect.sync(() => {
+              seen.push(event);
+            }),
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      const ready = seen.find((event) => event.kind === "pull-request-ready");
+      assert.deepStrictEqual(ready, {
+        kind: "pull-request-ready",
+        number: 18,
+        failure: "gh: not permitted",
+      });
     }).pipe(Effect.scoped),
   );
 });

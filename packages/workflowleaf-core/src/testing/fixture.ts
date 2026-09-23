@@ -121,6 +121,34 @@ export function twoStagePlan(): RunPlan {
   };
 }
 
+export const LAZY_SKILL = "migrations";
+
+/**
+ * The two-stage plan with one path-triggered skill on each stage: a change
+ * under `db/` calls for the `migrations` skill.
+ */
+export function lazySkillPlan(): RunPlan {
+  const base = twoStagePlan();
+  return {
+    ...base,
+    planDigest: digest("plan-lazy-skill-v1"),
+    stages: base.stages.map((resolved) => ({
+      ...resolved,
+      contract: {
+        ...resolved.contract,
+        skills: {
+          required: [],
+          lazy: [LAZY_SKILL],
+          lazyRules: [{ paths: "db/**", load: LAZY_SKILL }],
+        },
+      },
+      lazySkills: [
+        { id: LAZY_SKILL, path: "/skills/migrations", digest: digest("skill-migrations") },
+      ],
+    })),
+  };
+}
+
 export const GATE_ARTIFACT_REVIEWED = "artifact-is-reviewed" as GateId;
 
 /**

@@ -16,31 +16,45 @@
  * runs, and both are on the record from the first write.
  */
 import {
+  currentVisit,
   initialRun,
   type ControllerInput,
+  type DecisionPort,
+  type DecisionRequest,
   type ExecutorPort,
   type IdSource,
   type RunId,
   type RunPlan,
   type RunRecord,
+  type StageHandle,
 } from "@t3tools/workflowleaf-core";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { AssistedExecutor } from "./adapters/assisted.ts";
 import { connect } from "./adapters/t3/connection.ts";
+import { T3DecisionThread } from "./adapters/t3/decisions.ts";
 import { T3Executor } from "./adapters/t3/executor.ts";
 import { digestOf } from "./digest.ts";
 import { revParse } from "./git.ts";
 import { loadPlaybook } from "./load.ts";
 import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
-import { openDraftPullRequest } from "./pullRequest.ts";
+import { markPullRequestReady, openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
-import { drive, type DriveResult, type ProgressSink, type WorkerDeps } from "./worker.ts";
+import {
+  cancel,
+  DEFAULT_QUIET,
+  drive,
+  type DriveResult,
+  ExecutorFailed,
+  type ProgressSink,
+  type WorkerDeps,
+} from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 export class RunError extends Schema.TaggedError<RunError>()("WlRunError", {
@@ -80,6 +94,8 @@ export const nextRunId = Effect.fnUntraced(function* (story: string) {
 export interface ExecutorBinding {
   readonly workspacePath: string;
   readonly branch: string;
+  /** The run whose stages this executor starts. Only a stage-starting executor needs it. */
+  readonly runId?: RunId | undefined;
 }
 
 /**
@@ -104,6 +120,7 @@ export const executorFor = Effect.fnUntraced(function* (
   const store = yield* RunStore;
   const token = yield* executorToken(profile.executor);
   const client = yield* connect(profile.executor.origin, token);
+  const runId = binding.runId;
 
   return new T3Executor({
     client,
@@ -123,8 +140,161 @@ export const executorFor = Effect.fnUntraced(function* (
           Effect.catchCause(() => Effect.succeed(null)),
         ),
       ),
+    earlierHandles:
+      runId === undefined
+        ? undefined
+        : () =>
+            Effect.runPromise(
+              store.loadRun(runId).pipe(
+                Effect.map((loaded) =>
+                  Option.isNone(loaded)
+                    ? []
+                    : loaded.value.record.visits.flatMap((visit) =>
+                        visit.operation?.handle == null ? [] : [visit.operation.handle],
+                      ),
+                ),
+                Effect.catchCause(() => Effect.succeed([] as string[])),
+              ),
+            ),
     now: () => DateTime.formatIso(DateTime.nowUnsafe()),
   }) as ExecutorPort;
+});
+
+/**
+ * Where a profile's runs ask for decisions. A T3 profile asks on a thread of
+ * its own; one with no provider behind it has nowhere to ask but the terminal.
+ */
+export const decisionPortFor = Effect.fnUntraced(function* (profile: Profile) {
+  if (profile.executor.kind === "fake") return null;
+  const token = yield* executorToken(profile.executor);
+  const client = yield* connect(profile.executor.origin, token);
+  return new T3DecisionThread({
+    client,
+    runEffect: (effect) => Effect.runPromise(effect),
+    projectId: profile.executor.projectId,
+    instanceId: profile.executor.provider,
+    model: profile.executor.model ?? "default",
+    now: () => DateTime.formatIso(DateTime.nowUnsafe()),
+  }) as DecisionPort;
+});
+
+/** The question a run is waiting on, as a decision port needs it. Null when it waits on none. */
+const decisionRequestFor = Effect.fnUntraced(function* (runId: RunId) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId);
+  if (Option.isNone(loaded)) return null;
+  const record = loaded.value.record;
+  const workspace = yield* store.findWorkspace(runId);
+  if (record.decision === null || Option.isNone(workspace)) return null;
+  return {
+    runId,
+    decision: record.decision,
+    workspacePath: workspace.value.path,
+    branch: workspace.value.branch,
+    pullRequestUrl: record.pullRequest?.url ?? null,
+  } satisfies DecisionRequest;
+});
+
+/**
+ * Asks for the decision a run stopped on, once. A failure to ask is reported
+ * and swallowed: the decision is on the record either way, and `wl decide`
+ * still answers it.
+ */
+export const askForDecision = Effect.fnUntraced(function* (
+  runId: RunId,
+  port: DecisionPort | null,
+) {
+  if (port === null) return false;
+  const store = yield* RunStore;
+  const request = yield* decisionRequestFor(runId);
+  if (request === null) return false;
+  const row = yield* store.findDecision(request.decision.decisionId);
+  if (Option.isSome(row) && row.value.askedAt !== null) return true;
+  const asked = yield* Effect.tryPromise(() => port.ask(request)).pipe(
+    Effect.as(true),
+    Effect.catchCause(() => Effect.succeed(false)),
+  );
+  if (asked) yield* store.markDecisionAsked(request.decision.decisionId);
+  return asked;
+});
+
+/**
+ * The answer given on the decision's thread, as the input that applies it, or
+ * nothing. With `wait`, blocks until someone answers there.
+ */
+export const answeredOnThread = Effect.fnUntraced(function* (
+  runId: RunId,
+  port: DecisionPort | null,
+  wait: boolean,
+) {
+  if (port === null) return [] as ControllerInput[];
+  const store = yield* RunStore;
+  const request = yield* decisionRequestFor(runId);
+  if (request === null) return [] as ControllerInput[];
+  const row = yield* store.findDecision(request.decision.decisionId);
+  if (Option.isNone(row) || row.value.askedAt === null) return [] as ControllerInput[];
+
+  const answer = yield* Effect.tryPromise(() => port.answer(request, wait)).pipe(
+    Effect.catchCause(() => Effect.succeed(null)),
+  );
+  if (answer === null) return [] as ControllerInput[];
+  yield* store.markDecisionAnswered(request.decision.decisionId, answer, "thread");
+  return [
+    {
+      type: "decision-answered",
+      decisionId: request.decision.decisionId,
+      answer,
+      planDigest: request.decision.planDigest,
+    },
+  ] as ControllerInput[];
+});
+
+/**
+ * Records an answer given from the terminal and takes the thread's question
+ * down, so it does not keep asking for something already decided.
+ */
+export const answeredFromCli = Effect.fnUntraced(function* (
+  runId: RunId,
+  answer: string,
+  port: DecisionPort | null,
+) {
+  const store = yield* RunStore;
+  const request = yield* decisionRequestFor(runId);
+  if (request === null) return;
+  const row = yield* store.findDecision(request.decision.decisionId);
+  yield* store.markDecisionAnswered(request.decision.decisionId, answer, "cli");
+  if (port !== null && Option.isSome(row) && row.value.askedAt !== null) {
+    yield* Effect.tryPromise(() => port.withdraw(request)).pipe(Effect.ignore);
+  }
+});
+
+/**
+ * The executor and the context of the stage a run is in, for reaching the
+ * provider while the stage is still running. Null when no stage is in flight.
+ */
+export const stageInFlight = Effect.fnUntraced(function* (runId: RunId, profile: Profile) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(runId);
+  if (Option.isNone(loaded)) return yield* new RunError({ message: `No run ${runId}.` });
+  const workspace = yield* store.findWorkspace(runId);
+  const visit = currentVisit(loaded.value.record);
+  const operation = visit?.operation ?? null;
+  if (Option.isNone(workspace) || operation === null) return null;
+  // The run record learns the handle only once the stage settles. The
+  // operation row has it from the moment the executor acknowledged the
+  // dispatch, which is when a provider can start asking.
+  const row = yield* store.findOperation(operation.operationId);
+  const handle = Option.isSome(row) ? row.value.handle : operation.handle;
+  if (handle === null) return null;
+  const executor = yield* executorFor(profile, {
+    workspacePath: workspace.value.path,
+    branch: workspace.value.branch,
+  });
+  return {
+    executor,
+    stageId: visit!.stageId as string,
+    handle: { operationId: operation.operationId, handle } satisfies StageHandle,
+  };
 });
 
 /** Appended as the run moves, under the run's directory. Readable while another process drives it. */
@@ -134,6 +304,43 @@ export const runDirFor = Effect.fnUntraced(function* (runId: string) {
   const path = yield* Path.Path;
   return path.join(yield* workflowleafHome(), "runs", runId);
 });
+
+/**
+ * Notes in the run's progress log that its start has begun.
+ *
+ * `startRun` opens the worktree and the pull request before the run record
+ * exists, and that can take several seconds. Without this line, `status`
+ * reports that there is no such run while its pull request is already open.
+ */
+const markStarting = Effect.fnUntraced(
+  function* (runId: string, at: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const runDir = yield* runDirFor(runId);
+    yield* fs.makeDirectory(runDir, { recursive: true });
+    yield* fs.writeFileString(path.join(runDir, PROGRESS_LOG), `${at} run starting\n`, {
+      flag: "a",
+    });
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
+ * For a run with no record, the last progress line its start wrote, if a
+ * start has begun. A start that failed leaves the line too, so the caller
+ * shows when it was written rather than claiming the run is on its way.
+ */
+export const startingRun = Effect.fnUntraced(
+  function* (runId: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const file = path.join(yield* runDirFor(runId), PROGRESS_LOG);
+    if (!(yield* fs.exists(file))) return Option.none<string>();
+    const lines = (yield* fs.readFileString(file)).split("\n").filter((line) => line.length > 0);
+    return Option.fromUndefinedOr(lines.at(-1));
+  },
+  Effect.catchCause(() => Effect.succeed(Option.none<string>())),
+);
 
 export interface StartRunInput {
   readonly runId: RunId;
@@ -174,6 +381,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     });
   }
 
+  yield* markStarting(input.runId as string, compiledAt);
   const baseRevision = yield* revParse(input.profile.repoRoot, input.baseRef);
 
   // The worktree comes first: an executor is bound to the directory its stages
@@ -183,6 +391,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     repoRoot: input.profile.repoRoot,
     worktreeRoot: input.profile.worktreeRoot,
     baseRevision,
+    branchPrefix: input.profile.branchPrefix,
   });
 
   // Before any stage runs: the run's pull request is what the work is scoped
@@ -200,6 +409,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.path,
     branch: workspace.branch,
+    runId: input.runId,
   });
   const capabilities = yield* Effect.promise(() => executor.capabilities());
 
@@ -238,11 +448,18 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
         baseRevision,
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
+        permissions: input.profile.permissions,
+        quiet: DEFAULT_QUIET,
+        ...pullRequestDeps(input.profile, workspace.path),
       },
       lease,
       initial: [{ type: "start" }],
     }),
   );
+
+  if (result.stopped === "needs-decision") {
+    yield* askForDecision(input.runId, yield* decisionPortFor(input.profile));
+  }
 
   return { plan: loaded.value.plan, result } satisfies StartedRun;
 });
@@ -272,7 +489,7 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
     remote: config.remote,
     title: `${input.story}: ${input.outcome}`,
     body: [
-      `WorkflowLeaf run \`${input.runId}\` for story \`${input.story}\`.`,
+      `Run \`${input.runId}\` for story \`${input.story}\`.`,
       "",
       "Draft until the run's stages and gates have passed. The run fills this in.",
     ].join("\n"),
@@ -280,6 +497,18 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
     ghConfigDir: input.profile.ghConfigDir,
   });
 });
+
+/** What the worker may do with the run's pull request, as the profile permits. */
+export function pullRequestDeps(profile: Profile, workspacePath: string) {
+  return {
+    markReady:
+      profile.permissions.markPullRequestReady === true
+        ? (number: number) =>
+            markPullRequestReady({ workspacePath, number, ghConfigDir: profile.ghConfigDir })
+        : undefined,
+    reviewWaitMinutes: profile.pullRequest?.reviewWaitMinutes,
+  };
+}
 
 /** How long a lease lasts without renewal. The holder renews it well inside this. */
 const LEASE_SECONDS = 300;
@@ -330,9 +559,16 @@ export interface ResumeRunInput {
   readonly owner: string;
   readonly inputs: readonly ControllerInput[];
   readonly progress?: ProgressSink | undefined;
+  /** When the run is waiting on a decision asked on a thread, wait for its answer there. */
+  readonly waitForAnswer?: boolean | undefined;
 }
 
-/** Picks a run back up: reattaches to its worktree, reconciles, then drives. */
+/**
+ * Picks a run back up: reattaches to its worktree, reconciles, then drives.
+ *
+ * A run stopped on a decision that was asked on a thread takes the answer
+ * given there, so answering the question is what resumes it.
+ */
 export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   const store = yield* RunStore;
   const path = yield* Path.Path;
@@ -350,10 +586,20 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
   const executor = yield* executorFor(input.profile, {
     workspacePath: workspace.value.path,
     branch: workspace.value.branch,
+    runId: input.runId,
   });
   const runDir = yield* runDirFor(input.runId as string);
+  const answered =
+    loaded.value.record.state === "needs_decision" &&
+    !input.inputs.some((one) => one.type === "decision-answered")
+      ? yield* answeredOnThread(
+          input.runId,
+          yield* decisionPortFor(input.profile),
+          input.waitForAnswer ?? false,
+        )
+      : [];
   const seed = yield* store.transitionCount(input.runId);
-  return yield* holdingLease(input.runId, input.owner, (lease) =>
+  const result = yield* holdingLease(input.runId, input.owner, (lease) =>
     drive({
       runId: input.runId,
       deps: {
@@ -370,9 +616,65 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         baseRevision: loaded.value.baseRevision,
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
+        permissions: input.profile.permissions,
+        quiet: DEFAULT_QUIET,
+        ...pullRequestDeps(input.profile, workspace.value.path),
       },
       lease,
-      initial: input.inputs,
+      initial: answered.length > 0 ? answered : input.inputs,
+    }),
+  );
+
+  if (result.stopped === "needs-decision") {
+    yield* askForDecision(input.runId, yield* decisionPortFor(input.profile));
+  }
+  return result;
+});
+
+/**
+ * Cancels a run. The executor is reached only to stop a stage still in
+ * flight, and a run whose executor is gone still cancels.
+ */
+export const cancelRun = Effect.fnUntraced(function* (input: {
+  readonly runId: RunId;
+  readonly profile: Profile;
+  readonly owner: string;
+  readonly reason: string;
+  readonly progress?: ProgressSink | undefined;
+}) {
+  const store = yield* RunStore;
+  const path = yield* Path.Path;
+  const workspace = yield* store.findWorkspace(input.runId);
+  const runDir = yield* runDirFor(input.runId as string);
+  const seed = yield* store.transitionCount(input.runId);
+
+  const interrupt = (handle: StageHandle) =>
+    Option.isNone(workspace)
+      ? Effect.void
+      : Effect.scoped(
+          Effect.gen(function* () {
+            const executor = yield* executorFor(input.profile, {
+              workspacePath: workspace.value.path,
+              branch: workspace.value.branch,
+            });
+            yield* Effect.tryPromise(() => executor.interrupt(handle));
+          }),
+        ).pipe(
+          Effect.timeout("15 seconds"),
+          Effect.mapError(
+            (cause) => new ExecutorFailed({ operation: "interrupt", detail: cause.message }),
+          ),
+        );
+
+  return yield* holdingLease(input.runId, input.owner, (lease) =>
+    cancel({
+      runId: input.runId,
+      reason: input.reason,
+      lease,
+      ids: idSourceFor(input.runId as string, seed),
+      interrupt,
+      progress: input.progress,
+      progressLog: path.join(runDir, PROGRESS_LOG),
     }),
   );
 });
@@ -391,6 +693,13 @@ export interface RunSummary {
    * way to use that flag would be to guess at the number it is there to check.
    */
   readonly revision: number;
+  /**
+   * A run in `running` that no worker holds a lease on. Nothing will move it
+   * until someone resumes or cancels it, so it should not look like live work.
+   */
+  readonly stale: boolean;
+  /** How many things the run found and did not act on. `status <run>` lists them. */
+  readonly findings: number;
   readonly stage: string | null;
   readonly attention: string | null;
   /** Null only for a run started under a profile that may not open one. */
@@ -399,19 +708,27 @@ export interface RunSummary {
   readonly updatedAt: string;
 }
 
-function summaryOf(run: {
-  readonly record: RunRecord;
-  readonly plan: RunPlan;
-  readonly story: string;
-}): RunSummary {
+function summaryOf(
+  run: {
+    readonly record: RunRecord;
+    readonly plan: RunPlan;
+    readonly story: string;
+  },
+  leased: ReadonlySet<string>,
+  findings: number,
+): RunSummary {
+  const stale = run.record.state === "running" && !leased.has(run.record.runId as string);
   return {
     runId: run.record.runId as string,
     story: run.story,
     state: run.record.state,
     revision: run.record.revision,
+    stale,
+    findings,
     stage: run.record.currentStageId as string | null,
-    attention:
-      run.record.decision === null
+    attention: stale
+      ? `no worker has held this run since ${run.record.updatedAt}; resume or cancel it`
+      : run.record.decision === null
         ? run.record.failure
         : `${run.record.decision.kind}: ${run.record.decision.detail}`,
     pullRequest:
@@ -427,8 +744,13 @@ function summaryOf(run: {
 export const summarizeRuns = Effect.fnUntraced(function* (state?: string) {
   const store = yield* RunStore;
   const runs = yield* store.listRuns(state === undefined ? undefined : { state });
+  const leased = yield* store.leasedRuns();
+  const findings = new Map<string, number>();
+  for (const finding of yield* store.findingsSince("")) {
+    findings.set(finding.runId, (findings.get(finding.runId) ?? 0) + 1);
+  }
 
-  return runs.map(summaryOf);
+  return runs.map((run) => summaryOf(run, leased, findings.get(run.record.runId as string) ?? 0));
 });
 
 export interface RunDetail extends RunSummary {
@@ -446,6 +768,13 @@ export interface RunDetail extends RunSummary {
     readonly lostContext: boolean;
   }[];
   readonly limitations: readonly { readonly stageId: string; readonly detail: string }[];
+  /** What the run found and did not act on, oldest first. */
+  readonly foundNotFixed: readonly {
+    readonly stageId: string;
+    readonly source: string;
+    readonly detail: string;
+    readonly at: string;
+  }[];
 }
 
 export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
@@ -455,10 +784,11 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
 
   const workspace = yield* store.findWorkspace(runId);
   const limitations = yield* store.limitationsFor(runId);
+  const findings = yield* store.findingsFor(runId);
   const record = loaded.value.record;
 
   return Option.some({
-    ...summaryOf(loaded.value),
+    ...summaryOf(loaded.value, yield* store.leasedRuns(), findings.length),
     workspacePath: Option.isSome(workspace) ? workspace.value.path : null,
     scopeSplit:
       record.scopeSplit === null
@@ -477,6 +807,12 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
     limitations: limitations.map((limitation) => ({
       stageId: limitation.stageId as string,
       detail: limitation.detail,
+    })),
+    foundNotFixed: findings.map((finding) => ({
+      stageId: finding.stageId,
+      source: finding.source,
+      detail: finding.detail,
+      at: finding.at,
     })),
   } satisfies RunDetail);
 });

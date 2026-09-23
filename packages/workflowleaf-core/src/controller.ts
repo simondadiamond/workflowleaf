@@ -43,6 +43,18 @@ export type ControllerInput =
       readonly type: "dispatch-acknowledged";
       readonly operationId: OperationId;
       readonly handle: string;
+      /** Path-triggered skills the dispatch carried, chosen from what the run had changed. */
+      readonly skills?: readonly string[] | undefined;
+    }
+  | {
+      /**
+       * The operation in flight changed paths that call for skills the visit
+       * was never given. Reported before its settlement, so the gates cannot
+       * judge work done without them.
+       */
+      readonly type: "skills-discovered";
+      readonly operationId: OperationId;
+      readonly skills: readonly string[];
     }
   | { readonly type: "settled"; readonly settlement: StageSettlement }
   | {
@@ -255,6 +267,7 @@ function enterStage(context: ControllerContext, stageId: StageId, correction?: s
     lostContext: false,
     pendingGates: gateIds,
     failure: null,
+    skills: [],
   };
 
   switch (stage.contract.kind) {
@@ -557,12 +570,16 @@ export function decide(context: ControllerContext, input: ControllerInput): Deci
       const next: StageVisit = {
         ...visit,
         operation: { ...visit.operation, acknowledgedAt: context.now, handle: input.handle },
+        skills: mergeSkills(visit.skills, input.skills ?? []),
       };
       return { run: touch(run, context.now, { visits: replaceVisit(run, next) }), effects: [] };
     }
 
     case "settled":
       return onSettled(context, input.settlement);
+
+    case "skills-discovered":
+      return onSkillsDiscovered(context, input.operationId, input.skills);
 
     case "continue-unavailable": {
       const visit = currentVisit(run);
@@ -703,6 +720,97 @@ function onSettled(context: ControllerContext, settlement: StageSettlement): Dec
         visitId: visit.visitId,
         attemptId: visit.operation.attemptId,
         gateIds,
+      },
+    ],
+  };
+}
+
+function mergeSkills(given: readonly string[], more: readonly string[]): string[] {
+  return [...new Set([...given, ...more])].sort();
+}
+
+/**
+ * A stage changed paths that call for a skill it was never given.
+ *
+ * Its gates must not judge work done without that skill, so the stage is told
+ * to read it and re-check what it has done, inside the same context when the
+ * executor can continue one. Otherwise it starts again in a fresh context with
+ * the same message as its handoff, and the lost continuity is recorded. This
+ * is not a failed attempt and does not spend one. It cannot loop: each skill
+ * is given once per visit, and a stage has finitely many rules.
+ */
+function onSkillsDiscovered(
+  context: ControllerContext,
+  operationId: OperationId,
+  skills: readonly string[],
+): Decision {
+  const { run } = context;
+  const visit = currentVisit(run);
+  if (visit?.operation == null || visit.operation.operationId !== operationId) {
+    return noChange(run);
+  }
+  if (visit.state !== "executing" && visit.state !== "repairing") return noChange(run);
+
+  const stage = findStage(context.plan, visit.stageId);
+  if (stage === undefined) return noChange(run);
+
+  const fresh = skills.filter((id) => !visit.skills.includes(id));
+  const pinned = fresh.flatMap((id) => {
+    const skill = stage.lazySkills.find((candidate) => candidate.id === id);
+    return skill === undefined ? [] : [skill];
+  });
+  if (pinned.length === 0) return noChange(run);
+
+  const handoff = [
+    "The paths you changed call for skills you were not given when this stage started:",
+    ...pinned.map((skill) => `- \`${skill.id}\``),
+    "Load each one by name with your harness's skill tool now; in Claude Code that is `Skill(<name>)`. Do not open the skill's file instead, because a `cat` or a `Read` can be silently truncated. Only if your harness has no skill tool, read these files, one per command, and confirm you got the whole file:",
+    ...pinned.map((skill) => `- ${skill.id}: \`${skill.path}/SKILL.md\``),
+    "Then check the work you have already done in this stage against them, fix whatever they say is wrong, and finish the stage.",
+  ].join("\n");
+
+  const continues = run.capabilities.sameContextContinuation;
+  const attemptId = context.ids.attemptId();
+  const refreshOperation = context.ids.operationId();
+  const next: StageVisit = {
+    ...visit,
+    skills: mergeSkills(
+      visit.skills,
+      pinned.map((skill) => skill.id),
+    ),
+    lostContext: visit.lostContext || !continues,
+    operation: {
+      operationId: refreshOperation,
+      attemptId,
+      mode: continues ? "continue" : "fresh",
+      dispatchedAt: context.now,
+      acknowledgedAt: null,
+      handle: continues ? visit.operation.handle : null,
+    },
+  };
+
+  return {
+    run: touch(run, context.now, { visits: replaceVisit(run, next) }),
+    effects: [
+      ...(continues
+        ? []
+        : [
+            {
+              type: "record-limitation" as const,
+              limitation: {
+                stageId: visit.stageId,
+                capability: "sameContextContinuation" as const,
+                detail: `Skills ${pinned.map((skill) => skill.id).join(", ")} were discovered mid-stage and the stage restarted in a fresh context carrying the handoff.`,
+              },
+            },
+          ]),
+      {
+        type: "continue-stage",
+        stageId: visit.stageId,
+        visitId: visit.visitId,
+        attemptId,
+        operationId: refreshOperation,
+        correction: handoff,
       },
     ],
   };
@@ -908,6 +1016,12 @@ function onDecisionAnswered(
   if (answer === "waive") {
     // The human took responsibility for the outstanding gates. The waiver is
     // recorded against this visit and shown as an exception, not as a pass.
+    return advance({ ...context, run: cleared }, visit);
+  }
+
+  // A decision stage exists to be answered. Proceeding past it is the answer,
+  // so the run moves on; entering it again would only ask the same question.
+  if (findStage(context.plan, visit.stageId)?.contract.kind === "decision") {
     return advance({ ...context, run: cleared }, visit);
   }
 

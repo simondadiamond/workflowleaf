@@ -77,6 +77,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
       assert.isTrue(yield* fs.exists(first.path));
 
@@ -86,9 +87,27 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
       assert.strictEqual(second.path, first.path);
       assert.strictEqual(second.workspaceId, first.workspaceId);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("checks the worktree out on the profile's branch prefix", () =>
+    Effect.gen(function* () {
+      const { repo, head, worktreeRoot } = yield* makeRepo();
+      yield* seedRun("run-ws-prefix", repo, head);
+
+      const workspace = yield* ensureWorkspace({
+        runId: "run-ws-prefix" as RunId,
+        repoRoot: repo,
+        worktreeRoot,
+        baseRevision: head,
+        branchPrefix: "run",
+      });
+      const checkedOut = (yield* git(workspace.path, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+      assert.strictEqual(checkedOut, "run/run-ws-prefix");
     }).pipe(Effect.scoped),
   );
 
@@ -103,6 +122,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
       yield* fs.remove(workspace.path, { recursive: true });
 
@@ -111,6 +131,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       }).pipe(Effect.result);
 
       assert.strictEqual(outcome._tag, "Failure");
@@ -129,6 +150,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const before = yield* takeSnapshot(workspace.path, "t0");
@@ -152,6 +174,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const before = yield* takeSnapshot(workspace.path, "t0");
@@ -172,6 +195,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const snapshot = yield* takeSnapshot(workspace.path, "t0");
@@ -191,6 +215,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const before = yield* takeSnapshot(workspace.path, "t0");
@@ -211,6 +236,7 @@ it.layer(testLayer)("workspaces", (it) => {
         repoRoot: repo,
         worktreeRoot,
         baseRevision: head,
+        branchPrefix: "workflowleaf",
       });
 
       const first = yield* takeSnapshot(workspace.path, "t0");
@@ -218,5 +244,42 @@ it.layer(testLayer)("workspaces", (it) => {
 
       assert.strictEqual(first.snapshotId, second.snapshotId);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps the run's own files out of git status, and leaves tracked ones alone", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { repo, worktreeRoot } = yield* makeRepo();
+      // A repository that tracks a file under .workflowleaf/, as the generic playbook's do.
+      yield* fs.makeDirectory(path.join(repo, ".workflowleaf"));
+      yield* fs.writeFileString(path.join(repo, ".workflowleaf", "commands"), "test: true\n");
+      yield* git(repo, ["add", "."]);
+      yield* git(repo, ["commit", "-qm", "commands"]);
+      const base = (yield* git(repo, ["rev-parse", "HEAD"])).trim();
+      yield* seedRun("run-ws-ignore", repo, base);
+
+      const workspace = yield* ensureWorkspace({
+        runId: "run-ws-ignore" as RunId,
+        repoRoot: repo,
+        worktreeRoot,
+        baseRevision: base,
+        branchPrefix: "workflowleaf",
+      });
+      yield* fs.writeFileString(path.join(workspace.path, ".workflowleaf", "plan.md"), "# plan\n");
+      assert.strictEqual(yield* git(workspace.path, ["status", "--porcelain"]), "");
+
+      yield* fs.writeFileString(
+        path.join(workspace.path, ".workflowleaf", "commands"),
+        "test: false\n",
+      );
+      assert.include(
+        yield* git(workspace.path, ["status", "--porcelain"]),
+        ".workflowleaf/commands",
+      );
+      // Nothing was written to the configuration every checkout shares.
+      const exclude = yield* fs.readFileString(path.join(repo, ".git", "info", "exclude"));
+      assert.notInclude(exclude, ".workflowleaf");
+    }),
   );
 });

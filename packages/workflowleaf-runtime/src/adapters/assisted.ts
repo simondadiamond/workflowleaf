@@ -11,11 +11,13 @@
  * paste it into whichever harness they are using and bring the artifacts back.
  */
 import type {
+  AnswerOutcome,
   ContinueOutcome,
   ExecutorCapabilities,
   ExecutorPort,
   InspectOutcome,
   OperationId,
+  ProviderRequest,
   StageHandle,
   StageRequest,
   StageSettlement,
@@ -73,6 +75,17 @@ export class AssistedExecutor implements ExecutorPort {
       settled: false,
       detail: "Assisted mode does not execute stages.",
       at: EPOCH,
+    });
+  }
+
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return Promise.resolve([]);
+  }
+
+  answerRequest(): Promise<AnswerOutcome> {
+    return Promise.resolve({
+      kind: "not-pending",
+      reason: "This executor has no provider to ask.",
     });
   }
 }

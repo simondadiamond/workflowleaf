@@ -39,7 +39,12 @@ const T3ExecutorConfig = Schema.Struct({
   projectId: Schema.String.check(Schema.isNonEmpty()),
   provider: Schema.String.check(Schema.isNonEmpty()),
   model: Schema.NullOr(Schema.String),
-  runtimeMode: Schema.Literals(["full-access", "read-only"]),
+  /**
+   * T3's runtime mode for every stage thread. `approval-required` makes the
+   * provider ask before acting; answer with `wl requests` and `wl answer`, or
+   * in T3 itself. `read-only` was accepted here once and was never a T3 mode.
+   */
+  runtimeMode: Schema.Literals(["approval-required", "auto-accept-edits", "auto", "full-access"]),
 });
 export type T3ExecutorConfig = typeof T3ExecutorConfig.Type;
 
@@ -58,6 +63,12 @@ const PullRequestConfig = Schema.Struct({
   remote: Schema.String.check(Schema.isNonEmpty()),
   /** Branch the pull request is opened against. */
   baseBranch: Schema.String.check(Schema.isNonEmpty()),
+  /**
+   * How long `converged-on-head` waits for a review on a ready pull request
+   * before converging without one. Absent means it waits for a review, which is
+   * right for a repository with review bots and wrong for one without.
+   */
+  reviewWaitMinutes: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 });
 export type PullRequestConfig = typeof PullRequestConfig.Type;
 
@@ -78,6 +89,12 @@ const ProfileDocument = Schema.Struct({
   repoRoot: Schema.String.check(Schema.isNonEmpty()),
   /** Where run worktrees are created. */
   worktreeRoot: Schema.optional(Schema.String),
+  /**
+   * A run's branch is `<branchPrefix>/<run>`. Absent means `workflowleaf`. The
+   * branch name is what the repository and its pull requests show, and what
+   * the repository's own hooks can match on.
+   */
+  branchPrefix: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   /**
    * The playbook this machine runs by default, as an absolute directory.
    *
@@ -100,17 +117,34 @@ const ProfileDocument = Schema.Struct({
     maxRepairCycles: Schema.Int,
     runDeadlineMs: Schema.NullOr(Schema.Int),
   }),
-  /**
-   * Whether this profile may perform external effects. Nothing infers these
-   * from a playbook; an unlisted effect stays unavailable with a diagnostic.
-   */
   /** Required when `permissions.createPullRequest` is on, ignored when it is off. */
   pullRequest: Schema.optional(PullRequestConfig),
+  /**
+   * What WorkflowLeaf itself may do outside the run's worktree. Nothing infers
+   * these from a playbook, and each one defaults to false.
+   *
+   * Only effects WorkflowLeaf performs are listed. What an agent may do inside
+   * its worktree is the executor's runtime mode and the provider's own
+   * approvals, which `wl answer` passes through; a second permission layer
+   * over the same actions would only disagree with the first. That is why the
+   * Firestore flag and `deploy` are gone. Each stage is still told what these
+   * permit, since an agent with `gh` can comment or merge on its own; that
+   * asks and does not enforce.
+   */
   permissions: Schema.Struct({
+    /** Open the run's draft pull request at run start. Every later stage delivers into it. */
     createPullRequest: Schema.Boolean,
+    /** Post and reply on that pull request, including resolving review threads it answered. */
     commentOnPullRequest: Schema.Boolean,
+    /**
+     * Mark it ready for review once the stage that produces `pull-request` has
+     * passed its gates. Review bots commonly skip drafts, so a run that leaves
+     * its pull request a draft is never reviewed. Absent means off.
+     */
+    markPullRequestReady: Schema.optional(Schema.Boolean),
+    /** Merge it. Off everywhere today: merging stays a person's call. */
     merge: Schema.Boolean,
-    deploy: Schema.Boolean,
+    /** Run a canary against live systems, bound to a deployed revision (#12). */
     liveCanary: Schema.Boolean,
   }),
 });
@@ -119,6 +153,7 @@ export type ProfileDocument = typeof ProfileDocument.Type;
 export interface Profile extends Omit<ProfileDocument, "reviewer"> {
   readonly name: string;
   readonly worktreeRoot: string;
+  readonly branchPrefix: string;
   readonly reviewer: ReviewerConfig;
 }
 
@@ -128,6 +163,23 @@ const decodeProfile = Schema.decodeUnknownResult(ProfileDocument, {
 });
 
 const decodeJsonValue = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown));
+
+/**
+ * Profiles written before a permission was retired still load. The key is
+ * dropped rather than rejected because it never granted anything, and a
+ * profile in use by a running run should not stop loading over it.
+ */
+const RETIRED_PERMISSIONS = ["deploy"];
+
+function withoutRetiredKeys(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const permissions = (raw as { permissions?: unknown }).permissions;
+  if (typeof permissions !== "object" || permissions === null) return raw;
+  const kept = Object.fromEntries(
+    Object.entries(permissions).filter(([key]) => !RETIRED_PERMISSIONS.includes(key)),
+  );
+  return { ...raw, permissions: kept };
+}
 
 /** `$WORKFLOWLEAF_HOME`, else `~/.workflowleaf`. Never the live T3 data directory. */
 export const workflowleafHome = Effect.fnUntraced(function* () {
@@ -174,7 +226,7 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
     }
   }
 
-  const decoded = decodeProfile(raw);
+  const decoded = decodeProfile(withoutRetiredKeys(raw));
   if (decoded._tag === "Failure") {
     return yield* new ProfileError({ message: `${file}: ${decoded.failure.message}` });
   }
@@ -190,6 +242,7 @@ export const loadProfile = Effect.fnUntraced(function* (name: string) {
     ...document,
     name,
     reviewer: document.reviewer ?? DEFAULT_REVIEWER,
+    branchPrefix: document.branchPrefix ?? "workflowleaf",
     worktreeRoot:
       document.worktreeRoot !== undefined && document.worktreeRoot.length > 0
         ? document.worktreeRoot
@@ -245,8 +298,8 @@ export const PROFILE_TEMPLATE = {
   permissions: {
     createPullRequest: false,
     commentOnPullRequest: false,
+    markPullRequestReady: false,
     merge: false,
-    deploy: false,
     liveCanary: false,
   },
 };

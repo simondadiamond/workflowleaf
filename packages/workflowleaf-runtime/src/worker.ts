@@ -12,6 +12,7 @@
  */
 import {
   SATISFYING,
+  currentVisit,
   decide,
   findStage,
   satisfies,
@@ -21,11 +22,15 @@ import {
   type ExecutorPort,
   type GateVerdict,
   type IdSource,
+  type OperationId,
+  type ResolvedStage,
   type RunId,
   type RunPlan,
   type RunRecord,
   type StageHandle,
+  type StageId,
   type StageRequest,
+  type StageSettlement,
   type VisitId,
   type VisitState,
 } from "@t3tools/workflowleaf-core";
@@ -35,14 +40,24 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import type { ChildProcessSpawner } from "effect/unstable/process";
 
 import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
-import { compileStagePrompt } from "./prompt.ts";
+import { compileStagePrompt, FINDINGS_PATH, type StagePermissions } from "./prompt.ts";
+import type { PullRequestError } from "./pullRequest.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
-import { takeSnapshot, type SnapshotManifest } from "./workspaces.ts";
+import {
+  changedPaths,
+  outsideChanges,
+  outsideTheWorktree,
+  pathsChangedSince,
+  takeSnapshot,
+  type OutsideTheWorktree,
+  type SnapshotManifest,
+} from "./workspaces.ts";
 
 export class WorkerError extends Schema.TaggedError<WorkerError>()("WlWorkerError", {
   message: Schema.String,
@@ -82,8 +97,20 @@ export type RunProgress =
       /** A correction inside an existing context rather than a fresh visit. */
       readonly correcting: boolean;
     }
-  | { readonly kind: "gates"; readonly stageId: string; readonly verdicts: readonly GateVerdict[] }
-  | { readonly kind: "stage-settled"; readonly stageId: string; readonly state: VisitState };
+  | {
+      readonly kind: "gates";
+      readonly stageId: string;
+      readonly verdicts: readonly GateVerdict[];
+      /** The first line of detail for each verdict worth reading, by gate id. See `gateDetails`. */
+      readonly details: Readonly<Record<string, string>>;
+    }
+  | { readonly kind: "stage-settled"; readonly stageId: string; readonly state: VisitState }
+  | {
+      readonly kind: "pull-request-ready";
+      readonly number: number;
+      /** Why it could not be marked ready, or null when it was. */
+      readonly failure: string | null;
+    };
 
 /** Where progress is reported to. Absent means nobody is watching. */
 export type ProgressSink = (event: RunProgress) => Effect.Effect<void>;
@@ -108,7 +135,41 @@ export interface WorkerDeps {
   readonly reviewer?: ReviewerConfig | undefined;
   /** The `gh` config directory for the run's repository, when the profile names one. */
   readonly ghConfigDir?: string | undefined;
+  /** What the profile permits on GitHub, which each stage is told. */
+  readonly permissions?: StagePermissions | undefined;
+  /**
+   * How long the worktree must stay unchanged before gates may read it. Absent
+   * means gates run as soon as the stage settles, which only tests want.
+   */
+  readonly quiet?: QuietWindow | undefined;
+  /**
+   * Marks the run's pull request ready for review. Called once the stage that
+   * produces `pull-request` passes. Absent means the profile does not permit it.
+   */
+  readonly markReady?:
+    | ((
+        pullRequestNumber: number,
+      ) => Effect.Effect<void, PullRequestError, ChildProcessSpawner.ChildProcessSpawner>)
+    | undefined;
+  /** The profile's `pullRequest.reviewWaitMinutes`, for `converged-on-head`. */
+  readonly reviewWaitMinutes?: number | undefined;
 }
+
+/**
+ * The worktree must go this long without a change before a gate reads it, and
+ * a tree still changing after `timeoutMs` is reported instead of judged.
+ */
+export interface QuietWindow {
+  readonly windowMs: number;
+  readonly timeoutMs: number;
+}
+
+/**
+ * What a real run waits for. Long enough to outlast a formatter or a hook that
+ * fires as a turn ends, short enough not to be noticed, and a timeout past
+ * which something is plainly still running in the worktree.
+ */
+export const DEFAULT_QUIET: QuietWindow = { windowMs: 2_000, timeoutMs: 180_000 };
 
 /** Why the worker stopped. `idle` means the run is waiting on something outside it. */
 export type StopReason = "finished" | "needs-decision" | "paused" | "waiting-external" | "idle";
@@ -145,9 +206,34 @@ const SETTLED_VISIT_STATES: readonly VisitState[] = ["passed", "failed", "blocke
  * inside each branch of `perform`, so a watcher is told what was persisted and
  * nothing that was merely attempted.
  */
+/**
+ * The first line of detail for each verdict worth reading: every one that did
+ * not pass, and every external one. "passed" on an external gate says nothing
+ * about what GitHub showed; issue-1598-1's babysit passed on a pull request
+ * nobody had reviewed, and nothing a reader could see said so.
+ */
+export function gateDetails(
+  stage: ResolvedStage | undefined,
+  verdicts: readonly GateVerdict[],
+): Record<string, string> {
+  const external = new Set(
+    (stage?.gates ?? [])
+      .filter((gate) => gate.definition.type === "external")
+      .map((gate) => gate.definition.id as string),
+  );
+  const details: Record<string, string> = {};
+  for (const verdict of verdicts) {
+    if (SATISFYING.includes(verdict.outcome) && !external.has(verdict.gateId as string)) continue;
+    const line = verdict.summary.split("\n")[0] ?? "";
+    if (line.length > 0) details[verdict.gateId as string] = line;
+  }
+  return details;
+}
+
 function progressFor(input: {
   readonly previous: RunRecord;
   readonly next: RunRecord;
+  readonly plan: RunPlan;
   readonly transitionInput: ControllerInput;
   readonly effects: readonly ControllerEffect[];
 }): readonly RunProgress[] {
@@ -158,7 +244,13 @@ function progressFor(input: {
   if (input.transitionInput.type === "gates-evaluated") {
     const stageId = stageOf(input.transitionInput.visitId);
     if (stageId !== null) {
-      events.push({ kind: "gates", stageId, verdicts: input.transitionInput.verdicts });
+      const verdicts = input.transitionInput.verdicts;
+      events.push({
+        kind: "gates",
+        stageId,
+        verdicts,
+        details: gateDetails(findStage(input.plan, stageId as StageId), verdicts),
+      });
     }
   }
 
@@ -189,10 +281,44 @@ export function progressLine(at: string, event: RunProgress): string {
     case "stage-started":
       return `${at} ${event.stageId} ${event.correcting ? "correcting" : "started"} attempt=${String(event.attempt)}`;
     case "gates":
-      return `${at} ${event.stageId} gates ${event.verdicts.map((verdict) => `${verdict.gateId}=${verdict.outcome}`).join(" ") || "none"}`;
+      return `${at} ${event.stageId} gates ${
+        event.verdicts
+          .map((verdict) => {
+            const detail = event.details[verdict.gateId as string];
+            return `${verdict.gateId}=${verdict.outcome}${detail === undefined ? "" : ` [${detail}]`}`;
+          })
+          .join(" ") || "none"
+      }`;
     case "stage-settled":
       return `${at} ${event.stageId} ${event.state}`;
+    case "pull-request-ready":
+      return event.failure === null
+        ? `${at} pull-request #${String(event.number)} marked ready`
+        : `${at} pull-request #${String(event.number)} not marked ready: ${event.failure.split("\n")[0] ?? ""}`;
   }
+}
+
+/**
+ * The pull request to mark ready after this transition: the run's own, when a
+ * stage that produces `pull-request` has just passed. That is the delivery
+ * being complete, and review bots that skip drafts only start after it.
+ */
+function deliveredPullRequest(input: {
+  readonly previous: RunRecord;
+  readonly next: RunRecord;
+  readonly plan: RunPlan;
+}): number | null {
+  const number = input.next.pullRequest?.number ?? null;
+  if (number === null) return null;
+  const delivered = input.next.visits.some((visit) => {
+    if (visit.state !== "passed") return false;
+    const before = input.previous.visits.find((candidate) => candidate.visitId === visit.visitId);
+    if (before?.state === "passed") return false;
+    return (
+      findStage(input.plan, visit.stageId)?.contract.produces.includes("pull-request") ?? false
+    );
+  });
+  return delivered ? number : null;
 }
 
 /**
@@ -216,6 +342,33 @@ const appendProgress = Effect.fnUntraced(
 );
 
 /**
+ * Waits until nothing is writing to the worktree.
+ *
+ * An executor's settlement says its own turn is over. It cannot speak for a
+ * process that turn started in the background, a hook, or a formatter, and a
+ * gate that reads while any of those is still writing judges a tree that is
+ * about to change. Two snapshots a quiet window apart must agree before gates
+ * may run. The paths still changing when time runs out are returned, so the
+ * run can say what would not settle.
+ */
+export const awaitQuiet = Effect.fnUntraced(function* (workspacePath: string, quiet: QuietWindow) {
+  const snapshot = Effect.gen(function* () {
+    return yield* takeSnapshot(workspacePath, DateTime.formatIso(yield* DateTime.now));
+  });
+
+  let previous = yield* snapshot;
+  let changing: readonly string[] = [];
+  for (let waited = 0; waited < quiet.timeoutMs; waited += quiet.windowMs) {
+    yield* Effect.sleep(`${quiet.windowMs} millis`);
+    const next = yield* snapshot;
+    if (next.snapshotId === previous.snapshotId) return { quiet: true, changing: [] };
+    changing = changedPaths(previous, next);
+    previous = next;
+  }
+  return { quiet: false, changing };
+});
+
+/**
  * Runs the deterministic gates of one visit and returns a verdict per gate.
  *
  * Evidence is written before the verdicts go anywhere near the controller, so
@@ -237,6 +390,23 @@ const runGates = Effect.fnUntraced(function* (input: {
     return [] as readonly GateVerdict[];
   }
 
+  // No gate reads the worktree until it has stopped changing. A tree that
+  // never settles is not judged: every gate reports that it could not run,
+  // which stops the run for a person rather than spending the stage's attempts.
+  if (input.deps.quiet !== undefined) {
+    const settled = yield* awaitQuiet(input.deps.workspacePath, input.deps.quiet);
+    if (!settled.quiet) {
+      const summary = `the worktree was still changing after ${String(input.deps.quiet.timeoutMs)}ms, so no gate ran: ${settled.changing.slice(0, 10).join(", ")}`;
+      return stage.gates
+        .filter((pinned) => input.gateIds.includes(pinned.definition.id))
+        .map((pinned): GateVerdict => ({
+          gateId: pinned.definition.id,
+          outcome: "error",
+          summary,
+        }));
+    }
+  }
+
   const verdicts: GateVerdict[] = [];
 
   for (const gateId of input.gateIds) {
@@ -256,6 +426,7 @@ const runGates = Effect.fnUntraced(function* (input: {
       artifacts: artifactPaths([...stage.contract.consumes, ...stage.contract.produces]),
       reviewer: input.deps.reviewer,
       ghConfigDir: input.deps.ghConfigDir,
+      reviewWaitMinutes: input.deps.reviewWaitMinutes,
     };
 
     const evidence = yield* evaluateGate(pinned.definition, context);
@@ -410,6 +581,93 @@ const scopeSplitDeclared = Effect.fnUntraced(function* (workspacePath: string) {
   ] as readonly ControllerInput[];
 });
 
+/**
+ * Records what a stage wrote to `FINDINGS_PATH` and clears the file.
+ *
+ * A stage's closing message reaches only its own thread, so a problem it
+ * noticed outside its task (a broken check, a nit it left alone) never reached
+ * whoever drives the run. Code reads this file after every turn, records it on
+ * the run and removes it, so the next stage starts with an empty one. It is
+ * not a gate: whether a finding matters is a person's call.
+ */
+const collectFindings = Effect.fnUntraced(
+  function* (runId: RunId, stageId: StageId, workspacePath: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const store = yield* RunStore;
+    const file = path.join(workspacePath, FINDINGS_PATH);
+    if (!(yield* fs.exists(file))) return;
+    const detail = (yield* fs.readFileString(file)).trim();
+    if (detail.length > 0) {
+      yield* store.recordFinding({ runId, stageId: stageId as string, source: "stage", detail });
+    }
+    yield* fs.remove(file);
+  },
+  // A finding that cannot be read is lost, which is what happened before this
+  // existed. It must never be the reason a run stops.
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
+ * Records, as a finding, any file behind an outward symlink that changed
+ * while the stage ran. See `outsideTheWorktree` for why no gate can see these.
+ */
+const reportOutside = Effect.fnUntraced(
+  function* (runId: RunId, stageId: StageId, workspacePath: string, before: OutsideTheWorktree) {
+    const store = yield* RunStore;
+    const detail = outsideChanges(before, yield* outsideTheWorktree(workspacePath));
+    if (detail === null) return;
+    yield* store.recordFinding({
+      runId,
+      stageId: stageId as string,
+      source: "outside-worktree",
+      detail,
+    });
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
+ * The path-triggered skills a stage calls for right now.
+ *
+ * Chosen from the paths the run has actually changed, plus what the stage
+ * declares it produces, so a later stage gets the skills its predecessors'
+ * changes need and a stage that has just written a file is caught needing one.
+ * A worktree git cannot read yields the declared outputs alone rather than
+ * stopping the run.
+ */
+const skillsCalledFor = Effect.fnUntraced(function* (stage: ResolvedStage, deps: WorkerDeps) {
+  const rules = stage.contract.skills.lazyRules;
+  if (rules.length === 0) return [] as string[];
+  const changed = yield* pathsChangedSince(deps.workspacePath, deps.baseRevision ?? "HEAD").pipe(
+    Effect.catchCause(() => Effect.succeed([] as string[])),
+  );
+  return skillsForPaths(rules, [...stage.contract.produces, ...changed]);
+});
+
+/**
+ * What a stage that just settled reports before its settlement: the skills its
+ * changes call for, so the controller can refresh it before any gate runs.
+ * Only a completed turn is judged; an error or an interruption is handled as
+ * one.
+ */
+const discoveredSkills = Effect.fnUntraced(function* (input: {
+  readonly plan: RunPlan;
+  readonly stageId: StageId;
+  readonly operationId: OperationId;
+  readonly outcome: StageSettlement["outcome"];
+  readonly deps: WorkerDeps;
+}) {
+  const stage = findStage(input.plan, input.stageId);
+  if (stage === undefined || input.outcome !== "completed") return [] as ControllerInput[];
+  const skills = yield* skillsCalledFor(stage, input.deps);
+  return skills.length === 0
+    ? ([] as ControllerInput[])
+    : ([
+        { type: "skills-discovered", operationId: input.operationId, skills },
+      ] as ControllerInput[]);
+});
+
 const stageRequestFor = Effect.fnUntraced(function* (input: {
   readonly record: RunRecord;
   readonly plan: RunPlan;
@@ -421,9 +679,7 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     return yield* new WorkerError({ message: `Plan has no stage ${input.effect.stageId}.` });
   }
 
-  // Path-triggered skills are chosen from what this stage is about to touch,
-  // not from what the run looked like when it was compiled.
-  const extra = skillsForPaths(stage.contract.skills.lazyRules, [...stage.contract.produces]);
+  const extra = yield* skillsCalledFor(stage, input.deps);
   const extraSkills = extra.flatMap((id) => {
     const found = stage.lazySkills.find((skill) => skill.id === id);
     return found === undefined ? [] : [{ id: found.id, path: found.path }];
@@ -437,17 +693,21 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     extraSkills,
     correction: input.effect.correction ?? null,
     ghConfigDir: input.deps.ghConfigDir,
+    permissions: input.deps.permissions,
   });
 
   return {
-    runId: input.record.runId,
-    visitId: input.effect.visitId,
-    attemptId: input.effect.attemptId,
-    operationId: input.effect.operationId,
-    workspaceId: input.record.workspaceId,
-    stage,
-    input: prompt,
-  } satisfies StageRequest;
+    request: {
+      runId: input.record.runId,
+      visitId: input.effect.visitId,
+      attemptId: input.effect.attemptId,
+      operationId: input.effect.operationId,
+      workspaceId: input.record.workspaceId,
+      stage,
+      input: prompt,
+    } satisfies StageRequest,
+    skills: extraSkills.map((skill) => skill.id),
+  };
 });
 
 /**
@@ -476,8 +736,9 @@ const perform = Effect.fnUntraced(function* (input: {
         kind: "start",
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
+      const outside = yield* outsideTheWorktree(deps.workspacePath);
 
-      const request = yield* stageRequestFor({ ...input, effect });
+      const { request, skills } = yield* stageRequestFor({ ...input, effect });
       const handle = yield* fromExecutor("startStage", () => deps.executor.startStage(request));
       yield* store.acknowledgeOperation(effect.operationId, handle.handle);
 
@@ -485,13 +746,23 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
+      yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+      yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
 
       return [
         {
           type: "dispatch-acknowledged",
           operationId: effect.operationId,
           handle: handle.handle,
+          ...(skills.length === 0 ? {} : { skills }),
         },
+        ...(yield* discoveredSkills({
+          plan: input.plan,
+          stageId: effect.stageId,
+          operationId: effect.operationId,
+          outcome: settlement.outcome,
+          deps,
+        })),
         { type: "settled", settlement },
         ...(yield* scopeSplitDeclared(deps.workspacePath)),
       ] as readonly ControllerInput[];
@@ -506,6 +777,7 @@ const perform = Effect.fnUntraced(function* (input: {
         kind: "continue",
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
+      const outside = yield* outsideTheWorktree(deps.workspacePath);
 
       const visit = input.record.visits.find((candidate) => candidate.visitId === effect.visitId);
       const previousHandle = visit?.operation?.handle ?? null;
@@ -513,14 +785,29 @@ const perform = Effect.fnUntraced(function* (input: {
       if (previousHandle === null) {
         // No live context to continue, so this is a fresh dispatch carrying the
         // correction. The controller already recorded the lost continuity.
-        const request = yield* stageRequestFor({ ...input, effect });
+        const { request, skills } = yield* stageRequestFor({ ...input, effect });
         const handle = yield* fromExecutor("startStage", () => deps.executor.startStage(request));
         yield* store.acknowledgeOperation(effect.operationId, handle.handle);
         const settlement = yield* fromExecutor("awaitSettlement", () =>
           deps.executor.awaitSettlement(handle),
         );
         yield* store.settleOperation(effect.operationId, settlement.outcome);
+        yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+        yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
         return [
+          {
+            type: "dispatch-acknowledged",
+            operationId: effect.operationId,
+            handle: handle.handle,
+            ...(skills.length === 0 ? {} : { skills }),
+          },
+          ...(yield* discoveredSkills({
+            plan: input.plan,
+            stageId: effect.stageId,
+            operationId: effect.operationId,
+            outcome: settlement.outcome,
+            deps,
+          })),
           { type: "settled", settlement },
           ...(yield* scopeSplitDeclared(deps.workspacePath)),
         ] as readonly ControllerInput[];
@@ -546,7 +833,16 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(outcome.handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
+      yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+      yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
       return [
+        ...(yield* discoveredSkills({
+          plan: input.plan,
+          stageId: effect.stageId,
+          operationId: effect.operationId,
+          outcome: settlement.outcome,
+          deps,
+        })),
         { type: "settled", settlement },
         ...(yield* scopeSplitDeclared(deps.workspacePath)),
       ] as readonly ControllerInput[];
@@ -572,7 +868,18 @@ const perform = Effect.fnUntraced(function* (input: {
       return [] as readonly ControllerInput[];
     }
 
-    case "raise-decision":
+    case "raise-decision": {
+      // Recorded against the visit that raised it, so the question and its
+      // answer outlive whatever surface the person was asked on.
+      const visit = currentVisit(input.record);
+      yield* store.recordDecision({
+        runId: input.record.runId,
+        visitId: (visit?.visitId as string | undefined) ?? null,
+        decision: effect.decision,
+      });
+      return [] as readonly ControllerInput[];
+    }
+
     case "interrupt":
     case "finish":
       return [] as readonly ControllerInput[];
@@ -660,12 +967,31 @@ export const drive = Effect.fnUntraced(function* (input: {
       lease: input.lease,
     });
 
-    const events = progressFor({
-      previous: record,
-      next: decision.run,
-      transitionInput: next,
-      effects: decision.effects,
-    });
+    const events = [
+      ...progressFor({
+        previous: record,
+        next: decision.run,
+        plan,
+        transitionInput: next,
+        effects: decision.effects,
+      }),
+    ];
+
+    // Before the next stage's effects run, so a watch stage that follows the
+    // delivery reads a pull request reviewers can already see. A failure is
+    // reported, not raised: the watch then waits, and says it is a draft.
+    const delivered = deliveredPullRequest({ previous: record, next: decision.run, plan });
+    if (delivered !== null && input.deps.markReady !== undefined) {
+      const marked = yield* input.deps.markReady(delivered).pipe(Effect.result);
+      // Listed before the next stage starts, which is when it happened.
+      const next = events.findIndex((event) => event.kind === "stage-started");
+      events.splice(next === -1 ? events.length : next, 0, {
+        kind: "pull-request-ready",
+        number: delivered,
+        failure: marked._tag === "Success" ? null : marked.failure.message,
+      });
+    }
+
     for (const event of events) {
       if (input.deps.progress !== undefined) yield* input.deps.progress(event);
     }
@@ -691,6 +1017,85 @@ export const drive = Effect.fnUntraced(function* (input: {
     stopped: stopReasonFor(record) ?? "idle",
     transitions,
   } satisfies DriveResult;
+});
+
+/**
+ * Cancels a run without doing any of its work first.
+ *
+ * `drive` reconciles unsettled operations before it reads its inputs, and a
+ * reconciliation that finds a lost dispatch starts the stage again. A cancel
+ * must never do that, and the run it cancels may belong to an executor that no
+ * longer exists. So this commits the cancel on its own, never reconciles and
+ * never dispatches. Stopping a stage still in flight is best effort: `interrupt`
+ * is told the handle, and whatever it fails with is swallowed.
+ */
+export const cancel = Effect.fnUntraced(function* <R>(input: {
+  readonly runId: RunId;
+  readonly reason: string;
+  readonly lease: Lease;
+  readonly ids: IdSource;
+  readonly interrupt?:
+    | ((handle: StageHandle) => Effect.Effect<void, ExecutorFailed, R>)
+    | undefined;
+  readonly progress?: ProgressSink | undefined;
+  readonly progressLog?: string | undefined;
+}) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(input.runId);
+  if (Option.isNone(loaded)) {
+    return yield* new WorkerError({ message: `No run ${input.runId}.` });
+  }
+
+  const record = loaded.value.record;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  const transitionInput: ControllerInput = { type: "cancel", reason: input.reason };
+  const decision = decide(
+    { run: record, plan: loaded.value.plan, now, ids: input.ids },
+    transitionInput,
+  );
+  if (decision.run.revision === record.revision && decision.effects.length === 0) {
+    return {
+      record,
+      stopped: stopReasonFor(record) ?? "idle",
+      transitions: 0,
+    } satisfies DriveResult;
+  }
+
+  yield* store.commit({
+    previous: record,
+    next: decision.run,
+    transitionInput,
+    effects: decision.effects,
+    lease: input.lease,
+  });
+
+  const events = progressFor({
+    previous: record,
+    next: decision.run,
+    plan: loaded.value.plan,
+    transitionInput,
+    effects: decision.effects,
+  });
+  for (const event of events) {
+    if (input.progress !== undefined) yield* input.progress(event);
+  }
+  if (input.progressLog !== undefined && events.length > 0) {
+    yield* appendProgress(input.progressLog, now, events);
+  }
+
+  // Whatever was in flight is over as far as the run is concerned. Its
+  // operations are closed so nothing later reads them as work to recover.
+  const unsettled = yield* store.unsettledOperations(input.runId);
+  for (const operation of unsettled) {
+    if (input.interrupt !== undefined && operation.handle !== null) {
+      yield* input
+        .interrupt({ operationId: operation.operationId, handle: operation.handle })
+        .pipe(Effect.ignoreCause);
+    }
+    yield* store.settleOperation(operation.operationId, "interrupted");
+  }
+
+  return { record: decision.run, stopped: "finished", transitions: 1 } satisfies DriveResult;
 });
 
 /** Whether a visit's recorded evidence still satisfies every gate of its stage. */

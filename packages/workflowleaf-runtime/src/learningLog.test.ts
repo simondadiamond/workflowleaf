@@ -35,6 +35,7 @@ describe("the learning log", () => {
         {
           runId: "issue-2-1",
           seq: 4,
+          revision: 7,
           at: "2026-09-02T00:00:02.000Z",
           input: '{"type":"gates-evaluated"}',
           effects:
@@ -43,6 +44,7 @@ describe("the learning log", () => {
         {
           runId: "issue-2-1",
           seq: 5,
+          revision: 8,
           at: "2026-09-02T00:00:03.000Z",
           input:
             '{"type":"decision-answered","decisionId":"d-1","answer":"waive","planDigest":"p"}',

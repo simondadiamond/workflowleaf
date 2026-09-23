@@ -5,7 +5,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Redacted from "effect/Redacted";
 
-import { executorToken, type T3ExecutorConfig } from "./profile.ts";
+import * as Path from "effect/Path";
+
+import { canonicalJson } from "./canonical.ts";
+import { executorToken, loadProfile, type T3ExecutorConfig } from "./profile.ts";
+import { pullRequestDeps } from "./run.ts";
 
 const executor = (overrides: Partial<T3ExecutorConfig>): T3ExecutorConfig => ({
   kind: "t3",
@@ -46,5 +50,91 @@ it.layer(NodeServices.layer)("the executor's bearer token", (it) => {
       assert.include(failure.message, "$WL_TOKEN");
       assert.include(failure.message, "/does/not/exist");
     }).pipe(withEnv({})),
+  );
+});
+
+/** Writes a profile under a fresh WorkflowLeaf home and loads it by name. */
+const loadWritten = (document: Record<string, unknown>) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped();
+    yield* fs.makeDirectory(path.join(home, "profiles"));
+    yield* fs.writeFileString(
+      path.join(home, "profiles", "p.json"),
+      canonicalJson({
+        executor: { kind: "fake" },
+        repoRoot: "/repo",
+        skillRoots: [],
+        budgets: { maxRepairCycles: 2, runDeadlineMs: null },
+        ...document,
+      }),
+    );
+    return yield* loadProfile("p").pipe(withEnv({ WORKFLOWLEAF_HOME: home }), Effect.result);
+  }).pipe(Effect.scoped);
+
+const four = {
+  createPullRequest: false,
+  commentOnPullRequest: false,
+  merge: false,
+  liveCanary: false,
+};
+
+it.layer(NodeServices.layer)("a profile's permissions", (it) => {
+  it.effect("are four required flags, plus markPullRequestReady, which is optional", () =>
+    Effect.gen(function* () {
+      const loaded = yield* loadWritten({ permissions: four });
+      assert.strictEqual(loaded._tag, "Success");
+      if (loaded._tag === "Success") {
+        assert.deepStrictEqual(Object.keys(loaded.success.permissions).sort(), [
+          "commentOnPullRequest",
+          "createPullRequest",
+          "liveCanary",
+          "merge",
+        ]);
+      }
+    }),
+  );
+
+  it.effect("still load from a profile written with the retired deploy flag", () =>
+    Effect.gen(function* () {
+      const loaded = yield* loadWritten({ permissions: { ...four, deploy: false } });
+      assert.strictEqual(loaded._tag, "Success");
+      if (loaded._tag === "Success") assert.notProperty(loaded.success.permissions, "deploy");
+    }),
+  );
+
+  it.effect("leave the pull request a draft unless markPullRequestReady is on", () =>
+    Effect.gen(function* () {
+      const pullRequest = { remote: "origin", baseBranch: "main" };
+      const off = yield* loadWritten({ permissions: four, pullRequest });
+      const on = yield* loadWritten({
+        permissions: { ...four, markPullRequestReady: true },
+        pullRequest: { ...pullRequest, reviewWaitMinutes: 20 },
+      });
+      assert.ok(off._tag === "Success" && on._tag === "Success");
+      if (off._tag !== "Success" || on._tag !== "Success") return;
+      assert.isUndefined(pullRequestDeps(off.success, "/w").markReady);
+      assert.isFunction(pullRequestDeps(on.success, "/w").markReady);
+      assert.strictEqual(pullRequestDeps(on.success, "/w").reviewWaitMinutes, 20);
+    }),
+  );
+
+  it.effect("reject a flag that is not one of the four", () =>
+    Effect.gen(function* () {
+      const loaded = yield* loadWritten({ permissions: { ...four, firestore: true } });
+      assert.strictEqual(loaded._tag, "Failure");
+    }),
+  );
+
+  it.effect("sit beside a runtime mode T3 actually has", () =>
+    Effect.gen(function* () {
+      const t3 = (runtimeMode: string) => ({
+        permissions: four,
+        executor: { ...executor({}), tokenFile: "/token", runtimeMode },
+      });
+      assert.strictEqual((yield* loadWritten(t3("approval-required")))._tag, "Success");
+      assert.strictEqual((yield* loadWritten(t3("read-only")))._tag, "Failure");
+    }),
   );
 });
