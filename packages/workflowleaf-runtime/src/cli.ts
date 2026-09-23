@@ -269,6 +269,10 @@ export function formatProgress(event: RunProgress): string {
     }
     case "stage-settled":
       return `  ${event.stageId}: ${event.state}`;
+    case "pull-request-ready":
+      return event.failure === null
+        ? `  pull request #${String(event.number)}: marked ready for review`
+        : `  pull request #${String(event.number)}: could not be marked ready: ${event.failure.split("\n")[0] ?? ""}`;
   }
 }
 

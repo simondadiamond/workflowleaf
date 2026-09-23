@@ -187,8 +187,12 @@ fixing review findings, not something for you to do by hand.
 
 ## 6. Done
 
-An open draft pull request on the run record, and the run in state `succeeded`.
-Not a merged one. Simon marks a pull request ready and Simon merges, always.
+An open pull request on the run record, and the run in state `succeeded`. Not a
+merged one. Simon merges, always. When the profile has
+`permissions.markPullRequestReady`, code marks the pull request ready after
+deliver passes, so review bots see it, and `babysit` waits for a review on the
+head before it converges. Without it the pull request stays a draft and
+`babysit` waits until someone marks it ready.
 
 ## 7. Everything you had to do by hand is the output
 

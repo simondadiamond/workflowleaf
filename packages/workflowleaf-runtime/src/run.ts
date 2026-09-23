@@ -43,7 +43,7 @@ import { digestOf } from "./digest.ts";
 import { revParse } from "./git.ts";
 import { loadPlaybook } from "./load.ts";
 import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
-import { openDraftPullRequest } from "./pullRequest.ts";
+import { markPullRequestReady, openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import {
   DEFAULT_QUIET,
@@ -387,6 +387,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
         quiet: DEFAULT_QUIET,
+        ...pullRequestDeps(input.profile, workspace.path),
       },
       lease,
       initial: [{ type: "start" }],
@@ -433,6 +434,18 @@ const openPullRequestFor = Effect.fnUntraced(function* (input: {
     ghConfigDir: input.profile.ghConfigDir,
   });
 });
+
+/** What the worker may do with the run's pull request, as the profile permits. */
+export function pullRequestDeps(profile: Profile, workspacePath: string) {
+  return {
+    markReady:
+      profile.permissions.markPullRequestReady === true
+        ? (number: number) =>
+            markPullRequestReady({ workspacePath, number, ghConfigDir: profile.ghConfigDir })
+        : undefined,
+    reviewWaitMinutes: profile.pullRequest?.reviewWaitMinutes,
+  };
+}
 
 /** How long a lease lasts without renewal. The holder renews it well inside this. */
 const LEASE_SECONDS = 300;
@@ -540,6 +553,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
         quiet: DEFAULT_QUIET,
+        ...pullRequestDeps(input.profile, workspace.value.path),
       },
       lease,
       initial: answered.length > 0 ? answered : input.inputs,

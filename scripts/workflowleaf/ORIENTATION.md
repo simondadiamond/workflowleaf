@@ -9,7 +9,8 @@ the same context.
 A run id is the story plus its ordinal, `issue-42-1`. A story that outgrows one
 pull request gets `issue-42-2`, so a split never collides. The draft pull
 request is opened by code at run start when the profile permits it, and its
-number is on the run record.
+number is on the run record. Code marks it ready for review once the stage that
+produces `pull-request` passes, when the profile permits that too.
 
 Everything is additive on top of T3 so upstream's main branch keeps merging.
 
@@ -321,9 +322,12 @@ active one. FBM's is `~/.fbm/gh` (`autoParis`). WorkflowLeaf's own `gh` calls
 and command gates use it, and each stage prompt tells the agent to. The active
 account is never switched.
 
-`permissions` holds exactly four flags, all false unless granted:
-`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`. They
-cover what WorkflowLeaf itself does outside the worktree. What an agent may do
+`permissions` holds four flags, all false unless granted:
+`createPullRequest`, `commentOnPullRequest`, `merge` and `liveCanary`, plus
+`markPullRequestReady`, which may be left out and then means false. They
+cover what WorkflowLeaf itself does outside the worktree. `markPullRequestReady`
+exists because review bots commonly skip drafts: FBM's do, so a run that leaves
+its pull request a draft is never reviewed. `fbm` has it on. What an agent may do
 inside it is the executor's `runtimeMode` (T3's own four modes) and the
 provider's approvals. With `approval-required`, a stage's provider asks before
 acting: `wl requests <run>` lists what it is waiting on and `wl answer` accepts
@@ -378,7 +382,12 @@ gate stays as the safety net, recording a pass on a tree that moved as `stale`.
   `checks-green` and `converged-on-head` exist. An unresolved condition (CI
   running, a reviewer yet to answer) records `pending`: the run parks in
   `waiting_external` and `resume` checks again. `--poll <seconds>` keeps
-  checking for up to `--poll-for` minutes.
+  checking for up to `--poll-for` minutes. `converged-on-head` also needs a
+  submitted review of the head by someone other than the pull request's
+  author, because "nothing outstanding" is also what a pull request nobody
+  looked at shows, and `SKIPPED` checks prove nothing was reviewed (#42). A
+  repository with no reviewer sets `pullRequest.reviewWaitMinutes` in the
+  profile: a ready pull request then converges after that long without one.
 
 A stage that routes back (`correction: route-to`) sends its failing verdicts
 with the dispatch, so the stage it returns to starts from the findings rather

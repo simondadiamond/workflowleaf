@@ -77,6 +77,18 @@ export const findOpenPullRequest = Effect.fnUntraced(function* (input: {
   return decoded.success[0] ?? null;
 });
 
+/**
+ * Marks the run's pull request ready for review. Idempotent: `gh` succeeds on
+ * one that is already ready.
+ */
+export const markPullRequestReady = Effect.fnUntraced(function* (input: {
+  readonly workspacePath: string;
+  readonly number: number;
+  readonly ghConfigDir?: string | undefined;
+}) {
+  yield* gh(input.workspacePath, ["pr", "ready", String(input.number)], input.ghConfigDir);
+});
+
 export interface OpenPullRequestInput {
   readonly workspacePath: string;
   readonly headBranch: string;
