@@ -31,6 +31,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -46,9 +47,11 @@ import { executorToken, workflowleafHome, type Profile } from "./profile.ts";
 import { markPullRequestReady, openDraftPullRequest } from "./pullRequest.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import {
+  cancel,
   DEFAULT_QUIET,
   drive,
   type DriveResult,
+  ExecutorFailed,
   type ProgressSink,
   type WorkerDeps,
 } from "./worker.ts";
@@ -302,6 +305,43 @@ export const runDirFor = Effect.fnUntraced(function* (runId: string) {
   return path.join(yield* workflowleafHome(), "runs", runId);
 });
 
+/**
+ * Notes in the run's progress log that its start has begun.
+ *
+ * `startRun` opens the worktree and the pull request before the run record
+ * exists, and that can take several seconds. Without this line, `status`
+ * reports that there is no such run while its pull request is already open.
+ */
+const markStarting = Effect.fnUntraced(
+  function* (runId: string, at: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const runDir = yield* runDirFor(runId);
+    yield* fs.makeDirectory(runDir, { recursive: true });
+    yield* fs.writeFileString(path.join(runDir, PROGRESS_LOG), `${at} run starting\n`, {
+      flag: "a",
+    });
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
+ * For a run with no record, the last progress line its start wrote, if a
+ * start has begun. A start that failed leaves the line too, so the caller
+ * shows when it was written rather than claiming the run is on its way.
+ */
+export const startingRun = Effect.fnUntraced(
+  function* (runId: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const file = path.join(yield* runDirFor(runId), PROGRESS_LOG);
+    if (!(yield* fs.exists(file))) return Option.none<string>();
+    const lines = (yield* fs.readFileString(file)).split("\n").filter((line) => line.length > 0);
+    return Option.fromUndefinedOr(lines.at(-1));
+  },
+  Effect.catchCause(() => Effect.succeed(Option.none<string>())),
+);
+
 export interface StartRunInput {
   readonly runId: RunId;
   /** The story this run delivers. Several runs of one story share it. */
@@ -341,6 +381,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
     });
   }
 
+  yield* markStarting(input.runId as string, compiledAt);
   const baseRevision = yield* revParse(input.profile.repoRoot, input.baseRef);
 
   // The worktree comes first: an executor is bound to the directory its stages
@@ -406,6 +447,7 @@ export const startRun = Effect.fnUntraced(function* (input: StartRunInput) {
         baseRevision,
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
+        permissions: input.profile.permissions,
         quiet: DEFAULT_QUIET,
         ...pullRequestDeps(input.profile, workspace.path),
       },
@@ -573,6 +615,7 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
         baseRevision: loaded.value.baseRevision,
         reviewer: input.profile.reviewer,
         ghConfigDir: input.profile.ghConfigDir,
+        permissions: input.profile.permissions,
         quiet: DEFAULT_QUIET,
         ...pullRequestDeps(input.profile, workspace.value.path),
       },
@@ -585,6 +628,54 @@ export const resumeRun = Effect.fnUntraced(function* (input: ResumeRunInput) {
     yield* askForDecision(input.runId, yield* decisionPortFor(input.profile));
   }
   return result;
+});
+
+/**
+ * Cancels a run. The executor is reached only to stop a stage still in
+ * flight, and a run whose executor is gone still cancels.
+ */
+export const cancelRun = Effect.fnUntraced(function* (input: {
+  readonly runId: RunId;
+  readonly profile: Profile;
+  readonly owner: string;
+  readonly reason: string;
+  readonly progress?: ProgressSink | undefined;
+}) {
+  const store = yield* RunStore;
+  const path = yield* Path.Path;
+  const workspace = yield* store.findWorkspace(input.runId);
+  const runDir = yield* runDirFor(input.runId as string);
+  const seed = yield* store.transitionCount(input.runId);
+
+  const interrupt = (handle: StageHandle) =>
+    Option.isNone(workspace)
+      ? Effect.void
+      : Effect.scoped(
+          Effect.gen(function* () {
+            const executor = yield* executorFor(input.profile, {
+              workspacePath: workspace.value.path,
+              branch: workspace.value.branch,
+            });
+            yield* Effect.tryPromise(() => executor.interrupt(handle));
+          }),
+        ).pipe(
+          Effect.timeout("15 seconds"),
+          Effect.mapError(
+            (cause) => new ExecutorFailed({ operation: "interrupt", detail: cause.message }),
+          ),
+        );
+
+  return yield* holdingLease(input.runId, input.owner, (lease) =>
+    cancel({
+      runId: input.runId,
+      reason: input.reason,
+      lease,
+      ids: idSourceFor(input.runId as string, seed),
+      interrupt,
+      progress: input.progress,
+      progressLog: path.join(runDir, PROGRESS_LOG),
+    }),
+  );
 });
 
 export interface PullRequestSummary {
@@ -601,6 +692,13 @@ export interface RunSummary {
    * way to use that flag would be to guess at the number it is there to check.
    */
   readonly revision: number;
+  /**
+   * A run in `running` that no worker holds a lease on. Nothing will move it
+   * until someone resumes or cancels it, so it should not look like live work.
+   */
+  readonly stale: boolean;
+  /** How many things the run found and did not act on. `status <run>` lists them. */
+  readonly findings: number;
   readonly stage: string | null;
   readonly attention: string | null;
   /** Null only for a run started under a profile that may not open one. */
@@ -609,19 +707,27 @@ export interface RunSummary {
   readonly updatedAt: string;
 }
 
-function summaryOf(run: {
-  readonly record: RunRecord;
-  readonly plan: RunPlan;
-  readonly story: string;
-}): RunSummary {
+function summaryOf(
+  run: {
+    readonly record: RunRecord;
+    readonly plan: RunPlan;
+    readonly story: string;
+  },
+  leased: ReadonlySet<string>,
+  findings: number,
+): RunSummary {
+  const stale = run.record.state === "running" && !leased.has(run.record.runId as string);
   return {
     runId: run.record.runId as string,
     story: run.story,
     state: run.record.state,
     revision: run.record.revision,
+    stale,
+    findings,
     stage: run.record.currentStageId as string | null,
-    attention:
-      run.record.decision === null
+    attention: stale
+      ? `no worker has held this run since ${run.record.updatedAt}; resume or cancel it`
+      : run.record.decision === null
         ? run.record.failure
         : `${run.record.decision.kind}: ${run.record.decision.detail}`,
     pullRequest:
@@ -637,8 +743,13 @@ function summaryOf(run: {
 export const summarizeRuns = Effect.fnUntraced(function* (state?: string) {
   const store = yield* RunStore;
   const runs = yield* store.listRuns(state === undefined ? undefined : { state });
+  const leased = yield* store.leasedRuns();
+  const findings = new Map<string, number>();
+  for (const finding of yield* store.findingsSince("")) {
+    findings.set(finding.runId, (findings.get(finding.runId) ?? 0) + 1);
+  }
 
-  return runs.map(summaryOf);
+  return runs.map((run) => summaryOf(run, leased, findings.get(run.record.runId as string) ?? 0));
 });
 
 export interface RunDetail extends RunSummary {
@@ -656,6 +767,13 @@ export interface RunDetail extends RunSummary {
     readonly lostContext: boolean;
   }[];
   readonly limitations: readonly { readonly stageId: string; readonly detail: string }[];
+  /** What the run found and did not act on, oldest first. */
+  readonly foundNotFixed: readonly {
+    readonly stageId: string;
+    readonly source: string;
+    readonly detail: string;
+    readonly at: string;
+  }[];
 }
 
 export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
@@ -665,10 +783,11 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
 
   const workspace = yield* store.findWorkspace(runId);
   const limitations = yield* store.limitationsFor(runId);
+  const findings = yield* store.findingsFor(runId);
   const record = loaded.value.record;
 
   return Option.some({
-    ...summaryOf(loaded.value),
+    ...summaryOf(loaded.value, yield* store.leasedRuns(), findings.length),
     workspacePath: Option.isSome(workspace) ? workspace.value.path : null,
     scopeSplit:
       record.scopeSplit === null
@@ -687,6 +806,12 @@ export const describeRun = Effect.fnUntraced(function* (runId: RunId) {
     limitations: limitations.map((limitation) => ({
       stageId: limitation.stageId as string,
       detail: limitation.detail,
+    })),
+    foundNotFixed: findings.map((finding) => ({
+      stageId: finding.stageId,
+      source: finding.source,
+      detail: finding.detail,
+      at: finding.at,
     })),
   } satisfies RunDetail);
 });

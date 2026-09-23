@@ -22,6 +22,7 @@ import { groupByCause, readLearningLog, sinceInstant } from "./learningLog.ts";
 import { loadPlaybook } from "./load.ts";
 import {
   answeredFromCli,
+  cancelRun,
   decisionPortFor,
   describeRun,
   nextRunId,
@@ -29,6 +30,7 @@ import {
   resumeRun,
   runDirFor,
   stageInFlight,
+  startingRun,
   startRun,
   summarizeRuns,
 } from "./run.ts";
@@ -409,7 +411,12 @@ const statusCommand = Command.make(
     if (Option.isSome(run)) {
       const detail = yield* describeRun(run.value as never);
       if (Option.isNone(detail)) {
-        yield* Console.error(`No run ${run.value}.`);
+        const starting = yield* startingRun(run.value);
+        yield* Option.isSome(starting)
+          ? Console.log(
+              `${run.value} has no record yet. Its start is opening the worktree and pull request; last progress: ${starting.value}`,
+            )
+          : Console.error(`No run ${run.value}.`);
         return;
       }
       yield* Console.log(
@@ -425,12 +432,16 @@ const statusCommand = Command.make(
     }
     for (const summary of summaries) {
       const attention = summary.attention === null ? "" : `  ${summary.attention}`;
+      const findings =
+        summary.findings === 0
+          ? ""
+          : `  ${String(summary.findings)} found, not fixed (status ${summary.runId})`;
       // Every run shows its pull request, including the runs that have none:
       // "no pull request" is a fact about the run, not a blank.
       const pullRequest =
         summary.pullRequest === null ? "no PR" : `#${String(summary.pullRequest.number)}`;
       yield* Console.log(
-        `${summary.state.padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}`,
+        `${(summary.stale ? "running, stale" : summary.state).padEnd(16)} ${summary.runId.padEnd(28)} ${pullRequest.padEnd(8)} ${summary.stage ?? "-"}${attention}${findings}`,
       );
     }
   }),
@@ -599,16 +610,20 @@ const cancelCommand = Command.make(
   Effect.fnUntraced(function* ({ run, profile: profileName, owner, revision, reason }) {
     yield* assertRevision(run, revision);
     const profile = yield* loadProfile(profileName);
-    const result = yield* resumeRun({
+    const result = yield* cancelRun({
       runId: run as never,
       profile,
       owner,
-      inputs: [{ type: "cancel", reason }],
+      reason,
       progress: printProgress,
     });
     yield* reportResult(run, result.stopped);
   }),
-).pipe(Command.withDescription("Cancel a run, interrupting whatever it is doing."));
+).pipe(
+  Command.withDescription(
+    "Cancel a run without starting anything. A stage still in flight is interrupted if its executor answers.",
+  ),
+);
 
 const decideCommand = Command.make(
   "decide",

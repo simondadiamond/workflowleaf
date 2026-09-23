@@ -39,12 +39,13 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { git } from "./git.ts";
+import { readLearningLog } from "./learningLog.ts";
 import { PullRequestError } from "./pullRequest.ts";
 import { replayRun } from "./replay.ts";
 import { idSourceFor } from "./run.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
-import { drive, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
+import { cancel, drive, ExecutorFailed, SCOPE_SPLIT_PATH, type RunProgress } from "./worker.ts";
 import { ensureWorkspace } from "./workspaces.ts";
 
 const plan: RunPlan = twoStagePlan();
@@ -186,6 +187,41 @@ class WritingExecutor implements ExecutorPort {
       kind: "not-pending",
       reason: "This executor has no provider to ask.",
     });
+  }
+}
+
+/** An executor whose server is gone. It records what it was asked, then refuses. */
+class FailingExecutor implements ExecutorPort {
+  readonly calls: string[] = [];
+
+  #refuse(call: string): Promise<never> {
+    this.calls.push(call);
+    return Promise.reject(new Error("socket ticket refused"));
+  }
+
+  capabilities(): Promise<ExecutorCapabilities> {
+    return this.#refuse("capabilities");
+  }
+  startStage(request: StageRequest): Promise<StageHandle> {
+    return this.#refuse(`startStage ${request.stage.contract.id as string}`);
+  }
+  continueStage(handle: StageHandle): Promise<ContinueOutcome> {
+    return this.#refuse(`continueStage ${handle.handle}`);
+  }
+  inspect(operationId: OperationId): Promise<InspectOutcome> {
+    return this.#refuse(`inspect ${operationId as string}`);
+  }
+  interrupt(handle: StageHandle): Promise<void> {
+    return this.#refuse(`interrupt ${handle.handle}`);
+  }
+  awaitSettlement(handle: StageHandle): Promise<StageSettlement> {
+    return this.#refuse(`awaitSettlement ${handle.handle}`);
+  }
+  pendingRequests(): Promise<readonly ProviderRequest[]> {
+    return this.#refuse("pendingRequests");
+  }
+  answerRequest(): Promise<AnswerOutcome> {
+    return this.#refuse("answerRequest");
   }
 }
 
@@ -756,6 +792,201 @@ it.layer(testLayer, { excludeTestServices: true })("worker", (it) => {
       assert.deepStrictEqual(executor.starts, []);
     }).pipe(Effect.scoped),
   );
+  it.effect(
+    "cancels a run with a lost dispatch without starting it again or reaching the executor",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* RunStore;
+        const { lease } = yield* setUpRun("run-cancel-stale");
+
+        // The run was started and its worker died with the first stage in flight:
+        // the dispatch is on record and nothing ever settled it.
+        const loaded = yield* store.loadRun("run-cancel-stale" as RunId);
+        if (Option.isNone(loaded)) return yield* Effect.die("no run");
+        const started = decide(
+          {
+            run: loaded.value.record,
+            plan,
+            now: "2026-01-01T00:00:00.000Z",
+            ids: sequentialIds("s"),
+          },
+          { type: "start" },
+        );
+        yield* store.commit({
+          previous: loaded.value.record,
+          next: started.run,
+          transitionInput: { type: "start" },
+          effects: started.effects,
+          lease,
+        });
+        const dispatch = started.effects.find((effect) => effect.type === "dispatch-stage");
+        if (dispatch?.type !== "dispatch-stage") return yield* Effect.die("no dispatch");
+        yield* store.recordIntent({
+          operationId: dispatch.operationId,
+          runId: "run-cancel-stale" as RunId,
+          visitId: dispatch.visitId as string,
+          attemptId: dispatch.attemptId as string,
+          kind: "start",
+          idempotencyKey: "run-cancel-stale:first",
+        });
+        yield* store.acknowledgeOperation(dispatch.operationId, "thread-of-a-dead-server");
+
+        // The executor the run was started on is gone: every call fails.
+        const executor = new FailingExecutor();
+        const result = yield* cancel({
+          runId: "run-cancel-stale" as RunId,
+          reason: "dead experiment",
+          lease,
+          ids: sequentialIds("c"),
+          interrupt: (handle) =>
+            Effect.tryPromise({
+              try: () => executor.interrupt(handle),
+              catch: (cause) =>
+                new ExecutorFailed({ operation: "interrupt", detail: String(cause) }),
+            }),
+        });
+
+        assert.strictEqual(result.record.state, "cancelled");
+        assert.strictEqual(result.stopped, "finished");
+        assert.deepStrictEqual(executor.calls, ["interrupt thread-of-a-dead-server"]);
+        const after = yield* store.loadRun("run-cancel-stale" as RunId);
+        if (Option.isNone(after)) return yield* Effect.die("no run");
+        assert.strictEqual(after.value.record.state, "cancelled");
+        assert.lengthOf(yield* store.unsettledOperations("run-cancel-stale" as RunId), 0);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("records what a stage found and did not fix, once, and clears the file", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-findings");
+      const note = "checks/mapped-tests.sh misses top-level functions/*.js files.\n";
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (at) => {
+              write("artifact.md", ARTIFACT)(at);
+              writeUnder(".workflowleaf/findings.md", note)(at);
+            },
+          ],
+          // The next stage writes the same note again, as a stage that read the
+          // same broken check would.
+          summarize: [
+            (at) => {
+              write("summary.md", SUMMARY)(at);
+              writeUnder(".workflowleaf/findings.md", note)(at);
+            },
+          ],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-findings" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("f"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+          permissions: { commentOnPullRequest: false, merge: false },
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      // Not a gate: the run finishes as it would have without the note.
+      assert.strictEqual(result.record.state, "succeeded");
+      const findings = yield* store.findingsFor("run-findings" as RunId);
+      assert.deepStrictEqual(
+        findings.map((finding) => [finding.stageId, finding.source, finding.detail]),
+        [["produce", "stage", note.trim()]],
+      );
+      assert.isFalse(yield* fs.exists(path.join(workspace.path, ".workflowleaf/findings.md")));
+      assert.include(executor.prompts[0] ?? "", ".workflowleaf/findings.md");
+      // The profile's permissions reach every dispatched stage.
+      for (const prompt of executor.prompts) {
+        assert.include(prompt, "Do not comment on or review any pull request");
+      }
+
+      const logged = yield* readLearningLog("");
+      assert.isTrue(
+        logged.some(
+          (entry) =>
+            entry.kind === "finding" &&
+            entry.runId === "run-findings" &&
+            entry.stageId === "produce",
+        ),
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("reports a file changed through a symlink that leaves the worktree", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { workspace, lease, logDir } = yield* setUpRun("run-escape");
+
+      // As FBM's post-checkout hook does: the worktree's .claude is the main
+      // checkout's, so an edit through it lands in a directory git never reads.
+      const shared = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(path.join(shared, "hooks"));
+      yield* fs.writeFileString(path.join(shared, "hooks", "map.sh"), "old\n");
+      yield* fs.writeFileString(path.join(shared, "untouched.md"), "same\n");
+      // Claude Code keeps other checkouts under .claude/worktrees; they are not
+      // this run's, and a busy one must not be reported against it.
+      yield* fs.makeDirectory(path.join(shared, "worktrees", "other"), { recursive: true });
+      yield* fs.writeFileString(path.join(shared, "worktrees", "other", ".git"), "gitdir: x\n");
+      yield* fs.writeFileString(path.join(shared, "worktrees", "other", "busy.txt"), "1\n");
+      yield* fs.symlink(shared, path.join(workspace.path, ".claude"));
+
+      const executor = new WritingExecutor({
+        workspacePath: workspace.path,
+        actions: {
+          produce: [
+            (at) => {
+              write("artifact.md", ARTIFACT)(at);
+              write(".claude/hooks/map.sh", "new\n")(at);
+              write(".claude/worktrees/other/busy.txt", "2\n")(at);
+            },
+          ],
+          summarize: [write("summary.md", SUMMARY)],
+        },
+      });
+
+      const result = yield* drive({
+        runId: "run-escape" as RunId,
+        deps: {
+          executor,
+          ids: sequentialIds("e"),
+          workspacePath: workspace.path,
+          logDir,
+          owner: "worker-a",
+          leaseSeconds: 60,
+        },
+        lease,
+        initial: [{ type: "start" }],
+      });
+
+      assert.strictEqual(result.record.state, "succeeded");
+      const findings = yield* store.findingsFor("run-escape" as RunId);
+      assert.deepStrictEqual(
+        findings.map((finding) => [finding.stageId, finding.source]),
+        [["produce", "outside-worktree"]],
+      );
+      const detail = findings[0]?.detail ?? "";
+      assert.include(detail, ".claude/hooks/map.sh");
+      assert.include(detail, path.join(yield* fs.realPath(shared), "hooks", "map.sh"));
+      assert.notInclude(detail, "untouched.md");
+      assert.notInclude(detail, "busy.txt");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("reports every stage and gate verdict while it drives, not only at the end", () =>
     Effect.gen(function* () {
       const { workspace, lease, logDir } = yield* setUpRun("run-progress");

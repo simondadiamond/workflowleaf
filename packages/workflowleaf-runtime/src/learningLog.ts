@@ -4,8 +4,9 @@
  * It is derived, not written. Every failing gate already left an evidence
  * record, every stop for a human already left a `raise-decision` effect in the
  * transition log, every answer a `decision-answered` input, and every executor
- * gap a limitation. Reading those back is the log, so there is no second writer
- * to forget to call and no entry that can disagree with what the run recorded.
+ * gap a limitation. What a run found and did not fix is a finding. Reading
+ * those back is the log, so there is no second writer to forget to call and
+ * no entry that can disagree with what the run recorded.
  *
  * Grouping is by cause: the gate and how it failed, the kind of decision, the
  * missing capability. A cause that recurs is a candidate for a script, a skill
@@ -24,7 +25,7 @@ export interface LearningEntry {
   readonly runId: string;
   readonly stageId: string | null;
   /** What kind of thing went wrong. `intervention` means a person had to act. */
-  readonly kind: "gate" | "decision" | "intervention" | "limitation";
+  readonly kind: "gate" | "decision" | "intervention" | "limitation" | "finding";
   /** The grouping key, e.g. `gate mapped-tests-pass failed`. */
   readonly cause: string;
   readonly detail: string;
@@ -84,6 +85,13 @@ export function learningEntries(input: {
     readonly runId: string;
     readonly stageId: string;
     readonly capability: string;
+    readonly detail: string;
+    readonly at: string;
+  }[];
+  readonly findings?: readonly {
+    readonly runId: string;
+    readonly stageId: string;
+    readonly source: string;
     readonly detail: string;
     readonly at: string;
   }[];
@@ -171,6 +179,20 @@ export function learningEntries(input: {
     });
   }
 
+  // Found and not fixed: nothing failed, but someone should read it.
+  for (const finding of input.findings ?? []) {
+    entries.push({
+      at: finding.at,
+      runId: finding.runId,
+      stageId: finding.stageId,
+      kind: "finding",
+      cause: `found, not fixed (${finding.source})`,
+      detail: finding.detail,
+      evidence: null,
+      human: false,
+    });
+  }
+
   return entries.sort((left, right) => left.at.localeCompare(right.at));
 }
 
@@ -222,16 +244,18 @@ export const sinceInstant = Effect.fnUntraced(function* (since: string) {
 
 export const readLearningLog = Effect.fnUntraced(function* (since: string) {
   const store = yield* RunStore;
-  const [evidence, transitions, limitations, runs] = yield* Effect.all([
+  const [evidence, transitions, limitations, findings, runs] = yield* Effect.all([
     store.failedEvidenceSince(since),
     store.transitionsSince(since),
     store.limitationsSince(since),
+    store.findingsSince(since),
     store.listRuns(),
   ]);
   return learningEntries({
     evidence,
     transitions,
     limitations,
+    findings,
     runs: new Map(runs.map((run) => [run.record.runId as string, run.record])),
   });
 });

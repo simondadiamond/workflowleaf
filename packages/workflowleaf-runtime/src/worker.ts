@@ -44,15 +44,18 @@ import type { ChildProcessSpawner } from "effect/unstable/process";
 
 import { digestOf } from "./digest.ts";
 import { evaluateGate, type GateContext } from "./gates.ts";
-import { compileStagePrompt } from "./prompt.ts";
+import { compileStagePrompt, FINDINGS_PATH, type StagePermissions } from "./prompt.ts";
 import type { PullRequestError } from "./pullRequest.ts";
 import type { ReviewerConfig } from "./reviewer.ts";
 import { skillsForPaths } from "./skillCatalog.ts";
 import { RunStore, type Lease } from "./store/RunStore.ts";
 import {
   changedPaths,
+  outsideChanges,
+  outsideTheWorktree,
   pathsChangedSince,
   takeSnapshot,
+  type OutsideTheWorktree,
   type SnapshotManifest,
 } from "./workspaces.ts";
 
@@ -132,6 +135,8 @@ export interface WorkerDeps {
   readonly reviewer?: ReviewerConfig | undefined;
   /** The `gh` config directory for the run's repository, when the profile names one. */
   readonly ghConfigDir?: string | undefined;
+  /** What the profile permits on GitHub, which each stage is told. */
+  readonly permissions?: StagePermissions | undefined;
   /**
    * How long the worktree must stay unchanged before gates may read it. Absent
    * means gates run as soon as the stage settles, which only tests want.
@@ -577,6 +582,52 @@ const scopeSplitDeclared = Effect.fnUntraced(function* (workspacePath: string) {
 });
 
 /**
+ * Records what a stage wrote to `FINDINGS_PATH` and clears the file.
+ *
+ * A stage's closing message reaches only its own thread, so a problem it
+ * noticed outside its task (a broken check, a nit it left alone) never reached
+ * whoever drives the run. Code reads this file after every turn, records it on
+ * the run and removes it, so the next stage starts with an empty one. It is
+ * not a gate: whether a finding matters is a person's call.
+ */
+const collectFindings = Effect.fnUntraced(
+  function* (runId: RunId, stageId: StageId, workspacePath: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const store = yield* RunStore;
+    const file = path.join(workspacePath, FINDINGS_PATH);
+    if (!(yield* fs.exists(file))) return;
+    const detail = (yield* fs.readFileString(file)).trim();
+    if (detail.length > 0) {
+      yield* store.recordFinding({ runId, stageId: stageId as string, source: "stage", detail });
+    }
+    yield* fs.remove(file);
+  },
+  // A finding that cannot be read is lost, which is what happened before this
+  // existed. It must never be the reason a run stops.
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
+ * Records, as a finding, any file behind an outward symlink that changed
+ * while the stage ran. See `outsideTheWorktree` for why no gate can see these.
+ */
+const reportOutside = Effect.fnUntraced(
+  function* (runId: RunId, stageId: StageId, workspacePath: string, before: OutsideTheWorktree) {
+    const store = yield* RunStore;
+    const detail = outsideChanges(before, yield* outsideTheWorktree(workspacePath));
+    if (detail === null) return;
+    yield* store.recordFinding({
+      runId,
+      stageId: stageId as string,
+      source: "outside-worktree",
+      detail,
+    });
+  },
+  Effect.catchCause(() => Effect.void),
+);
+
+/**
  * The path-triggered skills a stage calls for right now.
  *
  * Chosen from the paths the run has actually changed, plus what the stage
@@ -642,6 +693,7 @@ const stageRequestFor = Effect.fnUntraced(function* (input: {
     extraSkills,
     correction: input.effect.correction ?? null,
     ghConfigDir: input.deps.ghConfigDir,
+    permissions: input.deps.permissions,
   });
 
   return {
@@ -684,6 +736,7 @@ const perform = Effect.fnUntraced(function* (input: {
         kind: "start",
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
+      const outside = yield* outsideTheWorktree(deps.workspacePath);
 
       const { request, skills } = yield* stageRequestFor({ ...input, effect });
       const handle = yield* fromExecutor("startStage", () => deps.executor.startStage(request));
@@ -693,6 +746,8 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
+      yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+      yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
 
       return [
         {
@@ -722,6 +777,7 @@ const perform = Effect.fnUntraced(function* (input: {
         kind: "continue",
         idempotencyKey: `${input.record.runId}:${effect.visitId}:${effect.attemptId}`,
       });
+      const outside = yield* outsideTheWorktree(deps.workspacePath);
 
       const visit = input.record.visits.find((candidate) => candidate.visitId === effect.visitId);
       const previousHandle = visit?.operation?.handle ?? null;
@@ -736,6 +792,8 @@ const perform = Effect.fnUntraced(function* (input: {
           deps.executor.awaitSettlement(handle),
         );
         yield* store.settleOperation(effect.operationId, settlement.outcome);
+        yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+        yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
         return [
           {
             type: "dispatch-acknowledged",
@@ -775,6 +833,8 @@ const perform = Effect.fnUntraced(function* (input: {
         deps.executor.awaitSettlement(outcome.handle),
       );
       yield* store.settleOperation(effect.operationId, settlement.outcome);
+      yield* collectFindings(input.record.runId, effect.stageId, deps.workspacePath);
+      yield* reportOutside(input.record.runId, effect.stageId, deps.workspacePath, outside);
       return [
         ...(yield* discoveredSkills({
           plan: input.plan,
@@ -957,6 +1017,85 @@ export const drive = Effect.fnUntraced(function* (input: {
     stopped: stopReasonFor(record) ?? "idle",
     transitions,
   } satisfies DriveResult;
+});
+
+/**
+ * Cancels a run without doing any of its work first.
+ *
+ * `drive` reconciles unsettled operations before it reads its inputs, and a
+ * reconciliation that finds a lost dispatch starts the stage again. A cancel
+ * must never do that, and the run it cancels may belong to an executor that no
+ * longer exists. So this commits the cancel on its own, never reconciles and
+ * never dispatches. Stopping a stage still in flight is best effort: `interrupt`
+ * is told the handle, and whatever it fails with is swallowed.
+ */
+export const cancel = Effect.fnUntraced(function* <R>(input: {
+  readonly runId: RunId;
+  readonly reason: string;
+  readonly lease: Lease;
+  readonly ids: IdSource;
+  readonly interrupt?:
+    | ((handle: StageHandle) => Effect.Effect<void, ExecutorFailed, R>)
+    | undefined;
+  readonly progress?: ProgressSink | undefined;
+  readonly progressLog?: string | undefined;
+}) {
+  const store = yield* RunStore;
+  const loaded = yield* store.loadRun(input.runId);
+  if (Option.isNone(loaded)) {
+    return yield* new WorkerError({ message: `No run ${input.runId}.` });
+  }
+
+  const record = loaded.value.record;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  const transitionInput: ControllerInput = { type: "cancel", reason: input.reason };
+  const decision = decide(
+    { run: record, plan: loaded.value.plan, now, ids: input.ids },
+    transitionInput,
+  );
+  if (decision.run.revision === record.revision && decision.effects.length === 0) {
+    return {
+      record,
+      stopped: stopReasonFor(record) ?? "idle",
+      transitions: 0,
+    } satisfies DriveResult;
+  }
+
+  yield* store.commit({
+    previous: record,
+    next: decision.run,
+    transitionInput,
+    effects: decision.effects,
+    lease: input.lease,
+  });
+
+  const events = progressFor({
+    previous: record,
+    next: decision.run,
+    plan: loaded.value.plan,
+    transitionInput,
+    effects: decision.effects,
+  });
+  for (const event of events) {
+    if (input.progress !== undefined) yield* input.progress(event);
+  }
+  if (input.progressLog !== undefined && events.length > 0) {
+    yield* appendProgress(input.progressLog, now, events);
+  }
+
+  // Whatever was in flight is over as far as the run is concerned. Its
+  // operations are closed so nothing later reads them as work to recover.
+  const unsettled = yield* store.unsettledOperations(input.runId);
+  for (const operation of unsettled) {
+    if (input.interrupt !== undefined && operation.handle !== null) {
+      yield* input
+        .interrupt({ operationId: operation.operationId, handle: operation.handle })
+        .pipe(Effect.ignoreCause);
+    }
+    yield* store.settleOperation(operation.operationId, "interrupted");
+  }
+
+  return { record: decision.run, stopped: "finished", transitions: 1 } satisfies DriveResult;
 });
 
 /** Whether a visit's recorded evidence still satisfies every gate of its stage. */

@@ -1,4 +1,6 @@
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { assert, it } from "@effect/vitest";
 import {
   initialRun,
@@ -10,9 +12,12 @@ import {
   type WorkspaceId,
 } from "@t3tools/workflowleaf-core";
 import { capabilities, twoStagePlan } from "@t3tools/workflowleaf-core/testing";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 
 import { slugify } from "./cli.ts";
 import {
@@ -22,17 +27,21 @@ import {
   describeRun,
   holdingLease,
   nextRunId,
+  startingRun,
+  startRun,
   summarizeRuns,
 } from "./run.ts";
+import { DEFAULT_REVIEWER } from "./reviewer.ts";
 import { RunStore } from "./store/RunStore.ts";
 import { layerMemory } from "./store/Sqlite.ts";
 
 const plan = twoStagePlan();
 
-const testLayer = RunStore.layer.pipe(
-  Layer.provide(layerMemory),
-  Layer.provideMerge(NodeServices.layer),
-);
+const testLayer = Layer.mergeAll(
+  RunStore.layer.pipe(Layer.provide(layerMemory)),
+  NodeHttpClient.layerUndici,
+  NodeSocket.layerWebSocketConstructor,
+).pipe(Layer.provideMerge(NodeServices.layer));
 
 const record = (runId: string) =>
   initialRun({
@@ -89,6 +98,53 @@ it.layer(testLayer)("run ids", (it) => {
       // in `--revision`, so the detail has to carry it too.
       const detail = yield* describeRun("issue-46-1" as RunId);
       assert.strictEqual(Option.getOrUndefined(detail)?.revision, 7);
+    }),
+  );
+
+  it.effect("a running run no worker holds is stale, and one being driven is not", () =>
+    Effect.gen(function* () {
+      const store = yield* RunStore;
+      yield* store.createRun({
+        record: { ...record("run-dead"), state: "running" },
+        plan,
+        story: "story-dead",
+        profileName: "test",
+        origin: { trigger: "manual", by: "test" },
+        repoRoot: "/repo",
+        baseRevision: "abc123",
+      });
+      yield* store.createRun({
+        record: { ...record("run-live"), state: "running" },
+        plan,
+        story: "story-live",
+        profileName: "test",
+        origin: { trigger: "manual", by: "test" },
+        repoRoot: "/repo",
+        baseRevision: "abc123",
+      });
+
+      const staleness = (runs: readonly { runId: string; stale: boolean }[]) =>
+        Object.fromEntries(
+          runs
+            .filter((run) => run.runId === "run-dead" || run.runId === "run-live")
+            .map((run) => [run.runId, run.stale]),
+        );
+
+      yield* holdingLease("run-live" as RunId, "worker", () =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(staleness(yield* summarizeRuns()), {
+            "run-dead": true,
+            "run-live": false,
+          });
+          const detail = yield* describeRun("run-dead" as RunId);
+          assert.include(Option.getOrUndefined(detail)?.attention ?? "", "resume or cancel");
+        }),
+      );
+      // Once the drive ends, nothing is moving it either.
+      assert.deepStrictEqual(staleness(yield* summarizeRuns()), {
+        "run-dead": true,
+        "run-live": true,
+      });
     }),
   );
 
@@ -257,5 +313,60 @@ it.layer(testLayer)("decisions asked on a thread", (it) => {
       assert.strictEqual(Option.getOrUndefined(row)?.answer, "abort");
       assert.strictEqual(Option.getOrUndefined(row)?.answeredVia, "cli");
     }),
+  );
+});
+
+it.layer(testLayer, { excludeTestServices: true })("a run that is still starting", (it) => {
+  it.effect("says so before its record exists, instead of there being no such run", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const fixtures = path.join(
+        path.dirname(new URL(import.meta.url).pathname),
+        "..",
+        "test",
+        "fixtures",
+      );
+      const inHome = Effect.provide(
+        ConfigProvider.layer(ConfigProvider.fromUnknown({ WORKFLOWLEAF_HOME: home })),
+      );
+
+      // The repository has the playbook's context files but is not a git
+      // repository, so the start fails at the first slow step, which is where a
+      // real start is still opening its worktree and pull request with no
+      // record written.
+      const repo = path.join(home, "repo");
+      yield* fs.copy(path.join(fixtures, "repo"), repo);
+      const started = yield* startRun({
+        runId: "issue-9-1" as RunId,
+        story: "issue-9",
+        profile: {
+          name: "fixture",
+          executor: { kind: "fake" },
+          repoRoot: repo,
+          worktreeRoot: path.join(home, "worktrees"),
+          skillRoots: [path.join(fixtures, "skills")],
+          reviewer: DEFAULT_REVIEWER,
+          budgets: { maxRepairCycles: 2, runDeadlineMs: null },
+          permissions: {
+            createPullRequest: false,
+            commentOnPullRequest: false,
+            merge: false,
+            liveCanary: false,
+          },
+        },
+        playbookDir: path.join(fixtures, "playbooks", "two-stage"),
+        inputs: { topic: "a made-up topic" },
+        baseRef: "HEAD",
+        owner: "test",
+      }).pipe(inHome, Effect.result);
+      assert.strictEqual(started._tag, "Failure");
+
+      assert.isTrue(Option.isNone(yield* describeRun("issue-9-1" as RunId)));
+      const starting = yield* startingRun("issue-9-1").pipe(inHome);
+      assert.include(Option.getOrUndefined(starting) ?? "", "run starting");
+      assert.isTrue(Option.isNone(yield* startingRun("issue-10-1").pipe(inHome)));
+    }).pipe(Effect.scoped),
   );
 });

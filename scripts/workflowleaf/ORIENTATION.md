@@ -90,6 +90,16 @@ and AGENTS.md says so.
    The worker reads it after every settlement and the run stops before the next
    stage. Nothing infers a split from the size of a diff, and the file lives
    under a snapshot exclusion so declaring one disturbs no gate.
+   A stage reports what it found and did not fix the same way, in
+   `.workflowleaf/findings.md`. The worker records it on the run after each
+   turn (`wl_findings`, once per text) and clears the file. It is not a gate and
+   never changes the run: `status` counts it, `status <run>` lists it under
+   `foundNotFixed`, and `wl errors` groups it as `found, not fixed`.
+   The worker also records one itself when a file behind a symlink that
+   leads out of the worktree changes during a stage (`outside-worktree`). A
+   repository whose checkout hook links `.claude` or `.env` to the main
+   checkout lets an agent edit files there that no gate, reviewer or pull
+   request sees; this makes that visible, it does not stop it.
 6. **`it.effect` uses a test clock.** Anything that sleeps for real needs
    `it.layer(layer, { excludeTestServices: true })`.
 
@@ -282,6 +292,14 @@ checkout has checked out. A profile with no `pullRequest` falls back to `HEAD`.
 run has moved since you looked. The number is on the run: `status` carries
 `revision` in both its detail forms.
 
+A run in `running` that no worker holds a lease on shows as `running, stale`
+in `status`, with `stale: true` in its detail. Nothing will move it until
+someone resumes or cancels it.
+
+`cancel` commits the cancel and nothing else. It never reconciles or starts a
+stage, so it works on a run whose executor is gone. A stage still in flight is
+interrupted if its executor answers, and its operation is closed either way.
+
 Every command that drives a run prints a line as each stage starts, each gate
 returns a verdict and each stage settles. The lines are read off the records
 either side of each commit, so they report what was persisted and never what
@@ -291,6 +309,9 @@ them, so a second terminal or an agent between turns can see how far a run has
 got while another process is still driving it. A gate verdict carries the first
 line of its detail when it did not pass, and always for an external gate,
 because "passed" alone does not say what GitHub showed.
+`run` writes a `run starting` line to the progress log before it opens the worktree and
+the pull request, so `status <run>` in the seconds before the run record
+exists says the run is starting instead of that there is no such run.
 
 On a T3 executor each stage is a thread titled `WorkflowLeaf <run> <stage>`.
 When the next stage starts, the adapter settles the run's earlier stage
@@ -349,6 +370,14 @@ or declines, or answer in T3 itself. A request whose provider session ended
 without closing it is shown as expired and never answered as if it were live.
 A profile that still carries the retired `deploy` flag loads; the key is
 dropped.
+
+An agent with `gh` can do what those flags describe, so every stage prompt
+also says what the profile permits on GitHub: no issues ever (findings go in
+`.workflowleaf/findings.md`), no pull request comments, reviews or thread
+replies unless `commentOnPullRequest`, and no merge unless `merge`. This asks
+and cannot enforce. Only the provider's approvals stand between an agent and a
+`gh` call. The fixer loop replies to review threads, so a profile that wants
+it needs `commentOnPullRequest`; the sandbox profiles have it, `fbm` does not.
 
 `fbm` drives the live T3 install against FB-marketplace-uploader and opens
 draft pull requests against `staging`. `sandbox-live` drives the live install

@@ -52,3 +52,41 @@ describe("compileStagePrompt skills", () => {
     assert.isAbove(byPath, section.indexOf("Only if your harness has no skill tool"));
   });
 });
+
+describe("compileStagePrompt permissions", () => {
+  const stageOf = (plan: RunPlan) =>
+    plan.stages.find((candidate) => candidate.contract.id === STAGE_A)!;
+  const promptWith = (permissions: { commentOnPullRequest: boolean; merge: boolean }) => {
+    const plan = twoStagePlan();
+    return compileStagePrompt({
+      runId: "run-1",
+      stage: stageOf(plan),
+      plan,
+      workspacePath: "/work",
+      extraSkills: [],
+      correction: null,
+      permissions,
+    });
+  };
+
+  // issue-1598-1: deliver commented on the pull request and opened an issue
+  // under a profile that permits neither, because nothing told it.
+  it("tells a stage it may not comment or open issues when the profile says so", () => {
+    const prompt = promptWith({ commentOnPullRequest: false, merge: false });
+    const section = prompt.slice(prompt.indexOf("## What this run may do on GitHub"));
+
+    assert.include(section, "Do not open issues.");
+    assert.include(section, "Do not comment on or review any pull request");
+    assert.include(section, "Do not merge any pull request.");
+    assert.include(section, ".workflowleaf/findings.md");
+  });
+
+  it("lets a stage reply on its pull request when the profile permits it", () => {
+    const prompt = promptWith({ commentOnPullRequest: true, merge: false });
+
+    assert.include(prompt, "You may comment on this run's pull request");
+    assert.notInclude(prompt, "Do not comment on or review any pull request");
+    // No flag grants opening issues.
+    assert.include(prompt, "Do not open issues.");
+  });
+});
