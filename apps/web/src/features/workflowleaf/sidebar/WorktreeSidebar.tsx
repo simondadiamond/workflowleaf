@@ -276,7 +276,7 @@ type WorktreeHeaderItem = {
   readonly id: string;
   readonly worktreeKey: string;
   readonly label: string;
-  readonly worktreePath: string;
+  readonly detail: string;
   readonly threads: readonly EnvironmentThreadShell[];
   readonly expanded: boolean;
 };
@@ -322,7 +322,7 @@ function WorktreeFolderRow(props: {
             </button>
           }
         />
-        <TooltipPopup side="right">{item.worktreePath}</TooltipPopup>
+        <TooltipPopup side="right">{item.detail}</TooltipPopup>
       </Tooltip>
     </li>
   );
@@ -3483,7 +3483,7 @@ export default function WorktreeSidebar() {
           id: `${section}:${entry.worktreeKey}`,
           worktreeKey: entry.worktreeKey,
           label: entry.label,
-          worktreePath: entry.worktreePath,
+          detail: entry.detail,
           threads: entry.threads,
           expanded: entry.expanded,
         };

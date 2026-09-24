@@ -1,11 +1,20 @@
-// Folds threads that share a worktree into one sidebar folder. A story run
-// opens one thread per stage in the same worktree, so the flat list grows by
-// several rows per story; the folder keeps it at one.
+// Folds the threads working on one change into one sidebar folder. A story
+// run opens one thread per stage in its worktree, and the thread that started
+// the run sits in another worktree, so the flat list grows by several rows per
+// story. Threads are folded by pull request first, which joins the starting
+// thread once it links the run's pull request, and by worktree otherwise.
+
+interface GroupablePullRequest {
+  readonly number: number;
+  readonly url: string;
+}
 
 export interface WorktreeGroupableThread {
   readonly environmentId: string;
   readonly worktreePath: string | null;
   readonly branch: string | null;
+  readonly linkedPullRequest?: GroupablePullRequest | null | undefined;
+  readonly branchPullRequest?: GroupablePullRequest | null | undefined;
 }
 
 export type WorktreeGroupedEntry<T> =
@@ -15,61 +24,93 @@ export type WorktreeGroupedEntry<T> =
       /** Stable across sections, so expanding a folder expands it everywhere. */
       readonly worktreeKey: string;
       readonly label: string;
-      readonly worktreePath: string;
+      /** The pull request url, or the worktree path when there is none. */
+      readonly detail: string;
       readonly threads: readonly T[];
       readonly expanded: boolean;
     };
 
-export function worktreeKeyOf(thread: WorktreeGroupableThread): string | null {
+function pullRequestOf(thread: WorktreeGroupableThread): GroupablePullRequest | null {
+  return thread.linkedPullRequest ?? thread.branchPullRequest ?? null;
+}
+
+function worktreeKeyOf(thread: WorktreeGroupableThread): string | null {
   return thread.worktreePath === null
     ? null
     : `${thread.environmentId}\u0000${thread.worktreePath}`;
 }
 
-function worktreeLabel(worktreePath: string, threads: readonly WorktreeGroupableThread[]): string {
-  const branch = threads.find((thread) => thread.branch !== null)?.branch;
+function folderLabel(
+  threads: readonly WorktreeGroupableThread[],
+  pullRequest: GroupablePullRequest | null,
+): string {
+  // The branch the pull request was opened from names the change best.
+  const branch =
+    threads.find(
+      (thread) => pullRequest !== null && thread.branchPullRequest?.url === pullRequest.url,
+    )?.branch ?? threads.find((thread) => thread.branch !== null)?.branch;
   if (branch) return branch;
-  const segments = worktreePath.split(/[\\/]/).filter((segment) => segment.length > 0);
-  return segments.at(-1) ?? worktreePath;
+  if (pullRequest) return `#${pullRequest.number}`;
+  const worktreePath = threads.find((thread) => thread.worktreePath !== null)?.worktreePath ?? "";
+  return worktreePath.split(/[\\/]/).findLast((segment) => segment.length > 0) ?? worktreePath;
 }
 
 /**
- * Groups threads by worktree in list order. A folder takes the position of
- * its first thread, and its threads keep their relative order. Threads with
- * no worktree, and worktrees with a single thread, stay plain rows.
+ * Groups threads in list order. A folder takes the position of its first
+ * thread, and its threads keep their relative order. A thread with neither a
+ * pull request nor a worktree, and a folder of one, stay plain rows.
  */
 export function groupThreadsByWorktree<T extends WorktreeGroupableThread>(
   threads: readonly T[],
   isExpanded: (worktreeKey: string, threads: readonly T[]) => boolean,
 ): WorktreeGroupedEntry<T>[] {
+  // A worktree adopts the pull request any of its threads knows, so a stage
+  // that ran before the link landed still joins the folder.
+  const pullRequestByWorktree = new Map<string, GroupablePullRequest>();
+  for (const thread of threads) {
+    const worktreeKey = worktreeKeyOf(thread);
+    const pullRequest = pullRequestOf(thread);
+    if (worktreeKey !== null && pullRequest !== null && !pullRequestByWorktree.has(worktreeKey)) {
+      pullRequestByWorktree.set(worktreeKey, pullRequest);
+    }
+  }
+  const folderOf = (thread: T) => {
+    const worktreeKey = worktreeKeyOf(thread);
+    const pullRequest =
+      pullRequestOf(thread) ??
+      (worktreeKey === null ? undefined : pullRequestByWorktree.get(worktreeKey)) ??
+      null;
+    if (pullRequest !== null) return { key: `pr\u0000${pullRequest.url}`, pullRequest };
+    return worktreeKey === null ? null : { key: worktreeKey, pullRequest: null };
+  };
+
   const membersByKey = new Map<string, T[]>();
   for (const thread of threads) {
-    const key = worktreeKeyOf(thread);
-    if (key === null) continue;
-    const members = membersByKey.get(key);
+    const folder = folderOf(thread);
+    if (folder === null) continue;
+    const members = membersByKey.get(folder.key);
     if (members) members.push(thread);
-    else membersByKey.set(key, [thread]);
+    else membersByKey.set(folder.key, [thread]);
   }
 
   const entries: WorktreeGroupedEntry<T>[] = [];
   const emitted = new Set<string>();
   for (const thread of threads) {
-    const key = worktreeKeyOf(thread);
-    const members = key === null ? undefined : membersByKey.get(key);
-    if (key === null || members === undefined || members.length < 2) {
+    const folder = folderOf(thread);
+    const members = folder === null ? undefined : membersByKey.get(folder.key);
+    if (folder === null || members === undefined || members.length < 2) {
       entries.push({ kind: "thread", thread });
       continue;
     }
-    if (emitted.has(key)) continue;
-    emitted.add(key);
-    const worktreePath = thread.worktreePath!;
+    if (emitted.has(folder.key)) continue;
+    emitted.add(folder.key);
     entries.push({
       kind: "worktree",
-      worktreeKey: key,
-      label: worktreeLabel(worktreePath, members),
-      worktreePath,
+      worktreeKey: folder.key,
+      label: folderLabel(members, folder.pullRequest),
+      detail: folder.pullRequest?.url ?? thread.worktreePath ?? "",
       threads: members,
-      expanded: isExpanded(key, members),
+      expanded: isExpanded(folder.key, members),
     });
   }
   return entries;

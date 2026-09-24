@@ -104,6 +104,13 @@ While you hold the command, its output reaches you only when it returns. Run it
 in the background instead, and read how far it has got with `wl status <run>`,
 whose `recentProgress` is the same lines appended as they happen.
 
+As soon as the pull request exists, link it to this thread with the t3-code
+`link_pull_request` tool, using the url from the run's output or `wl status`.
+The stage threads already show that pull request through their branch, and the
+sidebar's Worktrees view folds every thread on one pull request into one
+folder. Without the link this thread stays a separate row. Skip it when the
+tool is not available, which means the session is not running in T3.
+
 If it fails before any of that, the failure is about the setup rather than the
 work: no profile, an invalid playbook, a lease another worker holds, a dirty
 worktree. Report the message as it stands.
