@@ -1,0 +1,227 @@
+#!/bin/sh
+# Moves the installed T3 Code desktop app between the official release and a
+# build of this fork, without losing data. macOS only.
+#
+#   t3-app status             which app is installed, the latest build, backups
+#   t3-app backup             snapshot the database and settings into ~/.t3/backups
+#   t3-app build              pull this checkout's main and build the desktop .dmg
+#   t3-app switch [dmg]       back up, wait for T3 Code to quit, install the build, reopen
+#   t3-app rollback [backup]  wait for T3 Code to quit, put back the app and data a switch saved
+#
+# switch and rollback replace the running app, so run them from Terminal.app,
+# never from an agent inside T3 Code: quitting T3 Code stops its agents, and
+# this script with them. This script never quits T3 Code itself. It waits for
+# you to quit it.
+set -eu
+
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$(dirname "$self")/$target ;;
+  esac
+done
+checkout=$(cd "$(dirname "$self")/../../.." && pwd)
+
+node24="$HOME/.nvm/versions/node/v24.20.0/bin"
+[ -d "$node24" ] && PATH="$node24:$PATH"
+export PATH
+
+# The T3_APP_* overrides exist for testing this script against a throwaway app.
+app_name=${T3_APP_NAME:-"T3 Code (Alpha)"}
+app=${T3_APP_PATH:-"/Applications/$app_name.app"}
+userdata=${T3_APP_USERDATA:-"$HOME/.t3/userdata"}
+backups=${T3_APP_BACKUPS:-"$HOME/.t3/backups"}
+# The official release is signed by T3's team. A local build is not signed.
+official_team="ARK85ZXQ4Z"
+
+say() { printf '%s\n' "$*"; }
+die() {
+  printf 't3-app: %s\n' "$*" >&2
+  exit 1
+}
+
+app_version() {
+  if [ -d "$app" ]; then
+    defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo unknown
+  else
+    echo none
+  fi
+}
+
+app_kind() {
+  [ -d "$app" ] || {
+    echo "not installed"
+    return
+  }
+  team=$(codesign -dv "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+  if [ "$team" = "$official_team" ]; then echo "official release"; else echo "fork build"; fi
+}
+
+app_running() {
+  # An exact match on the app's executable path. Checked, never killed.
+  ps -axo comm= | grep -Fxq "$app/Contents/MacOS/$app_name"
+}
+
+wait_for_quit() {
+  if app_running; then
+    say "Quit $app_name now (Cmd+Q). Waiting for it to close..."
+    while app_running; do sleep 2; done
+  fi
+  say "$app_name is closed."
+}
+
+latest_dmg() {
+  ls -t "$checkout"/release/*.dmg 2>/dev/null | head -n 1
+}
+
+# Copies the database with VACUUM INTO, which gives one consistent file even
+# while a server has the source open, then verifies the copy before trusting it.
+snapshot_database() {
+  dest=$1
+  node --no-warnings -e '
+    const { DatabaseSync } = require("node:sqlite");
+    const [source, dest] = process.argv.slice(1);
+    const quoted = "\x27" + dest.replaceAll("\x27", "\x27\x27") + "\x27";
+    new DatabaseSync(source, { readOnly: true }).exec(`VACUUM INTO ${quoted}`);
+    const check = new DatabaseSync(dest, { readOnly: true }).prepare("PRAGMA quick_check").get();
+    if (Object.values(check)[0] !== "ok") process.exit(1);
+  ' "$userdata/state.sqlite" "$dest" || die "could not back up the database to $dest (see the error above)"
+}
+
+# Prints the new backup directory on stdout.
+backup() {
+  [ -f "$userdata/state.sqlite" ] || die "no database at $userdata/state.sqlite"
+  dir="$backups/$(date +%Y%m%d-%H%M%S)-v$(app_version)"
+  mkdir -p "$dir"
+  snapshot_database "$dir/state.sqlite"
+  for file in settings.json client-settings.json keybindings.json; do
+    [ -f "$userdata/$file" ] && cp -p "$userdata/$file" "$dir/"
+  done
+  {
+    echo "created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "app: $(app_kind) v$(app_version)"
+    echo "database: state.sqlite (verified)"
+  } >"$dir/manifest.txt"
+  echo "$dir"
+}
+
+cmd_status() {
+  say "Installed: $(app_kind), v$(app_version)$(app_running && echo ', running' || echo ', not running')"
+  dmg=$(latest_dmg)
+  say "Latest build: ${dmg:-none in $checkout/release}"
+  say "Fork checkout: $checkout ($(git -C "$checkout" branch --show-current), $(git -C "$checkout" log -1 --format='%h %cr'))"
+  if [ -d "$backups" ] && [ -n "$(ls "$backups" 2>/dev/null)" ]; then
+    say "Backups in $backups:"
+    for dir in $(ls -r "$backups"); do
+      saved_app=""
+      [ -d "$backups/$dir/app" ] && saved_app=", has the app it replaced"
+      [ -f "$backups/$dir/manifest.txt" ] || saved_app=", incomplete: the backup failed"
+      say "  $dir ($(du -sh "$backups/$dir" | cut -f1)$saved_app)"
+    done
+  else
+    say "Backups: none"
+  fi
+}
+
+cmd_backup() {
+  dir=$(backup)
+  say "Backed up to $dir"
+}
+
+cmd_build() {
+  branch=$(git -C "$checkout" branch --show-current)
+  if [ "$branch" = main ] && [ -z "$(git -C "$checkout" status --porcelain)" ]; then
+    git -C "$checkout" pull --ff-only
+  else
+    say "Building $branch as it stands: the checkout is not a clean main, so it was not pulled."
+  fi
+  (cd "$checkout" && node_modules/.bin/vp i && node_modules/.bin/vp run dist:desktop:dmg)
+  dmg=$(latest_dmg)
+  [ -n "$dmg" ] || die "the build finished but left no .dmg in $checkout/release"
+  say "Built $dmg"
+}
+
+cmd_switch() {
+  dmg=${1:-$(latest_dmg)}
+  [ -n "$dmg" ] && [ -f "$dmg" ] || die "no .dmg to install. Run: t3-app build"
+  say "Installing $dmg"
+  wait_for_quit
+  # Backed up after the quit, so the snapshot holds everything up to now.
+  dir=$(backup)
+  say "Backed up data to $dir"
+
+  mount=$(mktemp -d /tmp/t3-app-dmg.XXXXXX)
+  hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg" >/dev/null
+  built=$(ls -d "$mount"/*.app | head -n 1)
+  [ -n "$built" ] || {
+    hdiutil detach "$mount" >/dev/null
+    die "no app inside $dmg"
+  }
+
+  if [ -d "$app" ]; then
+    mkdir -p "$dir/app"
+    mv "$app" "$dir/app/"
+    echo "replaced app: saved in app/" >>"$dir/manifest.txt"
+  fi
+  ditto "$built" "$app"
+  hdiutil detach "$mount" >/dev/null
+  rmdir "$mount" 2>/dev/null || true
+  # A local build is unsigned; without this macOS may refuse the first launch.
+  xattr -dr com.apple.quarantine "$app" 2>/dev/null || true
+  echo "installed: $(app_kind) v$(app_version) from $dmg" >>"$dir/manifest.txt"
+
+  say "Installed $(app_kind) v$(app_version). Opening it."
+  [ "${T3_APP_NO_OPEN:-}" = 1 ] || open "$app"
+  say "To go back: t3-app rollback $dir"
+}
+
+cmd_rollback() {
+  dir=${1:-}
+  if [ -z "$dir" ]; then
+    # The newest backup a switch made. A rollback's own set-aside folder is
+    # not a target, so a second plain rollback does not undo the first.
+    for candidate in $(ls -r "$backups" 2>/dev/null); do
+      case $candidate in *-before-rollback) continue ;; esac
+      if [ -d "$backups/$candidate/app" ]; then
+        dir="$backups/$candidate"
+        break
+      fi
+    done
+  fi
+  [ -n "$dir" ] && [ -d "$dir/app" ] || die "no backup with a saved app. Pass one from: t3-app status"
+  [ -f "$dir/state.sqlite" ] || die "$dir has no database"
+  say "Rolling back to $dir"
+  wait_for_quit
+
+  # Nothing is deleted. What is live now moves aside first.
+  aside="$backups/$(date +%Y%m%d-%H%M%S)-before-rollback"
+  mkdir -p "$aside/app"
+  mv "$app" "$aside/app/"
+  for file in state.sqlite state.sqlite-wal state.sqlite-shm settings.json client-settings.json keybindings.json; do
+    [ -f "$userdata/$file" ] && mv "$userdata/$file" "$aside/"
+  done
+  echo "set aside before rolling back to $dir" >"$aside/manifest.txt"
+
+  ditto "$dir/app/$app_name.app" "$app"
+  cp -p "$dir/state.sqlite" "$userdata/state.sqlite"
+  for file in settings.json client-settings.json keybindings.json; do
+    [ -f "$dir/$file" ] && cp -p "$dir/$file" "$userdata/"
+  done
+
+  say "Restored $(app_kind) v$(app_version) and the data from $dir."
+  say "What was live before is in $aside."
+  [ "${T3_APP_NO_OPEN:-}" = 1 ] || open "$app"
+}
+
+command=${1:-status}
+[ $# -gt 0 ] && shift
+case $command in
+  status) cmd_status ;;
+  backup) cmd_backup ;;
+  build) cmd_build ;;
+  switch) cmd_switch "$@" ;;
+  rollback) cmd_rollback "$@" ;;
+  *) die "unknown command '$command'. Commands: status, backup, build, switch, rollback" ;;
+esac
