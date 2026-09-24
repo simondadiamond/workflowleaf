@@ -4,6 +4,7 @@
 // and reapply the parts marked "Worktree view".
 import { requestCustomSnooze } from "~/components/CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
+import { expandFolderOrder, planFolderMove } from "./folderDrag";
 import { folderStatusOf, groupThreadsByWorktree, type FolderStatus } from "./worktreeGrouping";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
@@ -174,6 +175,7 @@ import {
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
   resolveSidebarDropTarget,
+  type SidebarDropTarget,
   resolveSidebarDropVerb,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
@@ -266,14 +268,29 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
-// Worktree view: folders start collapsed; this lists the ones opened.
-const EXPANDED_WORKTREES_KEY = "workflowleaf:sidebar:expanded-worktrees";
-const ExpandedWorktreeKeys = Schema.Array(Schema.String);
-const EMPTY_WORKTREE_KEYS: readonly string[] = [];
+// Worktree view: folders the user opened (true) or closed (false). A folder
+// with no entry is closed unless it holds the open thread.
+const WORKTREE_FOLDER_STATE_KEY = "workflowleaf:sidebar:worktree-folders";
+const WorktreeFolderState = Schema.Record(Schema.String, Schema.Boolean);
+const EMPTY_FOLDER_STATE: Readonly<Record<string, boolean>> = {};
+
+// Worktree view: a folder row joins the sortable list as a thread-like item.
+// Its id holds a colon, as thread keys do, and names its section.
+const FOLDER_ID_PREFIX = "folder:";
+const folderIdOf = (section: SidebarSection, worktreeKey: string) =>
+  `${FOLDER_ID_PREFIX}${section}:${encodeURIComponent(worktreeKey)}`;
+const folderSectionOf = (id: string): SidebarSection | undefined => {
+  if (!id.startsWith(FOLDER_ID_PREFIX)) return undefined;
+  const section = id.slice(FOLDER_ID_PREFIX.length).split(":")[0];
+  return section === "active" || section === "snoozed" || section === "settled"
+    ? section
+    : undefined;
+};
 
 type WorktreeHeaderItem = {
   readonly kind: "worktree-header";
   readonly id: string;
+  readonly section: SidebarSection;
   readonly worktreeKey: string;
   readonly label: string;
   readonly detail: string;
@@ -293,13 +310,15 @@ const FOLDER_DOTS: Record<FolderStatus, { label: string; className: string }> = 
   working: { label: "Working", className: "bg-sky-600 dark:bg-sky-300" },
 };
 
-// Worktree view: the folder row. It sits outside the sortable list, so rows
-// dragged past it do not shift it.
+// Worktree view: the folder row. In the active list it drags like a thread
+// row and carries its threads with it.
 function WorktreeFolderRow(props: {
   item: WorktreeHeaderItem;
-  onToggle: (worktreeKey: string) => void;
+  sortable: SortableThreadRowBag;
+  onToggle: (worktreeKey: string, expanded: boolean) => void;
 }) {
   const { item } = props;
+  const { setNodeRef, transform, transition, isDragging, listeners } = props.sortable;
   const lastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   const folderStatus = folderStatusOf(
     item.threads.map((thread): FolderStatus | null => {
@@ -313,15 +332,28 @@ function WorktreeFolderRow(props: {
   );
   const dot = folderStatus === null ? null : FOLDER_DOTS[folderStatus];
   return (
-    <li className="list-none" data-thread-selection-safe>
-      <Tooltip>
+    <li
+      ref={setNodeRef}
+      data-thread-selection-safe
+      className={cn("list-none", isDragging && "relative z-20")}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition: transition,
+        visibility: !isDragging && transform?.scaleY === 0 ? "hidden" : undefined,
+      }}
+      {...listeners}
+    >
+      <Tooltip disabled={isDragging}>
         <TooltipTrigger
           render={
             <button
               type="button"
               aria-expanded={item.expanded}
-              onClick={() => props.onToggle(item.worktreeKey)}
-              className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+              onClick={() => props.onToggle(item.worktreeKey, item.expanded)}
+              className={cn(
+                "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                isDragging && "bg-sidebar-row-hover text-sidebar-foreground shadow-sm",
+              )}
             >
               <ChevronDownIcon
                 aria-hidden
@@ -3435,7 +3467,7 @@ export default function WorktreeSidebar() {
   const handleThreadDragStart = useCallback(
     (event: DragStartEvent) => {
       const activeKey = String(event.active.id);
-      const activeSection = sectionByThreadKey.get(activeKey);
+      const activeSection = sectionByThreadKey.get(activeKey) ?? folderSectionOf(activeKey);
       if (activeSection === undefined) return;
       // Stop normal section motion before dnd-kit measures the picked-up row.
       listMotionRef.current?.suspend();
@@ -3464,19 +3496,17 @@ export default function WorktreeSidebar() {
   // pickup on their rows without changing where those rows render.
   // Worktree view: which folders are open, and the rendered list with folder
   // rows. sidebarListItems stays the sortable subset, so drag logic is unchanged.
-  const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useLocalStorage(
-    EXPANDED_WORKTREES_KEY,
-    EMPTY_WORKTREE_KEYS,
-    ExpandedWorktreeKeys,
+  const [worktreeFolderState, setWorktreeFolderState] = useLocalStorage(
+    WORKTREE_FOLDER_STATE_KEY,
+    EMPTY_FOLDER_STATE,
+    WorktreeFolderState,
   );
+  // A click records the opposite of what the folder shows, so closing the
+  // folder that holds the open thread sticks.
   const toggleWorktreeFolder = useCallback(
-    (worktreeKey: string) =>
-      setExpandedWorktreeKeys((keys) =>
-        keys.includes(worktreeKey)
-          ? keys.filter((key) => key !== worktreeKey)
-          : [...keys, worktreeKey],
-      ),
-    [setExpandedWorktreeKeys],
+    (worktreeKey: string, expanded: boolean) =>
+      setWorktreeFolderState((state) => ({ ...state, [worktreeKey]: !expanded })),
+    [setWorktreeFolderState],
   );
   const renderListItems = useMemo((): readonly (SidebarListItem | WorktreeHeaderItem)[] => {
     const threadItem = (
@@ -3495,8 +3525,8 @@ export default function WorktreeSidebar() {
       const entries = groupThreadsByWorktree(
         list,
         (worktreeKey, members) =>
-          expandedWorktreeKeys.includes(worktreeKey) ||
-          // The open thread never hides inside a closed folder.
+          worktreeFolderState[worktreeKey] ??
+          // Until the user chooses, the open thread's folder shows it.
           members.some(
             (thread) =>
               scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
@@ -3506,7 +3536,8 @@ export default function WorktreeSidebar() {
         if (entry.kind === "thread") return [threadItem(entry.thread, section)];
         const header: WorktreeHeaderItem = {
           kind: "worktree-header",
-          id: `${section}:${entry.worktreeKey}`,
+          id: folderIdOf(section, entry.worktreeKey),
+          section,
           worktreeKey: entry.worktreeKey,
           label: entry.label,
           detail: entry.detail,
@@ -3547,7 +3578,7 @@ export default function WorktreeSidebar() {
     return items;
   }, [
     activeThreads,
-    expandedWorktreeKeys,
+    worktreeFolderState,
     pinnedThreads,
     renderedSettledThreads,
     routeThreadKey,
@@ -3568,9 +3599,38 @@ export default function WorktreeSidebar() {
       ),
     [renderListItems],
   );
+  const folderById = useMemo(
+    () =>
+      new Map(
+        renderListItems.flatMap((item) =>
+          item.kind === "worktree-header" ? [[item.id, item] as const] : [],
+        ),
+      ),
+    [renderListItems],
+  );
+  const folderMembersOf = useCallback(
+    (id: string) =>
+      folderById
+        .get(id)
+        ?.threads.map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+    [folderById],
+  );
+  // Thread drops plan against real thread keys: folder ids expand to their threads.
+  const expandDropTarget = useCallback(
+    (target: SidebarDropTarget): SidebarDropTarget => ({
+      ...target,
+      activeOrder: expandFolderOrder(target.activeOrder, folderMembersOf, null),
+      pinnedOrder: expandFolderOrder(target.pinnedOrder, folderMembersOf, null),
+    }),
+    [folderMembersOf],
+  );
   const sidebarListItems = useMemo(
     (): readonly SidebarListItem[] =>
-      renderListItems.filter((item): item is SidebarListItem => item.kind !== "worktree-header"),
+      renderListItems.map((item) =>
+        item.kind === "worktree-header"
+          ? { kind: "thread", key: item.id, section: item.section }
+          : item,
+      ),
     [renderListItems],
   );
   useEffect(() => {
@@ -3677,12 +3737,21 @@ export default function WorktreeSidebar() {
   const dndCollisionDetection = useMemo(() => {
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
       return createSidebarCollisionDetection(() => true);
+    // A folder only moves within the active list.
+    if (folderById.has(draggedThreadKey)) {
+      return createSidebarCollisionDetection(
+        (id) =>
+          resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id)?.section === "active",
+        { items: sidebarListItems, activationY: dragActivationY ?? null },
+      );
+    }
     const source = threadByKey.get(draggedThreadKey);
     if (source === undefined) return createSidebarCollisionDetection(() => false);
     return createSidebarCollisionDetection(
       (id) => {
-        const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
-        if (target === null) return false;
+        const dropTarget = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
+        if (dropTarget === null) return false;
+        const target = expandDropTarget(dropTarget);
         return (
           planSidebarThreadDrop({
             activeKey: draggedThreadKey,
@@ -3717,18 +3786,88 @@ export default function WorktreeSidebar() {
     draggedFromSection,
     dragActivationY,
     draggableThreadKeys,
+    expandDropTarget,
+    folderById,
     pinnedKeys,
     sidebarListItems,
     threadByKey,
   ]);
+  // Worktree view: a dropped folder writes order keys for all its threads,
+  // held on screen like a thread drop until every key lands.
+  const dropFolder = useCallback(
+    (folderId: string, overId: string | null) => {
+      const folder = folderById.get(folderId);
+      if (folder === undefined || folder.section !== "active" || overId === null) return;
+      const target = resolveSidebarDropTarget(sidebarListItems, folderId, overId);
+      if (target === null || target.section !== "active") return;
+      const members = folderMembersOf(folderId) ?? [];
+      const order = expandFolderOrder(target.activeOrder, folderMembersOf, folderId);
+      const assignments = planFolderMove({ order, members, keysById: activeKeysById });
+      if (
+        assignments.length === 0 ||
+        assignments.some(({ id }) => !activeReorderableThreadKeys.has(id))
+      ) {
+        return;
+      }
+      const drop = {
+        key: members[0]!,
+        sourceSection: "active" as const,
+        section: "active" as const,
+        occurredAt: new Date().toISOString(),
+        clearsSnooze: false,
+        order,
+        keysAtDrop: activeKeysById,
+        assignedKeys: new Map(assignments.map(({ id, orderKey }) => [id, orderKey])),
+      };
+      setOptimisticDrop(drop);
+      void (async () => {
+        // Stop on failure; each key that landed is still a valid placement.
+        for (const assignment of assignments) {
+          const thread = threadByKey.get(assignment.id);
+          if (thread === undefined) continue;
+          const result = await reorderActiveThread(
+            scopeThreadRef(thread.environmentId, thread.id),
+            assignment.orderKey,
+          );
+          if (result._tag === "Success") continue;
+          setOptimisticDrop((current) => (current === drop ? null : current));
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Failed to move folder",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          }
+          return;
+        }
+      })();
+    },
+    [
+      activeKeysById,
+      activeReorderableThreadKeys,
+      folderById,
+      folderMembersOf,
+      reorderActiveThread,
+      sidebarListItems,
+      threadByKey,
+    ],
+  );
   const handleThreadDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeKey = String(event.active.id);
+      if (folderById.has(activeKey)) {
+        dropFolder(activeKey, event.over === null ? null : String(event.over.id));
+        return;
+      }
       const activeSection = sectionByThreadKey.get(activeKey);
-      const target =
+      const dropTarget =
         event.over === null
           ? null
           : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
+      const target = dropTarget === null ? null : expandDropTarget(dropTarget);
       const activeThread = threadByKey.get(activeKey);
       if (activeSection === undefined || target === null || activeThread === undefined) return;
       const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
@@ -3868,6 +4007,9 @@ export default function WorktreeSidebar() {
       activeKeys,
       activeReorderableThreadKeys,
       draggableThreadKeys,
+      dropFolder,
+      expandDropTarget,
+      folderById,
       pinThread,
       pinnedKeys,
       planForwardNavigation,
@@ -4988,11 +5130,30 @@ export default function WorktreeSidebar() {
                       for (const item of renderListItems) {
                         if (item.kind === "worktree-header") {
                           items.push(
-                            <WorktreeFolderRow
+                            <SortableThreadRow
                               key={item.id}
-                              item={item}
-                              onToggle={toggleWorktreeFolder}
-                            />,
+                              id={item.id}
+                              disabled={
+                                item.section !== "active" ||
+                                optimisticDrop !== null ||
+                                item.threads.some(
+                                  (thread) =>
+                                    !activeReorderableThreadKeys.has(
+                                      scopedThreadKey(
+                                        scopeThreadRef(thread.environmentId, thread.id),
+                                      ),
+                                    ),
+                                )
+                              }
+                            >
+                              {(bag) => (
+                                <WorktreeFolderRow
+                                  item={item}
+                                  sortable={bag}
+                                  onToggle={toggleWorktreeFolder}
+                                />
+                              )}
+                            </SortableThreadRow>,
                           );
                           continue;
                         }
