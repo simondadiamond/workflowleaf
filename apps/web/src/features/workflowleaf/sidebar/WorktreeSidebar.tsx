@@ -281,6 +281,9 @@ type WorktreeHeaderItem = {
   readonly expanded: boolean;
 };
 
+// Worktree view: rows inside an open folder sit indented behind a guide line.
+const folderRowClassName = "ms-3.5 border-s border-sidebar-border ps-1.5";
+
 // Worktree view: the folder row. It sits outside the sortable list, so rows
 // dragged past it do not shift it.
 function WorktreeFolderRow(props: {
@@ -1054,6 +1057,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // rows. The marker can unpin the thread when the server supports pinning.
   pinningSupported: boolean;
   isPinned: boolean;
+  // Worktree view: indents the row under its folder.
+  inFolder?: boolean;
   // Present on rows whose server supports every drop outcome: dnd-kit
   // sortable bag applied to the row root so the whole row drags (the
   // pointer sensor's distance constraint keeps plain clicks working).
@@ -1658,6 +1663,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         className={cn(
           // Matches the h-9 row so unrendered rows never shift the list when they paint.
           "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+          props.inFolder && folderRowClassName,
           sortable?.isDragging && "relative z-20",
         )}
       >
@@ -1811,6 +1817,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={cn(
         // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        props.inFolder && folderRowClassName,
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -3529,6 +3536,19 @@ export default function WorktreeSidebar() {
     snoozedThreads.length,
     visibleSnoozedThreads,
   ]);
+  const folderThreadKeys = useMemo(
+    () =>
+      new Set(
+        renderListItems.flatMap((item) =>
+          item.kind === "worktree-header" && item.expanded
+            ? item.threads.map((thread) =>
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+              )
+            : [],
+        ),
+      ),
+    [renderListItems],
+  );
   const sidebarListItems = useMemo(
     (): readonly SidebarListItem[] =>
       renderListItems.filter((item): item is SidebarListItem => item.kind !== "worktree-header"),
@@ -4849,6 +4869,7 @@ export default function WorktreeSidebar() {
                                 .threadPinning === true
                             }
                             isPinned={thread.pinnedAt != null}
+                            inFolder={folderThreadKeys.has(threadKey)}
                             sortable={sortable}
                             dropVerb={
                               dragState?.activeKey === threadKey
