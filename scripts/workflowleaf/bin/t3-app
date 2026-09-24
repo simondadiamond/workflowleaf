@@ -26,6 +26,9 @@ checkout=$(cd "$(dirname "$self")/../../.." && pwd)
 
 node24="$HOME/.nvm/versions/node/v24.20.0/bin"
 [ -d "$node24" ] && PATH="$node24:$PATH"
+# The desktop build compiles Rust. rustup installs it here without touching
+# the shell profile, so a new shell would not find it otherwise.
+[ -d "$HOME/.cargo/bin" ] && PATH="$HOME/.cargo/bin:$PATH"
 export PATH
 
 # The T3_APP_* overrides exist for testing this script against a throwaway app.
