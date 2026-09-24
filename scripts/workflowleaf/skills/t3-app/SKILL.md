@@ -45,7 +45,7 @@ reopen, but a turn in flight when he quits is interrupted.
 
 1. `t3-app status`. Say which build is installed and whether a `.dmg` exists.
 2. If the fork's `main` has changes the installed app does not have, or there is
-   no `.dmg`: `t3-app build`. It takes several minutes. Run it in the background.
+   no `.dmg`: `t3-app build`. It takes several minutes. Run it in the background. It needs Apple's command line tools and Rust. If the build says Rust is missing, ask Simon before installing it with rustup (`--no-modify-path`); the script finds `~/.cargo/bin` on its own.
    Report the error as it stands if it fails, and stop.
 3. Check that it is a quiet moment. Ask Simon whether any thread is working or a
    WorkflowLeaf stage is running (`wl status` with no run lists them). Quitting interrupts
