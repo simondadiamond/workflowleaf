@@ -115,3 +115,23 @@ export function groupThreadsByWorktree<T extends WorktreeGroupableThread>(
   }
   return entries;
 }
+
+/** What a folder's dot can say, most urgent first. */
+export const FOLDER_STATUSES = ["failed", "approval", "input", "done", "working"] as const;
+export type FolderStatus = (typeof FOLDER_STATUSES)[number];
+
+/**
+ * The most urgent state among a folder's threads, so a collapsed folder
+ * never hides a failure or a question. A failure outranks a question
+ * because the run has stopped. Null when every thread is quiet.
+ */
+export function folderStatusOf(statuses: Iterable<FolderStatus | null>): FolderStatus | null {
+  let worst: FolderStatus | null = null;
+  for (const status of statuses) {
+    if (status === null) continue;
+    if (worst === null || FOLDER_STATUSES.indexOf(status) < FOLDER_STATUSES.indexOf(worst)) {
+      worst = status;
+    }
+  }
+  return worst;
+}

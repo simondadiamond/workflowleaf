@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { groupThreadsByWorktree, type WorktreeGroupedEntry } from "./worktreeGrouping";
+import {
+  folderStatusOf,
+  groupThreadsByWorktree,
+  type WorktreeGroupedEntry,
+} from "./worktreeGrouping";
 
 const pr1650 = { number: 1650, url: "https://github.com/o/r/pull/1650" };
 
@@ -97,5 +101,17 @@ describe("groupThreadsByWorktree", () => {
     );
 
     expect(folder?.kind === "worktree" && folder.expanded).toBe(true);
+  });
+});
+
+describe("folderStatusOf", () => {
+  it("picks the most urgent state, with a failure above a question", () => {
+    expect(folderStatusOf(["working", "input", "failed", null])).toBe("failed");
+    expect(folderStatusOf(["working", "done", "approval"])).toBe("approval");
+    expect(folderStatusOf(["working", "done"])).toBe("done");
+  });
+
+  it("is null when every thread is quiet", () => {
+    expect(folderStatusOf([null, null])).toBeNull();
   });
 });

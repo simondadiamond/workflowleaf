@@ -4,7 +4,7 @@
 // and reapply the parts marked "Worktree view".
 import { requestCustomSnooze } from "~/components/CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
-import { groupThreadsByWorktree } from "./worktreeGrouping";
+import { folderStatusOf, groupThreadsByWorktree, type FolderStatus } from "./worktreeGrouping";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -284,6 +284,15 @@ type WorktreeHeaderItem = {
 // Worktree view: rows inside an open folder sit indented behind a guide line.
 const folderRowClassName = "ms-3.5 border-s border-sidebar-border ps-1.5";
 
+// Worktree view: folder dot colors, matching the status badges on the rows.
+const FOLDER_DOTS: Record<FolderStatus, { label: string; className: string }> = {
+  failed: { label: "Failed", className: "bg-red-600 dark:bg-red-400" },
+  approval: { label: "Needs approval", className: "bg-amber-600 dark:bg-amber-300" },
+  input: { label: "Needs input", className: "bg-indigo-600 dark:bg-indigo-300" },
+  done: { label: "Done, unread", className: "bg-emerald-600 dark:bg-emerald-300" },
+  working: { label: "Working", className: "bg-sky-600 dark:bg-sky-300" },
+};
+
 // Worktree view: the folder row. It sits outside the sortable list, so rows
 // dragged past it do not shift it.
 function WorktreeFolderRow(props: {
@@ -291,9 +300,18 @@ function WorktreeFolderRow(props: {
   onToggle: (worktreeKey: string) => void;
 }) {
   const { item } = props;
-  const statuses = item.threads.map((thread) => resolveSidebarThreadStatus(thread));
-  const needsYou = statuses.some((status) => status === "input" || status === "approval");
-  const working = statuses.some((status) => status === "working");
+  const lastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const folderStatus = folderStatusOf(
+    item.threads.map((thread): FolderStatus | null => {
+      const status = resolveSidebarThreadStatus(thread);
+      if (status === "failed" || status === "approval" || status === "input") return status;
+      const lastVisitedAt =
+        lastVisitedAtById[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+      if (hasUnseenCompletion({ ...thread, lastVisitedAt })) return "done";
+      return status === "working" || status === "monitoring" ? "working" : null;
+    }),
+  );
+  const dot = folderStatus === null ? null : FOLDER_DOTS[folderStatus];
   return (
     <li className="list-none" data-thread-selection-safe>
       <Tooltip>
@@ -311,13 +329,12 @@ function WorktreeFolderRow(props: {
               />
               <FolderIcon aria-hidden className="size-4 shrink-0" />
               <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
-              {needsYou ? (
+              {dot ? (
                 <span
-                  aria-label="Needs input"
-                  className="size-1.5 shrink-0 rounded-full bg-amber-500"
+                  role="img"
+                  aria-label={dot.label}
+                  className={cn("size-2 shrink-0 rounded-full", dot.className)}
                 />
-              ) : working ? (
-                <span aria-label="Working" className="size-1.5 shrink-0 rounded-full bg-sky-500" />
               ) : null}
               <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground/70">
                 {item.threads.length}
@@ -325,7 +342,9 @@ function WorktreeFolderRow(props: {
             </button>
           }
         />
-        <TooltipPopup side="right">{item.detail}</TooltipPopup>
+        <TooltipPopup side="right">
+          {dot ? `${dot.label} · ${item.detail}` : item.detail}
+        </TooltipPopup>
       </Tooltip>
     </li>
   );
